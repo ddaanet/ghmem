@@ -88,26 +88,48 @@ unretrievable; GitHub Projects data needs a `read:project` token scope
   pagination would be hand-rolled either way.
 - **Model tiering.** Sonnet for triage (bulk classification), Opus for
   topic-doc synthesis (prose quality).
-- **Triage and synthesize are custom agents, not skills.**
+- **Triage and synthesize are custom agents.**
   `.claude/agents/ghmem-triage.md` (model: sonnet) and
   `.claude/agents/ghmem-synthesize.md` (model: opus). Agents carry
   `model`, `tools`, and `hooks` frontmatter — model guidance in a
-  skill body was the smoking gun. Procedure text lives in companion
-  skills preloaded via the agent `skills:` field: live-editable
-  (re-read on each fresh invocation) and a stable, cacheable system
-  prefix. The no-GitHub guardrail is enforced mechanically: a
-  PreToolUse hook in each agent's frontmatter denies `gh`/network
-  commands with a structured reason — the agents' only data paths are
-  `ghmem` commands over the local corpus. Authoring follows
-  plugin-dev:skill-development and plugin-dev:hook-development.
-- **Triage is one item per invocation.** A 25-item batch packet is
-  complex context Sonnet handles poorly, and the items are
-  self-contained. Per-item agents cost roughly the same input tokens:
-  the shared agent prefix is prompt-cached after the first invocation
-  (~10% read price, 5-min TTL refreshed each hit; the prefix must
-  exceed the 1,024-token cache floor, which it does), and total unique
-  content is identical. Each invocation judges one item with an
-  undiluted context.
+  skill body was the smoking gun. The full procedure text lives inline
+  in each agent's definition body, not in a companion skill:
+  `.claude/agents/` is file-watched, so editing a definition takes
+  effect on the next spawn with no restart (the live-edit rationale that
+  once argued for separate procedure skills is void), and a registered
+  skill would inject its description into every session's context and be
+  skipped silently if preloaded-then-missing. The no-GitHub guardrail is
+  enforced mechanically, as an **allowlist**: a PreToolUse hook in each
+  agent's frontmatter authorizes only `ghmem` subcommand invocations —
+  anchored at command start, compound commands (`;`, `&&`, `|`, `$(`,
+  backticks) rejected so a `ghmem` prefix can't smuggle a second
+  command — and denies everything else with a structured reason.
+  (Deny-patterns were rejected: they both over-block and are trivially
+  slipped.) The agents' only data path is `ghmem` commands over the
+  local corpus. Authoring
+  follows plugin-dev:agent-development and plugin-dev:hook-development.
+- **Triage agents pull their own items; the CLI meters the batch.**
+  The orchestrator hands a triage agent only a batch target, never item
+  content — item text should appear zero times in orchestrator context,
+  not twice. `ghmem triage` mints a session token and returns it with
+  the first packet; from then on a single
+  `ghmem route <id> <verdict> --session <token>` records each verdict
+  AND yields the next packet, so the agent spends ~one turn per item
+  and sits in no deterministic step. The batch budget (items and
+  accumulated packet-lines) is metered by the CLI per token via ledger
+  events and enforced CLI-side — a model cannot be trusted to count,
+  so it never does: it loops until `route` answers `batch complete`
+  (budget exhausted) or `triage complete`, then reports id → verdict
+  lines. Rationale for batching: fixed spawn overhead (~10–15k tokens)
+  amortizes over the batch, so per-item cost bottoms out around 5–12
+  items under prompt-cache pricing; the quality ceiling (context rot)
+  scales with accumulated *tokens*, not item count, and heat-ordered
+  triage hands out the largest threads first — hence a packet-lines
+  budget, not an item cap alone. Both constants are provisional and
+  calibrated against verdict-accuracy-by-batch-position data in the
+  validation run. A dispatch left stale past a timeout (a crashed agent's
+  single in-flight item) is re-offered automatically; `status` surfaces
+  stuck dispatches and `triage --requeue` returns them wholesale.
 - **Formula constants are calibrated, never hip-shot.** Heat weights
   and standing thresholds ship as provisional values and are derived
   properly by a recorded calibration analysis over the real corpus
@@ -171,31 +193,40 @@ emit from the local corpus.
   commits. The agent-facing read primitive. Authors are annotated with
   their standing at time of posting (e.g. `dmaluka (maintainer since
   ~2022; 180 merges at time of comment)`), from a derived standing
-  table rebuilt from corpus data; `batch` and `topic` output carries
+  table rebuilt from corpus data; `triage` and `topic` output carries
   the same annotations.
 - `ghmem heat` — deterministic ranking over the corpus: comment count,
   reaction count, distinct participants, cross-reference degree,
   recurrence span (years between first and last activity).
-- `ghmem triage` — yields the next untriaged item (heat order) as a
-  complete packet: id plus its `show` rendering. When triage is
-  complete, stdout is empty, a `triage complete: 0 pending` note goes
-  to stderr, and the exit code is still 0 — exit codes are reserved
-  for actual errors (an expected outcome must not read as a failure).
-  Yielding records a
-  `dispatched` ledger event so concurrent calls hand out distinct
-  items; `route` resolves the dispatch, `status` surfaces
-  dispatched-but-unrouted items, and `ghmem triage --requeue` returns
-  them to the queue after a crashed run. (Replaces the earlier
-  `batch --pending -n k` lister — with one item per agent invocation,
-  a k-item packet had no consumer.)
-- `ghmem route <id> <topic>` / `ghmem route <id> --no-signal` — records
-  a triage verdict in the ledger; marks the topic dirty.
+- `ghmem triage` — opens a metered batch session: mints a session
+  token and yields the next untriaged item (heat order) as a complete
+  packet — a `session: <token>` line, a `packet-lines: <n>` header, the
+  id, and its `show` rendering. The CLI meters items and packet-lines
+  served per token (ledger events) and refuses to serve past the
+  budget: empty stdout, `batch complete: budget exhausted` on stderr,
+  exit 0. Triage-complete has the same shape (`triage complete: 0
+  pending`) — exit codes are reserved for actual errors; an expected
+  outcome must not read as a failure. Yielding records a `dispatched`
+  ledger event so concurrent sessions hand out distinct items; `route`
+  resolves the dispatch, and a dispatch left stale past a timeout with
+  no subsequent route is re-offered automatically (crash recovery).
+  `status` surfaces dispatched-but-unrouted and stuck items, and
+  `ghmem triage --requeue` returns them all to the queue at once.
+- `ghmem route <id> <topic> --session <token>` /
+  `ghmem route <id> --no-signal --session <token>` — records the
+  triage verdict in the ledger, marks the topic dirty, resolves the
+  dispatch, and immediately yields the next packet under the same
+  session (or the batch-complete / triage-complete message): one
+  command per item, so the agent is out of every deterministic step.
 - `ghmem status` — coverage ledger summary: counts of triaged / routed
-  / no-signal / pending, dirty topics, sync cursor position.
-- `ghmem topic <name>` — assembles the synthesis context for one
-  topic: every routed item's digest plus full text of the high-heat
-  ones, headed by a **snapshot token** (max ledger sequence + max
-  `updated_at` over the topic's items). Close-out is compare-and-set:
+  / no-signal / pending / dispatched / stuck, the full list of known
+  topics (so triage can consult it before minting a near-duplicate),
+  the dirty subset, and sync cursor position.
+- `ghmem topic <name>` — assembles the synthesis context for one topic:
+  for the items routed to that topic, a digest of each plus the full
+  thread text of the high-heat ones among them, headed by a **snapshot
+  token** (max ledger sequence + max `updated_at` over the topic's
+  items). Close-out is compare-and-set:
   `ghmem topic <name> --synthesized <token>` clears the dirty flag
   only if the token is still current — routes or comments that arrived
   between assembly and close-out leave the topic dirty for the next
@@ -234,34 +265,51 @@ truth and mirrors it into SQLite for querying.
     A requirement with no citable maintainer behavior behind it does
     not get written — this is the structural guard against hallucinated
     rationale.
-  - **Limitations**: rejected approaches and won't-happens, with the
-    rejection rationale. Rejected/stalled PRs are first-class evidence.
+  - **Limitations**: accepted trade-offs and known constraints of the
+    current design — what it deliberately does not do and the cost the
+    project chose to live with. NOT a graveyard of rejected approaches:
+    a rejection that encodes a norm becomes an NFR, and the debate
+    record for a rejected or stalled approach lives in History.
   - **Open questions**: live, unresolved debates and their current
     front line (who holds what position, where it stalled). Prevents
     the most re-litigation-prone material from being buried in History.
   - **History**: compressed chronological debate digest that the other
-    sections cite into.
+    sections cite into. Rejected and stalled approaches are recorded
+    here with their rejection rationale; rejected and stalled PRs are
+    first-class evidence.
   - Norm topics (cross-cutting philosophy like options parsimony) are
     legitimately all-NFR; empty sections are allowed and the synthesis
     prompt must not invent filler to populate them.
 
 ### 3. Agentic layer — two custom agents
 
-Both are `.claude/agents/` definitions with pinned models, preloaded
-companion skills for the (live-editable) procedure text, and
-frontmatter PreToolUse hooks denying GitHub/network access — their
-only data path is `ghmem` commands over the local corpus.
+Both are `.claude/agents/` definitions with pinned models, their full
+procedure text inline in the definition body (the directory is
+file-watched, so edits take effect on the next spawn — no companion
+skill), and a frontmatter PreToolUse allowlist hook that authorizes
+only `ghmem` commands and denies everything else — their only data
+path is `ghmem` commands over the local corpus.
 
-- **ghmem-triage (Sonnet).** Input: one item (its `ghmem show`
-  rendering), one item per invocation. Output: a single `ghmem route`
-  verdict. May propose new topics. "No-signal" is a comfortable
-  default verdict, not a failure — most items encode no decision.
+- **ghmem-triage (Sonnet).** Input: a batch target only — no item
+  content. It opens a session with `ghmem triage` (which mints the
+  budget token and serves the first packet), then loops: judge the
+  packet, answer with one `ghmem route ... --session <token>`, receive
+  the next packet — until the CLI reports batch complete or triage
+  complete. The budget is CLI-enforced; the agent never counts. May
+  propose new
+  topics, consulting the full topic list first to avoid near-duplicates.
+  "No-signal" is a comfortable default verdict, not a failure — most
+  items encode no decision.
 - **ghmem-synthesize (Opus).** Input: one topic's context from
   `ghmem topic` (with its snapshot token). Output: create/update that
   topic doc — including its frontmatter `description:` hook line —
-  then close out with the token; the harness regenerates INDEX.md.
-  Update unit = one topic, so incremental runs touch only dirty
-  topics. Standing rules with teeth: FR/NFR/Limitation entries
+  then close out with the token; the harness regenerates INDEX.md. A
+  stale token (activity landed mid-synthesis) is a normal race, not an
+  error to escalate: the same agent re-assembles from the fresh
+  snapshot, rewrites the doc, and retries, stopping only after two
+  consecutive stale tokens. Update unit = one topic, so incremental runs
+  touch only dirty topics. Standing rules with teeth: FR/NFR/Limitation
+  entries
   require maintainer-grade backing (a statement by someone with
   standing at that time, or actual merge/reject behavior) — user
   chorus is demand evidence, never policy; History and Open questions
@@ -292,7 +340,7 @@ cluster against an empty topic list would make the match trivial and
 prove nothing about accuracy.
 
 Harness-level: `sync` resumability and cursor correctness testable
-against recorded fixtures; `heat`/`batch`/`route`/`status` are pure
+against recorded fixtures; `heat`/`triage`/`route`/`status` are pure
 functions over the local store, testable without network (pytest,
 checked-in fixtures).
 
@@ -307,7 +355,39 @@ checked-in fixtures).
   latest verdict wins; re-routing marks both old and new topics dirty.
 - Topic close-out race: handled by the snapshot-token compare-and-set
   on `--synthesized` (see Architecture §1); a stale token leaves the
-  topic dirty rather than discarding newer input.
+  topic dirty rather than discarding newer input, and the synthesize
+  agent treats it as a retry — re-assemble from the fresh snapshot,
+  rewrite, close out again; two consecutive stale tokens stop and report.
+- Stranded triage dispatch: a `dispatched` event with no route past a
+  timeout (agent crashed mid-item) is re-offered automatically by
+  `ghmem triage`; `status` surfaces stuck dispatches and
+  `triage --requeue` returns all in-flight items at once.
+
+## Execution structure
+
+Decided 2026-07-09 after the monolithic 4,000-line plan proved too
+large for human review and too churned to trust — it was discarded
+outright (it had likely drifted from this spec). The work is split
+into four subprojects, each planned **just-in-time and from scratch**
+in a fresh session — a subproject's plan is written only after this
+spec is finalized and its predecessor has landed, derived from the
+spec plus the actual code, nothing else.
+
+1. **corpus** — scaffold, direnv-activated venv, ledger + SQLite
+   mirror, `sync`, standing derivation, `show`.
+2. **dispatch** — `heat`, session-budgeted `triage`/`route` with
+   reclaim, `status`, `topic` close-out, `index`.
+3. **agents** — the two agent definitions, the allowlist hook, the
+   `docs/design/` scaffold.
+4. **validation** — wrapindent ground-truth gate, formula calibration,
+   backfill runbook.
+
+Each plan opens with a spec-fidelity audit of its slice, is
+**contract-style** (interface contracts, test lists, and genuinely
+tricky algorithms — not full code listings; Sonnet implementers under
+the edify gates and one-tier-up review fill in the rest), and stays
+small enough (~≤800 lines, else split again) that the human reviews
+the plan itself — no extracted review packets.
 
 ## Non-goals
 
