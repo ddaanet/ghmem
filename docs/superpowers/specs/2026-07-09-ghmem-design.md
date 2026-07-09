@@ -73,6 +73,17 @@ unretrievable; GitHub Projects data needs a `read:project` token scope
   use, adapted with descriptive-requirement semantics and an
   Open-questions section; chosen over a pure decision-record shape for
   its numbered-anchor citability.
+- **Contributor standing is computed, time-varying data.** A
+  maintainer's comment and a random user's identical comment are
+  different facts, and standing changes over the decade (zyedidia's
+  authority fading, dmaluka rising to de-facto maintainer ~2022).
+  GitHub's `author_association` reflects fetch-time association, not
+  posting-time, so the harness derives `standing(user, date)` — owner /
+  maintainer / established contributor / newcomer — from the corpus
+  itself: merge authority before that date (`merged_by` is the hardest
+  signal), master commit authorship, own-PRs-accepted count. Rendered
+  outputs annotate every author inline; agents read standing, never
+  infer it.
 - **Incremental synthesis reloads full topic context** (no delta
   machinery). Measured (2026-07-09, live API): micro sees ~8.5k tokens
   of new comment text per month across ~22 commented threads; a full
@@ -97,7 +108,11 @@ emits.
   the incremental update: it fetches only the delta past the cursor.
 - `ghmem show <id>` — one thread rendered as compact markdown: body,
   comments, review threads, cross-references, reactions, linked
-  commits. The agent-facing read primitive.
+  commits. The agent-facing read primitive. Authors are annotated with
+  their standing at time of posting (e.g. `dmaluka (maintainer since
+  ~2022; 180 merges at time of comment)`), from a derived standing
+  table rebuilt from corpus data; `batch` and `topic` output carries
+  the same annotations.
 - `ghmem heat` — deterministic ranking over the corpus: comment count,
   reaction count, distinct participants, cross-reference degree,
   recurrence span (years between first and last activity).
@@ -154,7 +169,12 @@ truth and mirrors it into SQLite for querying.
 - **Synthesize (Opus).** Input: one topic's context file from
   `ghmem topic`. Output: create/update that dossier and its INDEX.md
   lines. Update unit = one topic, so incremental runs touch only dirty
-  dossiers.
+  dossiers. Standing rules with teeth: FR/NFR/Limitation entries
+  require maintainer-grade backing (a statement by someone with
+  standing at that time, or actual merge/reject behavior) — user
+  chorus is demand evidence, never policy; History and Open questions
+  attribute positions with standing, since a live debate's front line
+  is where people with merge power currently stand.
 - **Incremental loop** = `ghmem sync` → triage the delta → synthesize
   dirty topics. Invoked manually (a skill/command) first; a cron
   wrapper only if manual cadence proves annoying.
