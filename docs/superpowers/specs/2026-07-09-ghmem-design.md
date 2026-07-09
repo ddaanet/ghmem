@@ -68,6 +68,19 @@ unretrievable; GitHub Projects data needs a `read:project` token scope
   to topics, and write prose.
 - **Model tiering.** Sonnet for triage (bulk classification), Opus for
   dossier synthesis (prose quality).
+- **Dossier structure: FR/NFR/Limitations/Open questions/History**
+  (detailed under Artifact below). David's format from prior private
+  use, adapted with descriptive-requirement semantics and an
+  Open-questions section; chosen over a pure decision-record shape for
+  its numbered-anchor citability.
+- **Incremental synthesis reloads full topic context** (no delta
+  machinery). Measured (2026-07-09, live API): micro sees ~8.5k tokens
+  of new comment text per month across ~22 commented threads; a full
+  hot-topic cluster is only ~12k tokens (mega-threads like #93 are
+  ~8-11k, not 50k+). Naive full reload ≈ 80–150k Opus input
+  tokens/month vs ≈ 60k for delta-only — an immaterial difference that
+  doesn't justify the complexity, and full context yields better
+  rewrites. Revisit only for repos with ~100× micro's traffic.
 
 ## Architecture
 
@@ -109,10 +122,29 @@ truth and mirrors it into SQLite for querying.
 
 - `INDEX.md` — the recall surface described above. Every claim cites
   issue/PR numbers.
-- `dossiers/<topic>.md` — per-theme living documents: the question, the
-  positions taken, what was rejected and why (rejected/stalled PRs are
-  first-class evidence), current state, open ends. Citations
-  throughout.
+- `dossiers/<topic>.md` — per-theme living documents with a fixed
+  section structure: **FR / NFR / Limitations / Open questions /
+  History**.
+  - FRs and NFRs are *descriptive*, not aspirational: requirements the
+    project has demonstrably enforced, extracted from maintainer
+    statements and merge/reject behavior (e.g. clipboard FR "must work
+    over ssh without X forwarding (#93)"; project-wide NFR
+    "option-count parsimony (#2374, #3107)"). Numbered for stable
+    citation (`softwrap.NFR2`) from INDEX.md and future sessions.
+  - Every FR/NFR/limitation carries citations to issues/PRs/commits.
+    A requirement with no citable maintainer behavior behind it does
+    not get written — this is the structural guard against hallucinated
+    rationale.
+  - **Limitations**: rejected approaches and won't-happens, with the
+    rejection rationale. Rejected/stalled PRs are first-class evidence.
+  - **Open questions**: live, unresolved debates and their current
+    front line (who holds what position, where it stalled). Prevents
+    the most re-litigation-prone material from being buried in History.
+  - **History**: compressed chronological debate digest that the other
+    sections cite into.
+  - Norm topics (cross-cutting philosophy like options parsimony) are
+    legitimately all-NFR; empty sections are allowed and the synthesis
+    prompt must not invent filler to populate them.
 
 ### 3. Agentic layer — two skills
 
