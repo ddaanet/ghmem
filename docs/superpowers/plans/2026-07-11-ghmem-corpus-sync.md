@@ -108,6 +108,16 @@ and the `FetchEvent` schema (`ledger.py`), `Store`
 (`rebuild_from_ledgers` dedups on id), the `aliases` `Json`,
 `JsonObject`, `Number`, and `exceptions.py`.
 
+**The raw-node key contract** every appended `FetchEvent["data"]` must
+satisfy — camelCase field names, the `__typename` discriminant, the
+`{"login": ...}`-with-`"ghost"` author convention and its
+`_parse_commit` bare-string exception, and the injected relation ids
+(`itemId`, `prId`, `reviewId`, `subjectId`) plus the synthesized
+`cross_ref`/`pr_diff` shapes — is recorded as the module docstring of
+`src/ghmem/ingest.py` (Part 1). The sync client (T2 below) must emit
+exactly those keys per event `type`; it is the authoritative spec, not
+this plan.
+
 ---
 
 ### Task 1: GitHub client wrapper
