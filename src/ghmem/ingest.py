@@ -1,10 +1,11 @@
-"""Raw-node ingest: schema, parsing, and ledger replay into SQLite.
+"""Raw-node ingest: parsing and ledger replay into SQLite.
 
-This is the write half of the store: it owns the SQLite DDL, the
-raw-GraphQL-node parsers, and `rebuild_from_ledgers`, which drops and
-replays the whole mirror from the fetch and routing ledgers. The read
-half (the `Store` query API) lives in `store.py` and imports
-`RoutingEvent` and `rebuild_from_ledgers` from here.
+This is the write half of the store: it owns the raw-GraphQL-node
+parsers and `rebuild_from_ledgers`, which drops and replays the whole
+mirror from the fetch and routing ledgers. The schema and row identity
+live in `models.py`'s declarative entities. The read half (the `Store`
+query API) lives in `store.py` and imports `RoutingEvent` and
+`rebuild_from_ledgers` from here.
 
 ## The raw-node JSON contract
 
@@ -54,16 +55,19 @@ the sync driver, never stored here; `"fetch_failed"` carries its own
 into the `fetch_failed` table.
 """
 
-import json
-import sqlite3
 from datetime import datetime
 
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+
 from ghmem.aliases import GraphQLId, Json, JsonObject, Number
-from ghmem.ledger import FetchEvent, FetchFailedData, Ledger
+from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
+    Base,
     Comment,
     Commit,
     CrossRef,
+    FetchFailed,
     FileStat,
     Item,
     PRDiff,
@@ -76,95 +80,6 @@ from ghmem.models import (
 # deliberately doesn't invent routing event kinds — just a JSON object,
 # so `rebuild_from_ledgers` has a concrete, mypy-strict-clean signature.
 type RoutingEvent = JsonObject
-
-_SCHEMA = """
-DROP TABLE IF EXISTS items;
-DROP TABLE IF EXISTS comments;
-DROP TABLE IF EXISTS reviews;
-DROP TABLE IF EXISTS review_comments;
-DROP TABLE IF EXISTS reactions;
-DROP TABLE IF EXISTS cross_refs;
-DROP TABLE IF EXISTS commits;
-DROP TABLE IF EXISTS pr_diffs;
-DROP TABLE IF EXISTS fetch_failed;
-
-CREATE TABLE items (
-    id TEXT PRIMARY KEY,
-    kind TEXT NOT NULL,
-    number INTEGER NOT NULL UNIQUE,
-    title TEXT NOT NULL,
-    state TEXT NOT NULL,
-    author TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    merged_by TEXT,
-    merged_at TEXT,
-    author_association TEXT,
-    body TEXT NOT NULL
-);
-
-CREATE TABLE comments (
-    id TEXT PRIMARY KEY,
-    item_id TEXT NOT NULL,
-    author TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    author_association TEXT,
-    body TEXT NOT NULL
-);
-
-CREATE TABLE reviews (
-    id TEXT PRIMARY KEY,
-    pr_id TEXT NOT NULL,
-    author TEXT NOT NULL,
-    state TEXT NOT NULL,
-    submitted_at TEXT NOT NULL,
-    body TEXT NOT NULL
-);
-
-CREATE TABLE review_comments (
-    id TEXT PRIMARY KEY,
-    review_id TEXT NOT NULL,
-    author TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    body TEXT NOT NULL,
-    path TEXT NOT NULL
-);
-
-CREATE TABLE reactions (
-    subject_id TEXT NOT NULL,
-    content TEXT NOT NULL,
-    count INTEGER NOT NULL,
-    PRIMARY KEY (subject_id, content)
-);
-
-CREATE TABLE cross_refs (
-    src_id TEXT NOT NULL,
-    dst_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    PRIMARY KEY (src_id, dst_id, kind)
-);
-
-CREATE TABLE commits (
-    sha TEXT PRIMARY KEY,
-    author TEXT NOT NULL,
-    authored_date TEXT NOT NULL,
-    message TEXT NOT NULL
-);
-
-CREATE TABLE pr_diffs (
-    pr_number INTEGER PRIMARY KEY,
-    diffstat TEXT NOT NULL,
-    diff_text TEXT NOT NULL,
-    truncated INTEGER NOT NULL
-);
-
-CREATE TABLE fetch_failed (
-    id TEXT PRIMARY KEY,
-    reason TEXT NOT NULL
-);
-"""
 
 
 def _text(value: Json) -> str:
@@ -324,7 +239,7 @@ def _parse_pr_diff(data: JsonObject) -> PRDiff:
 
 
 def rebuild_from_ledgers(
-    conn: sqlite3.Connection,
+    engine: Engine,
     fetch: Ledger[FetchEvent],
     routing: Ledger[RoutingEvent],
 ) -> None:
@@ -338,157 +253,48 @@ def rebuild_from_ledgers(
     but not yet replayed — no `RoutingEvent` schema exists. HOOK: once
     routing events are defined, replay them here, after fetch.
     """
-    conn.executescript(_SCHEMA)
-    for event in fetch:
-        _replay_fetch_event(conn, event)
-    for _event in routing:
-        pass  # no-op stub — see docstring HOOK above.
-    conn.commit()
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        for event in fetch:
+            _replay_fetch_event(session, event)
+        for _event in routing:
+            pass  # no-op stub — see docstring HOOK above.
+        session.commit()
 
 
-def _replay_fetch_event(conn: sqlite3.Connection, event: FetchEvent) -> None:
+def _replay_fetch_event(session: Session, event: FetchEvent) -> None:
     """Dispatch one `FetchEvent` to its table-specific upsert."""
     if event["type"] == "cursor":
         return  # consumed by Part 3's sync driver, not stored here.
     if event["type"] == "fetch_failed":
-        _upsert_fetch_failed(conn, event["data"])
+        data = event["data"]
+        session.merge(FetchFailed(id=data["id"], reason=data["reason"]))
         return
-    _replay_raw_node_event(conn, event)
+    _replay_raw_node_event(session, event)
 
 
-def _replay_raw_node_event(conn: sqlite3.Connection, event: FetchEvent) -> None:
-    """Dispatch one raw-node `FetchEvent` to its table-specific upsert."""
+def _replay_raw_node_event(session: Session, event: FetchEvent) -> None:
+    """Dispatch one raw-node `FetchEvent` to its table-specific upsert.
+
+    `session.merge` is the upsert: it matches an existing row by
+    primary key and updates it in place, or inserts a new one — the
+    same "insert or replace by id" semantics the hand-rolled SQL used,
+    without a per-table upsert statement to maintain.
+    """
     if event["type"] == "item":
-        _upsert_item(conn, _parse_item(event["data"]))
+        session.merge(_parse_item(event["data"]))
     elif event["type"] == "comment":
-        _upsert_comment(conn, _parse_comment(event["data"]))
+        session.merge(_parse_comment(event["data"]))
     elif event["type"] == "review":
-        _upsert_review(conn, _parse_review(event["data"]))
+        session.merge(_parse_review(event["data"]))
     elif event["type"] == "review_comment":
-        _upsert_review_comment(conn, _parse_review_comment(event["data"]))
+        session.merge(_parse_review_comment(event["data"]))
     elif event["type"] == "reaction":
-        _upsert_reaction(conn, _parse_reaction(event["data"]))
+        session.merge(_parse_reaction(event["data"]))
     elif event["type"] == "cross_ref":
-        _upsert_cross_ref(conn, _parse_cross_ref(event["data"]))
+        session.merge(_parse_cross_ref(event["data"]))
     elif event["type"] == "commit":
-        _upsert_commit(conn, _parse_commit(event["data"]))
+        session.merge(_parse_commit(event["data"]))
     elif event["type"] == "pr_diff":
-        _upsert_pr_diff(conn, _parse_pr_diff(event["data"]))
-
-
-def _upsert_item(conn: sqlite3.Connection, item: Item) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            item.id,
-            item.kind,
-            item.number,
-            item.title,
-            item.state,
-            item.author,
-            item.created_at.isoformat(),
-            item.updated_at.isoformat(),
-            item.merged_by,
-            item.merged_at.isoformat() if item.merged_at else None,
-            item.author_association,
-            item.body,
-        ),
-    )
-
-
-def _upsert_comment(conn: sqlite3.Connection, comment: Comment) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO comments VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            comment.id,
-            comment.item_id,
-            comment.author,
-            comment.created_at.isoformat(),
-            comment.updated_at.isoformat(),
-            comment.author_association,
-            comment.body,
-        ),
-    )
-
-
-def _upsert_review(conn: sqlite3.Connection, review: Review) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO reviews VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            review.id,
-            review.pr_id,
-            review.author,
-            review.state,
-            review.submitted_at.isoformat(),
-            review.body,
-        ),
-    )
-
-
-def _upsert_review_comment(conn: sqlite3.Connection, comment: ReviewComment) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO review_comments VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            comment.id,
-            comment.review_id,
-            comment.author,
-            comment.created_at.isoformat(),
-            comment.updated_at.isoformat(),
-            comment.body,
-            comment.path,
-        ),
-    )
-
-
-def _upsert_reaction(conn: sqlite3.Connection, reaction: Reaction) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO reactions VALUES (?, ?, ?)",
-        (reaction.subject_id, reaction.content, reaction.count),
-    )
-
-
-def _upsert_cross_ref(conn: sqlite3.Connection, cross_ref: CrossRef) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO cross_refs VALUES (?, ?, ?)",
-        (cross_ref.src_id, cross_ref.dst_id, cross_ref.kind),
-    )
-
-
-def _upsert_commit(conn: sqlite3.Connection, commit: Commit) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO commits VALUES (?, ?, ?, ?)",
-        (
-            commit.sha,
-            commit.author,
-            commit.authored_date.isoformat(),
-            commit.message,
-        ),
-    )
-
-
-def _upsert_pr_diff(conn: sqlite3.Connection, diff: PRDiff) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO pr_diffs VALUES (?, ?, ?, ?)",
-        (
-            diff.pr_number,
-            json.dumps(
-                [
-                    {
-                        "path": f.path,
-                        "additions": f.additions,
-                        "deletions": f.deletions,
-                    }
-                    for f in diff.diffstat
-                ]
-            ),
-            diff.diff_text,
-            diff.truncated,
-        ),
-    )
-
-
-def _upsert_fetch_failed(conn: sqlite3.Connection, data: FetchFailedData) -> None:
-    conn.execute(
-        "INSERT OR REPLACE INTO fetch_failed VALUES (?, ?)",
-        (data["id"], data["reason"]),
-    )
+        session.merge(_parse_pr_diff(event["data"]))

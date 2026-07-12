@@ -195,7 +195,7 @@ unretrievable; GitHub Projects data needs a `read:project` token scope
 
 ## Architecture
 
-### 1. Harness — `tools/ghmem` (Python/uv, click, githubkit, sqlite3)
+### 1. Harness — `tools/ghmem` (Python/uv, click, githubkit, SQLAlchemy/SQLite)
 
 No agent ever calls the GitHub API; agents read what `ghmem` commands
 emit from the local corpus.
@@ -283,7 +283,11 @@ emit from the local corpus.
   every sync). INDEX.md is harness-generated, never agent-edited.
 
 Storage: two append-only JSONL ledgers, mirrored into a derived SQLite
-cache for querying. The **fetch ledger** records every raw item as
+cache for querying. The mirror is defined and accessed through
+SQLAlchemy 2.0 typed declarative models (`Mapped`/`mapped_column`,
+`DeclarativeBase`) — schema, upserts, and row-loading come from the
+declarative layer rather than hand-rolled DDL and cursor code. The
+**fetch ledger** records every raw item as
 `sync` fetches it, so rebuilding SQLite is a pure local load — no API
 round-trip (the corpus is GitHub-regenerable in principle, but that is
 hours of rate-limited fetching; the ledger also feeds test fixtures).

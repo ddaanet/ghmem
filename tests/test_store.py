@@ -44,8 +44,8 @@ def test_rebuild_populates_tables(tmp_path: Path) -> None:
     assert store.cross_refs_for(pr.id)
     assert store.commits()
     assert store.pr_diff_for(Number(2))
-    failed_rows = store._conn.execute("SELECT id, reason FROM fetch_failed").fetchall()
-    assert [tuple(row) for row in failed_rows] == [("I_999", "rate limited")]
+    failures = store.fetch_failures()
+    assert [(f.id, f.reason) for f in failures] == [("I_999", "rate limited")]
 
 
 def test_rebuild_idempotent(tmp_path: Path) -> None:
