@@ -192,9 +192,14 @@ pytest), mirroring edify's semantics.
 - [ ] Write `tests/test_cli_version.py::test_version_flag` (invoke
   `main` via click `CliRunner`, assert the packaged version in output)
   and `tests/test_paths.py::test_corpus_dir_env_override`.
-- [ ] Run both, verify they fail (module/command missing).
-- [ ] `uv init`/scaffold; write pyproject + configs, `aliases.py`,
-  `__init__.__version__`, `paths.py`, `cli.main` skeleton.
+- [ ] `uv init`/scaffold pyproject + configs so the package imports,
+  then stub `cli.main` (empty group) and `paths.corpus_dir` (returns a
+  deliberately wrong path). Run both tests; confirm each fails on its
+  **assertion** — wrong version, wrong dir — not on ImportError or a
+  missing command. A test that errors on a missing symbol has not
+  proven it asserts anything.
+- [ ] Fill in `aliases.py`, `__init__.__version__`, real `paths.py`,
+  and `cli.main`'s `version_option` wiring; watch the assertions pass.
 - [ ] `just green` — verify format+ruff+mypy+pytest all pass.
 - [ ] Commit: `feat(ghmem): scaffold uv project, toolchain gates, CLI
   skeleton`.
@@ -208,17 +213,18 @@ pytest), mirroring edify's semantics.
 **Interfaces — Consumes:** `paths.fetch_ledger_path`,
 `paths.routing_ledger_path`, `aliases.JsonObject`.
 
-**Produces:**
+**Produces:** `class Ledger[E]` (PEP 695 generic), `Ledger(path:
+Path)`, with methods:
 
-- `class Ledger[E]` (PEP 695 generic) — `Ledger(path: Path)`;
-  `append(event: E) -> None` (one JSON object per line, flush +
-  `os.fsync` so an interrupted run keeps every completed line);
-  `__iter__() -> Iterator[E]` (streams in append order, tolerant of a
-  trailing partial line from a crash — yields only complete lines);
-  `exists() -> bool`. The type parameter — not `object` — carries the
-  schema; each event kind is a `TypedDict`, a plain `dict` at runtime,
-  so `json.loads` results satisfy `E` under a `cast(E, ...)` with no
-  conversion.
+- `append(event: E) -> None` — one JSON object per line; flush +
+  `os.fsync` so an interrupted run keeps every completed line.
+- `__iter__() -> Iterator[E]` — streams in append order; tolerant of a
+  trailing partial line from a crash (yields only complete lines).
+- `exists() -> bool`.
+
+The type parameter — not `object` — carries the schema; each event kind
+is a `TypedDict` (a plain `dict` at runtime), so `json.loads` results
+satisfy `E` under a `cast(E, ...)` with no conversion.
 
 **Fetch-event schema (defined here; written at runtime by Part 3's
 sync driver, read by T3's store).** `FetchEvent` is a discriminated
@@ -257,7 +263,9 @@ The routing ledger reuses the same generic as `Ledger[RoutingEvent]`;
   (new `Ledger` on same path appends after existing),
   `test_trailing_partial_line_ignored` (hand-write a file ending in a
   truncated line → iter yields only whole records).
-- [ ] Run, verify fail.
+- [ ] Stub `Ledger` importable but inert (`append` a no-op, `__iter__`
+  yields nothing); run and confirm each test fails on its assertion
+  (roundtrip/reopen/partial-line mismatch), not on ImportError.
 - [ ] Implement `Ledger` and the `FetchEvent` schema.
 - [ ] `just green`.
 - [ ] Commit: `feat(ghmem): append-only JSONL ledger primitive`.
@@ -276,38 +284,45 @@ The routing ledger reuses the same generic as `Ledger[RoutingEvent]`;
 
 **Produces:**
 
-- `models.py` frozen dataclasses (ids typed with the `NewType`s, never
-  bare `int`/`str`): `Item` (id:`GraphQLId`, kind:str, number:`Number`,
-  title, state, author:str, created_at:datetime, updated_at:datetime,
-  merged_by:str|None, merged_at:datetime|None,
-  author_association:str|None, body:str), `Comment`, `Review` (state,
-  submitted_at), `ReviewComment`, `Reaction` (subject_id:`GraphQLId`,
-  content, count), `CrossRef` (src_id:`GraphQLId`, dst_id:`GraphQLId`,
-  kind), `Commit` (sha, author, authored_date, message), `PRDiff`
-  (pr_number:`Number`, diffstat:tuple[FileStat,...], diff_text,
-  truncated:bool), `FileStat` (path, additions, deletions).
-- `exceptions.py` (created here; later parts add the github errors):
-  `ItemNotFoundError(LookupError)`, `PRDiffNotFoundError(LookupError)`
-  — self-documenting, catchable as `LookupError` (the
-  `KeyError`/`IndexError` family), so `show` (Part 2) catches one
-  branch cleanly.
-- `store.py`: `class Store`; `Store.open(path: Path) -> Store`;
-  `rebuild_from_ledgers(fetch: Ledger[FetchEvent], routing:
-  Ledger[RoutingEvent]) -> None` (drop+recreate schema, replay fetch
-  events into tables; routing replay is a no-op stub here, wired in
-  subproject 2 — leave a documented hook); query methods
-  `get_item(number: Number) -> Item` (**raises `ItemNotFoundError`**,
-  never returns `None` — a missing item is an error, not a value),
-  `comments_for(item_id: GraphQLId) -> list[Comment]`,
-  `reviews_for(pr_id: GraphQLId) -> list[Review]`,
-  `review_comments_for(review_id: GraphQLId)`,
-  `reactions_for(subject_id: GraphQLId)`,
-  `cross_refs_for(item_id: GraphQLId) -> list[CrossRef]`,
-  `pr_diff_for(number: Number) -> PRDiff` (**raises
-  `PRDiffNotFoundError`**), `commits() -> list[Commit]`,
-  `merges_before(d: date) -> list[Item]`,
-  `items_authored_by(user: str)`.
-- `cli.rebuild` — `ghmem rebuild` rebuilds SQLite from the two ledgers.
+`models.py` — frozen dataclasses; ids typed with the `NewType`s, never
+bare `int`/`str`:
+
+- `Item(id: GraphQLId, kind: str, number: Number, title, state,
+  author: str, created_at: datetime, updated_at: datetime,
+  merged_by: str|None, merged_at: datetime|None,
+  author_association: str|None, body: str)`
+- `Comment`, `Review(state, submitted_at)`, `ReviewComment`
+- `Reaction(subject_id: GraphQLId, content, count)`
+- `CrossRef(src_id: GraphQLId, dst_id: GraphQLId, kind)`
+- `Commit(sha, author, authored_date, message)`
+- `PRDiff(pr_number: Number, diffstat: tuple[FileStat, ...], diff_text,
+  truncated: bool)`, `FileStat(path, additions, deletions)`
+
+`exceptions.py` (created here; later parts add the github errors) —
+`ItemNotFoundError(LookupError)`, `PRDiffNotFoundError(LookupError)`:
+self-documenting, catchable as `LookupError` (the `KeyError`/
+`IndexError` family), so `show` (Part 2) catches one branch cleanly.
+
+`store.py` — `class Store`; `Store.open(path: Path) -> Store`;
+`rebuild_from_ledgers(fetch: Ledger[FetchEvent], routing:
+Ledger[RoutingEvent]) -> None` (drop+recreate schema, replay fetch
+events into tables; routing replay is a no-op stub here, wired in
+subproject 2 — leave a documented hook). Query methods:
+
+- `get_item(number: Number) -> Item` — **raises `ItemNotFoundError`**,
+  never returns `None` (a missing item is an error, not a value).
+- `comments_for(item_id: GraphQLId) -> list[Comment]`
+- `reviews_for(pr_id: GraphQLId) -> list[Review]`
+- `review_comments_for(review_id: GraphQLId) -> list[ReviewComment]`
+- `reactions_for(subject_id: GraphQLId) -> list[Reaction]`
+- `cross_refs_for(item_id: GraphQLId) -> list[CrossRef]`
+- `pr_diff_for(number: Number) -> PRDiff` — **raises
+  `PRDiffNotFoundError`**.
+- `commits() -> list[Commit]`
+- `merges_before(d: date) -> list[Item]`
+- `items_authored_by(user: str) -> list[Item]`
+
+`cli.rebuild` — `ghmem rebuild` rebuilds SQLite from the two ledgers.
 
 **Notes:** Schema DDL is a module constant; one table per kind, plus
 `fetch_failed(id, reason)`. Rebuild must be idempotent (drop-if-exists
@@ -327,7 +342,10 @@ value); only the single-object lookups raise.
   `test_get_item_and_relations`, `test_get_item_missing_raises`
   (unknown `Number` → `ItemNotFoundError`), `test_pr_diff_roundtrip`,
   `test_pr_diff_missing_raises`.
-- [ ] Run, verify fail.
+- [ ] Stub `Store`/`models`/`exceptions` importable but inert
+  (`rebuild_from_ledgers` a no-op, lookups return `None`/empty instead
+  of raising); run and confirm each test fails on its assertion — empty
+  tables, absent raise — not on a missing symbol.
 - [ ] Implement `models.py`, `exceptions.py`, `store.py`; wire
   `cli.rebuild`.
 - [ ] `just green`.
