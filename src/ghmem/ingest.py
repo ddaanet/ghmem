@@ -57,10 +57,11 @@ into the `fetch_failed` table.
 
 from datetime import datetime
 
+import msgspec
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from ghmem.aliases import GraphQLId, Json, JsonObject, Number
+from ghmem.aliases import GraphQLId, JsonObject, Number
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
     Base,
@@ -82,159 +83,220 @@ from ghmem.models import (
 type RoutingEvent = JsonObject
 
 
-def _text(value: Json) -> str:
-    """Narrow a JSON value known to be a string."""
-    assert isinstance(value, str)
-    return value
+class _RawLogin(msgspec.Struct):
+    """A raw `{"login": ...}` GitHub user node."""
+
+    login: str
 
 
-def _number(value: Json) -> int:
-    """Narrow a JSON value known to be an int."""
-    assert isinstance(value, int)
-    return value
+def _login_of(node: _RawLogin | None) -> str:
+    """Resolve a raw author node to a login, mapping a null to "ghost".
 
-
-def _boolean(value: Json) -> bool:
-    """Narrow a JSON value known to be a bool."""
-    assert isinstance(value, bool)
-    return value
-
-
-def _optional_text(value: Json) -> str | None:
-    """Narrow a JSON value known to be a string or null."""
-    if value is None:
-        return None
-    return _text(value)
-
-
-def _login(value: Json) -> str:
-    """Extract a GitHub user's login from a raw `{"login": ...}` node.
-
-    A null author (a deleted/"ghost" GitHub account) maps to "ghost".
+    A null author is a deleted/"ghost" GitHub account.
     """
-    if value is None:
-        return "ghost"
-    assert isinstance(value, dict)
-    return _text(value.get("login"))
+    return "ghost" if node is None else node.login
 
 
-def _timestamp(value: Json) -> datetime:
-    """Parse a raw GraphQL ISO-8601 timestamp."""
-    return datetime.fromisoformat(_text(value))
+class _RawItem(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw Issue/PullRequest GraphQL node, keyed as fetched."""
+
+    id: str
+    typename: str = msgspec.field(name="__typename")
+    number: int
+    title: str
+    state: str
+    author: _RawLogin | None
+    created_at: datetime
+    updated_at: datetime
+    body: str
+    merged_by: _RawLogin | None = None
+    merged_at: datetime | None = None
+    author_association: str | None = None
 
 
-def _optional_timestamp(value: Json) -> datetime | None:
-    """Parse an optional raw GraphQL ISO-8601 timestamp."""
-    if value is None:
-        return None
-    return _timestamp(value)
+class _RawComment(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw IssueComment GraphQL node, keyed as fetched."""
+
+    id: str
+    item_id: str
+    author: _RawLogin | None
+    created_at: datetime
+    updated_at: datetime
+    body: str
+    author_association: str | None = None
 
 
-def _file_stat(value: Json) -> FileStat:
-    """Parse one `{"path", "additions", "deletions"}` diffstat entry."""
-    assert isinstance(value, dict)
-    return FileStat(
-        path=_text(value.get("path")),
-        additions=_number(value.get("additions")),
-        deletions=_number(value.get("deletions")),
-    )
+class _RawReview(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw PullRequestReview GraphQL node, keyed as fetched."""
+
+    id: str
+    pr_id: str
+    author: _RawLogin | None
+    state: str
+    submitted_at: datetime
+    body: str
+
+
+class _RawReviewComment(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw PullRequestReviewComment node, keyed as fetched."""
+
+    id: str
+    review_id: str
+    author: _RawLogin | None
+    created_at: datetime
+    updated_at: datetime
+    body: str
+    path: str
+
+
+class _RawReaction(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw aggregated reaction-group node, keyed as fetched."""
+
+    subject_id: str
+    content: str
+    count: int
+
+
+class _RawCrossRef(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw cross-reference node, keyed as fetched."""
+
+    src_id: str
+    dst_id: str
+    kind: str
+
+
+class _RawCommit(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw Commit GraphQL node, keyed as fetched.
+
+    `author` is a bare GitActor display-name string, not a `{"login"}`
+    node — a commit author need not be a GitHub account.
+    """
+
+    sha: str
+    author: str
+    authored_date: datetime
+    message: str
+
+
+class _RawFileStat(msgspec.Struct):
+    """One `{"path", "additions", "deletions"}` diffstat entry."""
+
+    path: str
+    additions: int
+    deletions: int
+
+
+class _RawPRDiff(msgspec.Struct, rename="camel", kw_only=True):
+    """A raw PR-diff node, keyed as fetched."""
+
+    pr_number: int
+    files: list[_RawFileStat]
+    diff_text: str
+    truncated: bool
 
 
 def _parse_item(data: JsonObject) -> Item:
     """Parse a raw Issue/PullRequest GraphQL node into an `Item`."""
-    typename = _text(data.get("__typename"))
-    merged_by_raw = data.get("mergedBy")
+    raw = msgspec.convert(data, _RawItem)
     return Item(
-        id=GraphQLId(_text(data.get("id"))),
-        kind="pull_request" if typename == "PullRequest" else "issue",
-        number=Number(_number(data.get("number"))),
-        title=_text(data.get("title")),
-        state=_text(data.get("state")),
-        author=_login(data.get("author")),
-        created_at=_timestamp(data.get("createdAt")),
-        updated_at=_timestamp(data.get("updatedAt")),
-        merged_by=_login(merged_by_raw) if merged_by_raw is not None else None,
-        merged_at=_optional_timestamp(data.get("mergedAt")),
-        author_association=_optional_text(data.get("authorAssociation")),
-        body=_text(data.get("body")),
+        id=GraphQLId(raw.id),
+        kind="pull_request" if raw.typename == "PullRequest" else "issue",
+        number=Number(raw.number),
+        title=raw.title,
+        state=raw.state,
+        author=_login_of(raw.author),
+        created_at=raw.created_at,
+        updated_at=raw.updated_at,
+        merged_by=None if raw.merged_by is None else _login_of(raw.merged_by),
+        merged_at=raw.merged_at,
+        author_association=raw.author_association,
+        body=raw.body,
     )
 
 
 def _parse_comment(data: JsonObject) -> Comment:
     """Parse a raw IssueComment GraphQL node into a `Comment`."""
+    raw = msgspec.convert(data, _RawComment)
     return Comment(
-        id=GraphQLId(_text(data.get("id"))),
-        item_id=GraphQLId(_text(data.get("itemId"))),
-        author=_login(data.get("author")),
-        created_at=_timestamp(data.get("createdAt")),
-        updated_at=_timestamp(data.get("updatedAt")),
-        author_association=_optional_text(data.get("authorAssociation")),
-        body=_text(data.get("body")),
+        id=GraphQLId(raw.id),
+        item_id=GraphQLId(raw.item_id),
+        author=_login_of(raw.author),
+        created_at=raw.created_at,
+        updated_at=raw.updated_at,
+        author_association=raw.author_association,
+        body=raw.body,
     )
 
 
 def _parse_review(data: JsonObject) -> Review:
     """Parse a raw PullRequestReview GraphQL node into a `Review`."""
+    raw = msgspec.convert(data, _RawReview)
     return Review(
-        id=GraphQLId(_text(data.get("id"))),
-        pr_id=GraphQLId(_text(data.get("prId"))),
-        author=_login(data.get("author")),
-        state=_text(data.get("state")),
-        submitted_at=_timestamp(data.get("submittedAt")),
-        body=_text(data.get("body")),
+        id=GraphQLId(raw.id),
+        pr_id=GraphQLId(raw.pr_id),
+        author=_login_of(raw.author),
+        state=raw.state,
+        submitted_at=raw.submitted_at,
+        body=raw.body,
     )
 
 
 def _parse_review_comment(data: JsonObject) -> ReviewComment:
     """Parse a raw PullRequestReviewComment node into a `ReviewComment`."""
+    raw = msgspec.convert(data, _RawReviewComment)
     return ReviewComment(
-        id=GraphQLId(_text(data.get("id"))),
-        review_id=GraphQLId(_text(data.get("reviewId"))),
-        author=_login(data.get("author")),
-        created_at=_timestamp(data.get("createdAt")),
-        updated_at=_timestamp(data.get("updatedAt")),
-        body=_text(data.get("body")),
-        path=_text(data.get("path")),
+        id=GraphQLId(raw.id),
+        review_id=GraphQLId(raw.review_id),
+        author=_login_of(raw.author),
+        created_at=raw.created_at,
+        updated_at=raw.updated_at,
+        body=raw.body,
+        path=raw.path,
     )
 
 
 def _parse_reaction(data: JsonObject) -> Reaction:
     """Parse a raw aggregated reaction-group node into a `Reaction`."""
+    raw = msgspec.convert(data, _RawReaction)
     return Reaction(
-        subject_id=GraphQLId(_text(data.get("subjectId"))),
-        content=_text(data.get("content")),
-        count=_number(data.get("count")),
+        subject_id=GraphQLId(raw.subject_id),
+        content=raw.content,
+        count=raw.count,
     )
 
 
 def _parse_cross_ref(data: JsonObject) -> CrossRef:
     """Parse a raw cross-reference node into a `CrossRef`."""
+    raw = msgspec.convert(data, _RawCrossRef)
     return CrossRef(
-        src_id=GraphQLId(_text(data.get("srcId"))),
-        dst_id=GraphQLId(_text(data.get("dstId"))),
-        kind=_text(data.get("kind")),
+        src_id=GraphQLId(raw.src_id),
+        dst_id=GraphQLId(raw.dst_id),
+        kind=raw.kind,
     )
 
 
 def _parse_commit(data: JsonObject) -> Commit:
     """Parse a raw Commit GraphQL node into a `Commit`."""
+    raw = msgspec.convert(data, _RawCommit)
     return Commit(
-        sha=_text(data.get("sha")),
-        author=_text(data.get("author")),
-        authored_date=_timestamp(data.get("authoredDate")),
-        message=_text(data.get("message")),
+        sha=raw.sha,
+        author=raw.author,
+        authored_date=raw.authored_date,
+        message=raw.message,
     )
 
 
 def _parse_pr_diff(data: JsonObject) -> PRDiff:
     """Parse a raw PR-diff node into a `PRDiff`."""
-    files = data.get("files")
-    assert isinstance(files, list)
+    raw = msgspec.convert(data, _RawPRDiff)
     return PRDiff(
-        pr_number=Number(_number(data.get("prNumber"))),
-        diffstat=tuple(_file_stat(f) for f in files),
-        diff_text=_text(data.get("diffText")),
-        truncated=_boolean(data.get("truncated")),
+        pr_number=Number(raw.pr_number),
+        diffstat=tuple(
+            FileStat(path=f.path, additions=f.additions, deletions=f.deletions)
+            for f in raw.files
+        ),
+        diff_text=raw.diff_text,
+        truncated=raw.truncated,
     )
 
 

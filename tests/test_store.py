@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from ghmem.aliases import GraphQLId, Number
+from ghmem.aliases import GraphQLId, JsonObject, Number
 from ghmem.exceptions import ItemNotFoundError, PRDiffNotFoundError
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, ItemEvent, Ledger
 from ghmem.models import CrossRef, FileStat
 from ghmem.store import RoutingEvent, Store
 
@@ -109,6 +109,37 @@ def test_merges_before_and_items_authored_by(tmp_path: Path) -> None:
 
     assert [item.number for item in store.items_authored_by("davida")] == [Number(2)]
     assert store.items_authored_by("nobody") == []
+
+
+def test_null_author_maps_to_ghost(tmp_path: Path) -> None:
+    """Test that a deleted GitHub account (null author) parses as "ghost".
+
+    When: an item's raw node carries `author: null` (a deleted account)
+    Then: the parsed item's author is the literal "ghost", not None
+    """
+    store = Store.open(tmp_path / "cache.sqlite")
+    node: JsonObject = {
+        "id": "I_7",
+        "__typename": "Issue",
+        "number": 7,
+        "title": "Filed by a since-deleted account",
+        "state": "OPEN",
+        "author": None,
+        "createdAt": "2026-05-01T09:00:00Z",
+        "updatedAt": "2026-05-01T09:00:00Z",
+        "mergedBy": None,
+        "mergedAt": None,
+        "authorAssociation": None,
+        "body": "orphaned",
+    }
+    event: ItemEvent = {"type": "item", "data": node}
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+    fetch.append(event)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+
+    store.rebuild_from_ledgers(fetch, routing)
+
+    assert store.get_item(Number(7)).author == "ghost"
 
 
 def test_get_item_missing_raises(tmp_path: Path) -> None:
