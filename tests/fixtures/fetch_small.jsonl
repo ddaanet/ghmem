@@ -1,0 +1,11 @@
+{"type": "item", "data": {"id": "I_1", "__typename": "Issue", "number": 1, "title": "Softwrap loses column alignment", "state": "OPEN", "author": {"login": "octavia"}, "createdAt": "2026-05-01T09:00:00Z", "updatedAt": "2026-05-02T10:00:00Z", "mergedBy": null, "mergedAt": null, "authorAssociation": "MEMBER", "body": "Wrapping ignores colorcolumn."}}
+{"type": "item", "data": {"id": "I_2", "__typename": "PullRequest", "number": 2, "title": "Add softwrapcolumn option", "state": "MERGED", "author": {"login": "davida"}, "createdAt": "2026-05-03T09:00:00Z", "updatedAt": "2026-05-10T12:00:00Z", "mergedBy": {"login": "maintainer"}, "mergedAt": "2026-05-10T12:00:00Z", "authorAssociation": "CONTRIBUTOR", "body": "Implements the option."}}
+{"type": "comment", "data": {"id": "C_1", "itemId": "I_1", "author": {"login": "reviewer1"}, "createdAt": "2026-05-01T11:00:00Z", "updatedAt": "2026-05-01T11:00:00Z", "authorAssociation": "MEMBER", "body": "Can you add a test?"}}
+{"type": "review", "data": {"id": "RV_1", "prId": "I_2", "author": {"login": "maintainer"}, "state": "APPROVED", "submittedAt": "2026-05-09T08:00:00Z", "body": "LGTM"}}
+{"type": "review_comment", "data": {"id": "RVC_1", "reviewId": "RV_1", "author": {"login": "maintainer"}, "createdAt": "2026-05-09T08:00:00Z", "updatedAt": "2026-05-09T08:00:00Z", "body": "nice", "path": "src/softwrap.go"}}
+{"type": "reaction", "data": {"subjectId": "I_1", "content": "THUMBS_UP", "count": 3}}
+{"type": "cross_ref", "data": {"srcId": "I_2", "dstId": "I_1", "kind": "closes"}}
+{"type": "commit", "data": {"sha": "abc123def456", "author": "David Allouche", "authoredDate": "2026-05-08T14:00:00Z", "message": "Implement softwrapcolumn"}}
+{"type": "pr_diff", "data": {"prNumber": 2, "files": [{"path": "internal/display/softwrap.go", "additions": 42, "deletions": 5}, {"path": "runtime/help/options.md", "additions": 3, "deletions": 0}], "diffText": "diff --git a/internal/display/softwrap.go b/internal/display/softwrap.go\n(elided)\n", "truncated": false}}
+{"type": "cursor", "data": {"connection": "items", "top_level_cursor": "cursor-abc", "updated_at_hwm": "2026-05-10T12:00:00Z"}}
+{"type": "fetch_failed", "data": {"id": "I_999", "reason": "rate limited"}}
