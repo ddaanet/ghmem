@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from ghmem.aliases import Number
+from ghmem.aliases import IssueOrPRNumber
 from ghmem.cli import main
 from ghmem.store import Store
 
@@ -30,4 +30,7 @@ def test_rebuild_command_populates_sqlite(
 
     assert result.exit_code == 0, result.output
     store = Store.open(corpus / "cache.sqlite")
-    assert store.get_issue_or_pr(Number(1)).title == "Softwrap loses column alignment"
+    assert (
+        store.get_issue_or_pr(IssueOrPRNumber(1)).title
+        == "Softwrap loses column alignment"
+    )

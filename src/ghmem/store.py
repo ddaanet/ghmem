@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine, func, or_, select
 from sqlalchemy.orm import Session
 
-from ghmem.aliases import GraphQLId, Number
+from ghmem.aliases import GraphQLId, IssueOrPRNumber
 from ghmem.exceptions import IssueOrPRNotFoundError, PRDiffNotFoundError
 from ghmem.ingest import RoutingEvent, rebuild_from_ledgers
 from ghmem.ledger import FetchEvent, Ledger
@@ -65,7 +65,7 @@ class Store:
         """
         rebuild_from_ledgers(self._engine, fetch, routing)
 
-    def get_issue_or_pr(self, number: Number) -> IssueOrPR:
+    def get_issue_or_pr(self, number: IssueOrPRNumber) -> IssueOrPR:
         """Return the issue or pull request numbered `number`.
 
         Raises `IssueOrPRNotFoundError` if no such row was ever fetched.
@@ -144,7 +144,7 @@ class Store:
                 ).scalars()
             )
 
-    def pr_diff_for(self, number: Number) -> PRDiff:
+    def pr_diff_for(self, number: IssueOrPRNumber) -> PRDiff:
         """Return the diff for the pull request numbered `number`.
 
         Raises `PRDiffNotFoundError` if no diff was ever fetched for it

@@ -2,7 +2,7 @@
 
 import click
 
-from ghmem.aliases import Number
+from ghmem.aliases import IssueOrPRNumber
 from ghmem.exceptions import IssueOrPRNotFoundError
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
@@ -38,7 +38,7 @@ def show(number: int) -> None:
     store = Store.open(sqlite_path())
     table = build_standing(store)
     try:
-        output = render(store, table, Number(number))
+        output = render(store, table, IssueOrPRNumber(number))
     except IssueOrPRNotFoundError:
         click.echo(f"ghmem show: no issue or pull request numbered #{number}", err=True)
         raise SystemExit(1) from None

@@ -34,7 +34,7 @@ import msgspec
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from ghmem.aliases import GraphQLId, JsonObject, Number
+from ghmem.aliases import GraphQLId, IssueOrPRNumber, JsonObject
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
     Base,
@@ -174,7 +174,7 @@ class _RawIssueOrPR(_RawNode):
 
     id: GraphQLId
     typename: str = msgspec.field(name="__typename")
-    number: Number
+    number: IssueOrPRNumber
     title: str
     state: str
     author: _RawLogin | None
@@ -361,7 +361,7 @@ class _RawPRDiff(_RawNode):
 
     _event_type: ClassVar[str] = "pr_diff"
 
-    pr_number: Number
+    pr_number: IssueOrPRNumber
     files: list[_RawFileStat]
     diff_text: str
     truncated: bool

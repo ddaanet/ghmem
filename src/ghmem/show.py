@@ -11,7 +11,7 @@ snapshot-testable: it only ever reads from an already-populated
 
 from datetime import datetime
 
-from ghmem.aliases import GraphQLId, Number
+from ghmem.aliases import GraphQLId, IssueOrPRNumber
 from ghmem.exceptions import PRDiffNotFoundError
 from ghmem.models import Comment, FileStat, IssueOrPR, Review
 from ghmem.standing import StandingTable
@@ -22,7 +22,7 @@ DIFF_BODY_MAX_CHARS = 300  # PROVISIONAL — calibrated in subproject 4
 __all__ = ["DIFF_BODY_MAX_CHARS", "render"]
 
 
-def render(store: Store, standing: StandingTable, number: Number) -> str:
+def render(store: Store, standing: StandingTable, number: IssueOrPRNumber) -> str:
     """Render issue/PR `number`'s full thread as deterministic markdown.
 
     Resolves the item via `store.get_issue_or_pr`, so an unknown
@@ -126,7 +126,7 @@ def _render_reactions(store: Store, item_id: GraphQLId) -> list[str]:
     return lines
 
 
-def _render_diff(store: Store, number: Number) -> list[str]:
+def _render_diff(store: Store, number: IssueOrPRNumber) -> list[str]:
     """Render the diffstat and (possibly truncated) diff body for a PR.
 
     Issues have no diff — `PRDiffNotFoundError` means the section is
@@ -137,11 +137,10 @@ def _render_diff(store: Store, number: Number) -> list[str]:
     except PRDiffNotFoundError:
         return []
     lines = ["## Diff", "", *[_format_file_stat(f) for f in diff.diffstat], ""]
-    over_cap = len(diff.diff_text) > DIFF_BODY_MAX_CHARS
-    shown = diff.diff_text[:DIFF_BODY_MAX_CHARS] if over_cap else diff.diff_text
+    cut = diff.diff_text.find("\n", DIFF_BODY_MAX_CHARS)
     lines.append("```diff")
-    lines.append(shown)
-    if over_cap or diff.truncated:
+    lines.append(diff.diff_text[: cut if cut != -1 else None])
+    if cut != -1 or diff.truncated:
         lines.append("… [diff truncated] …")
     lines.append("```")
     lines.append("")

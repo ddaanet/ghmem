@@ -6,4 +6,4 @@ type Json = None | bool | int | float | str | list[Json] | dict[str, Json]
 type JsonObject = dict[str, Json]
 
 GraphQLId = NewType("GraphQLId", str)
-Number = NewType("Number", int)
+IssueOrPRNumber = NewType("IssueOrPRNumber", int)

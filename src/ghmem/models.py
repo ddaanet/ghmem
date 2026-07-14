@@ -25,7 +25,7 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.types import TypeDecorator
 
-from ghmem.aliases import GraphQLId, Number
+from ghmem.aliases import GraphQLId, IssueOrPRNumber
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,7 +125,7 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
 
     type_annotation_map: ClassVar[dict[type, Any]] = {
         GraphQLId: String,
-        Number: Integer,
+        IssueOrPRNumber: Integer,
         datetime: _ISODateTime,
     }
 
@@ -140,7 +140,7 @@ class IssueOrPR(Base):
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     kind: Mapped[str]
-    number: Mapped[Number] = mapped_column(unique=True)
+    number: Mapped[IssueOrPRNumber] = mapped_column(unique=True)
     title: Mapped[str]
     state: Mapped[str]
     author: Mapped[str]
@@ -215,7 +215,7 @@ class Commit(Base):
 class PRDiff(Base):
     """The unified diff and per-file stats for one pull request."""
 
-    pr_number: Mapped[Number] = mapped_column(primary_key=True)
+    pr_number: Mapped[IssueOrPRNumber] = mapped_column(primary_key=True)
     diffstat: Mapped[tuple[FileStat, ...]] = mapped_column(_DiffStatType)
     diff_text: Mapped[str]
     truncated: Mapped[bool]
