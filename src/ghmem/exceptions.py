@@ -6,7 +6,7 @@ module; this file defines only the SQLite-mirror lookup misses.
 
 
 class IssueOrPRNotFoundError(LookupError):
-    """Raised when `Store.get_issue_or_pr` finds no row with the given number."""
+    """Raised when `Store.get_issue_or_pr` finds no matching row."""
 
 
 class PRDiffNotFoundError(LookupError):

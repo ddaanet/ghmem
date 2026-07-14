@@ -68,7 +68,7 @@ def test_sync_written_ledger_does_not_crash(tmp_path: Path) -> None:
 
 
 def test_exists_tracks_first_append(tmp_path: Path) -> None:
-    """exists() is false until the first append creates the file.
+    """A ledger's exists() is false until the first append creates the file.
 
     When: a ledger is bound to a path, then an event is appended
     Then: exists() is false before the append and true after
