@@ -226,7 +226,7 @@ class Store:
                 session.execute(
                     select(DiscussionComment)
                     .where(DiscussionComment.discussion_id == discussion_id)
-                    .order_by(DiscussionComment.created_at)
+                    .order_by(DiscussionComment.created_at, DiscussionComment.id)
                 ).scalars()
             )
 

@@ -1,12 +1,14 @@
-"""Compact single-thread markdown renderer for one issue or pull request.
+"""Compact single-thread markdown renderer for an issue, PR, or discussion.
 
 `render` resolves one issue/PR by number and renders its whole thread —
 header, body, timeline (comments merged with reviews and their nested
 review comments), cross-references, reactions, and (for pull requests)
 the diff — as deterministic markdown, annotating every author with
-their standing as of that entry's own date. Offline and
-snapshot-testable: it only ever reads from an already-populated
-`Store`, never the network.
+their standing as of that entry's own date. `render_discussion` does
+the same for a discussion by number: header, body, comments nested one
+level (reply under parent, accepted answer marked in place), and
+reactions. Offline and snapshot-testable: both only ever read from an
+already-populated `Store`, never the network.
 """
 
 from collections import defaultdict
@@ -175,6 +177,11 @@ def _render_discussion_comments(
     GitHub discussions nest exactly one level, so this is a two-pass
     group-by-`parent_id` over the single `discussion_comments_for`
     list rather than a recursive render.
+
+    Assumes every reply's `parent_id` names a comment present in that
+    same list: a reply whose parent is absent is silently dropped, not
+    rendered under a fallback. A future sync driver owns keeping that
+    invariant true.
     """
     comments = store.discussion_comments_for(discussion.id)
     top_level = [c for c in comments if c.parent_id is None]

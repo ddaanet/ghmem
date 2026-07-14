@@ -120,6 +120,20 @@ class PRDiffEvent(TypedDict):
     data: JsonObject
 
 
+class DiscussionEvent(TypedDict):
+    """A raw GraphQL discussion node, as fetched."""
+
+    type: Literal["discussion"]
+    data: JsonObject
+
+
+class DiscussionCommentEvent(TypedDict):
+    """A raw GraphQL discussion-comment node, as fetched."""
+
+    type: Literal["discussion_comment"]
+    data: JsonObject
+
+
 class CursorData(TypedDict):
     """Pagination checkpoint recorded by the sync driver."""
 
@@ -158,6 +172,8 @@ type FetchEvent = (
     | CrossRefEvent
     | CommitEvent
     | PRDiffEvent
+    | DiscussionEvent
+    | DiscussionCommentEvent
     | CursorEvent
     | FetchFailedEvent
 )

@@ -38,6 +38,15 @@ Every `_RawNode` subclass now sets `forbid_unknown_fields=True`
 (inherited from the base): every key on a raw-node `data` object must
 be a declared field, so the Part 3 sync driver must select exactly
 these keys from GraphQL, no more.
+
+Because replay is this strict and the ledger is append-only with no
+rewrite path, the fetch driver must parse-then-append: validate each
+node against its `_RawNode` struct *before* writing it to the ledger,
+never after. A node that fails validation once it's already on disk
+poisons that ledger line permanently — `rebuild_from_ledgers` raises on
+it every time, and recovering means hand-editing the durable artifact.
+Parsing first turns a stray or missing key into a fetch-time error
+instead of a replay-time one.
 """
 
 from datetime import datetime

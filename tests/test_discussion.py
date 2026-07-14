@@ -144,4 +144,4 @@ def test_discussion_command_not_found_exits_1(
     result = runner.invoke(main, ["discussion", "999"])
 
     assert result.exit_code == 1
-    assert "ghmem discussion: no discussion numbered #999" in result.output
+    assert "ghmem discussion: no discussion numbered #999" in result.stderr
