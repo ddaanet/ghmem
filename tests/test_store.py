@@ -155,6 +155,24 @@ def test_get_issue_or_pr_missing_raises(tmp_path: Path) -> None:
         store.get_issue_or_pr(Number(999))
 
 
+def test_issue_or_pr_by_id(tmp_path: Path) -> None:
+    """A cross-ref's GraphQLId resolves back to its issue/PR, or None.
+
+    When: issue_or_pr_by_id is called with a known id and an unknown one
+    Then: the known id resolves to the matching row, and the unknown id
+      returns None rather than raising
+    """
+    store = _rebuilt_store(tmp_path)
+
+    pr = store.issue_or_pr_by_id(GraphQLId("I_2"))
+
+    assert pr is not None
+    assert pr.number == Number(2)
+    assert pr.title == "Add softwrapcolumn option"
+
+    assert store.issue_or_pr_by_id(GraphQLId("I_missing")) is None
+
+
 def test_pr_diff_roundtrip(tmp_path: Path) -> None:
     """A PR diff's file stats round-trip through SQLite.
 

@@ -78,6 +78,17 @@ class Store:
             raise IssueOrPRNotFoundError(number)
         return row
 
+    def issue_or_pr_by_id(self, item_id: GraphQLId) -> IssueOrPR | None:
+        """Return the issue or pull request with graphql id `item_id`.
+
+        Returns `None` if no such row was ever fetched — a cross-ref
+        may point at an item never fetched into the corpus.
+        """
+        with Session(self._engine) as session:
+            return session.execute(
+                select(IssueOrPR).where(IssueOrPR.id == item_id)
+            ).scalar_one_or_none()
+
     def comments_for(self, item_id: GraphQLId) -> list[Comment]:
         """Return the comments on `item_id`, oldest first."""
         with Session(self._engine) as session:
