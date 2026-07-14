@@ -9,11 +9,10 @@ commit authorship — never from an agent's judgment or from
 Python, without re-querying the store.
 """
 
-import enum
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from enum import StrEnum
+from enum import StrEnum, auto
 
 from ghmem.store import Store
 
@@ -34,10 +33,10 @@ __all__ = [
 class Standing(StrEnum):
     """Contributor standing tiers, from highest to lowest authority."""
 
-    OWNER = enum.auto()
-    MAINTAINER = enum.auto()
-    ESTABLISHED = enum.auto()
-    NEWCOMER = enum.auto()
+    OWNER = auto()
+    MAINTAINER = auto()
+    ESTABLISHED = auto()
+    NEWCOMER = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,11 +120,13 @@ def build_standing(store: Store) -> StandingTable:
     commit_dates: dict[str, list[date]] = defaultdict(list)
 
     for pr in store.merges_before(date.max):
-        if pr.merged_at is None or pr.merged_by is None:
-            continue  # merges_before guarantees both are set; defensive.
+        if pr.merged_at is None:
+            continue  # merges_before guarantees this is set; defensive.
         merged_date = pr.merged_at.date()
-        merges_credited[pr.merged_by].append(merged_date)
         accepted_prs[pr.author].append(merged_date)
+        if pr.merged_by is None:
+            continue  # no merger to credit; the PR's author still is, above.
+        merges_credited[pr.merged_by].append(merged_date)
 
     for commit in store.commits():
         commit_dates[commit.author].append(commit.authored_date.date())

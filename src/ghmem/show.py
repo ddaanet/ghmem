@@ -98,16 +98,16 @@ def _render_cross_refs(store: Store, item_id: GraphQLId) -> list[str]:
     refs = store.cross_refs_for(item_id)
     if not refs:
         return []
-    entries: list[tuple[tuple[str, str], str]] = []
+    entries: list[tuple[tuple[str, int, int | str], str]] = []
     for ref in refs:
         other_id = ref.dst_id if ref.src_id == item_id else ref.src_id
         other = store.issue_or_pr_by_id(other_id)
         if other is None:
-            entries.append(((ref.kind, other_id), f"- {other_id} ({ref.kind})"))
+            entries.append(((ref.kind, 1, other_id), f"- {other_id} ({ref.kind})"))
         else:
             entries.append(
                 (
-                    (ref.kind, str(other.number)),
+                    (ref.kind, 0, other.number),
                     f"- #{other.number}: {other.title} ({ref.kind})",
                 )
             )

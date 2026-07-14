@@ -80,6 +80,19 @@ def test_accepted_prs_promote_to_established(tmp_path: Path) -> None:
     assert table.of("alice", date(2023, 3, 20)) is Standing.ESTABLISHED
 
 
+def test_accepted_pr_credit_survives_null_merged_by(tmp_path: Path) -> None:
+    """A merged PR with no recorded merger still credits its author.
+
+    When: carol has ACCEPTED_PR_THRESHOLD merged PRs, each with
+      `mergedBy` null (no merger recorded) but `mergedAt` set
+    Then: standing on the date of the last such merge is ESTABLISHED —
+      accepted-PR credit was not dropped by the null-`merged_by` guard
+    """
+    table = build_standing(_rebuilt_store(tmp_path))
+
+    assert table.of("carol", date(2023, 4, 19)) is Standing.ESTABLISHED
+
+
 def test_commit_author_promotes_to_established(tmp_path: Path) -> None:
     """A single authored commit is enough to promote to ESTABLISHED.
 

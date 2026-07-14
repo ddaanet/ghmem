@@ -105,6 +105,22 @@ def test_cross_refs_resolved_to_number_and_title(tmp_path: Path) -> None:
     assert "#1: Softwrap column drift (closes)" in output
 
 
+def test_cross_refs_sorted_numerically(tmp_path: Path) -> None:
+    """Same-kind cross-refs sort by target number, not lexically.
+
+    When: PR #2 has two "references" cross-refs, to #10 and to #9
+    Then: #9 renders before #10 (a lexical sort would put #10 first)
+    """
+    store = _rebuilt_store(tmp_path)
+    table = build_standing(store)
+
+    output = render(store, table, Number(2))
+
+    nine = output.index("#9: Gutter offset off by one (references)")
+    ten = output.index("#10: Filler PR 10 (references)")
+    assert nine < ten
+
+
 def test_reactions_rendered(tmp_path: Path) -> None:
     """Reactions render as content x count pairs.
 
