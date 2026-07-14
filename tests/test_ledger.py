@@ -6,7 +6,7 @@ from ghmem.ledger import Ledger
 
 
 def test_append_iter_roundtrip(tmp_path: Path) -> None:
-    """Test that appended events are yielded back in append order.
+    """Appended events are yielded back in append order.
 
     When: three events are appended to a fresh ledger
     Then: iterating the ledger yields exactly those events, in order
@@ -21,7 +21,7 @@ def test_append_iter_roundtrip(tmp_path: Path) -> None:
 
 
 def test_reopen_appends(tmp_path: Path) -> None:
-    """Test that a new Ledger instance on the same path appends after existing.
+    """A new Ledger on the same path appends after existing events.
 
     When: a ledger is written to, then a second Ledger instance is opened
       on the same path and appends more events
@@ -38,7 +38,7 @@ def test_reopen_appends(tmp_path: Path) -> None:
 
 
 def test_trailing_partial_line_ignored(tmp_path: Path) -> None:
-    """Test that a truncated trailing line from a crash is skipped.
+    """A truncated trailing line from a crash is skipped.
 
     When: the ledger file on disk ends with a whole record followed by a
       truncated (non-JSON, no trailing newline) partial line

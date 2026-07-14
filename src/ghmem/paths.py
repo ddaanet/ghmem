@@ -1,12 +1,18 @@
 """Corpus directory and ledger/sqlite path resolution."""
 
+import functools
 import os
 import subprocess
 from pathlib import Path
 
 
+@functools.cache
 def _git_toplevel() -> Path:
-    """Return the toplevel directory of the enclosing git repository."""
+    """Return the enclosing git repository's toplevel directory.
+
+    Cached: the toplevel is fixed per process, so the path helpers that
+    fan out through `corpus_dir` share one `git` spawn.
+    """
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         capture_output=True,

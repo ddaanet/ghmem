@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from ghmem.aliases import GraphQLId, JsonObject, Number
-from ghmem.exceptions import ItemNotFoundError, PRDiffNotFoundError
+from ghmem.exceptions import IssueOrPRNotFoundError, PRDiffNotFoundError
 from ghmem.ledger import FetchEvent, ItemEvent, Ledger
 from ghmem.models import CrossRef, FileStat
 from ghmem.store import RoutingEvent, Store
@@ -24,7 +24,7 @@ def _rebuilt_store(tmp_path: Path) -> Store:
 
 
 def test_rebuild_populates_tables(tmp_path: Path) -> None:
-    """Test that rebuild replays every raw-node kind into its table.
+    """A rebuild replays every raw-node kind into its table.
 
     When: the store is rebuilt from a fixture ledger with items,
       comments, a review, a review comment, a reaction, a cross-ref, a
@@ -33,8 +33,8 @@ def test_rebuild_populates_tables(tmp_path: Path) -> None:
     """
     store = _rebuilt_store(tmp_path)
 
-    item = store.get_item(Number(1))
-    pr = store.get_item(Number(2))
+    item = store.get_issue_or_pr(Number(1))
+    pr = store.get_issue_or_pr(Number(2))
 
     assert store.comments_for(item.id)
     assert store.reviews_for(pr.id)
@@ -49,7 +49,7 @@ def test_rebuild_populates_tables(tmp_path: Path) -> None:
 
 
 def test_rebuild_idempotent(tmp_path: Path) -> None:
-    """Test that rebuilding twice from the same ledgers doesn't double rows.
+    """Rebuilding twice from the same ledgers doesn't double rows.
 
     When: the store is rebuilt twice in a row from the same fixture
     Then: querying afterwards returns the same single row per id, not
@@ -63,19 +63,19 @@ def test_rebuild_idempotent(tmp_path: Path) -> None:
 
     assert len(store.commits()) == 1
     assert len(store.comments_for(GraphQLId("I_1"))) == 1
-    assert len(store.items_authored_by("davida")) == 1
+    assert len(store.issues_or_prs_authored_by("davida")) == 1
 
 
-def test_get_item_and_relations(tmp_path: Path) -> None:
-    """Test that a rebuilt item carries its parsed fields and relations.
+def test_get_issue_or_pr_and_relations(tmp_path: Path) -> None:
+    """A rebuilt issue/PR carries its parsed fields and relations.
 
-    When: item #2 (a merged pull request) is fetched after rebuild
+    When: issue/PR #2 (a merged pull request) is fetched after rebuild
     Then: its fields are parsed from the raw GraphQL node, and its
       review/cross-ref relations are reachable by id
     """
     store = _rebuilt_store(tmp_path)
 
-    pr = store.get_item(Number(2))
+    pr = store.get_issue_or_pr(Number(2))
 
     assert pr.id == GraphQLId("I_2")
     assert pr.kind == "pull_request"
@@ -94,12 +94,12 @@ def test_get_item_and_relations(tmp_path: Path) -> None:
     ]
 
 
-def test_merges_before_and_items_authored_by(tmp_path: Path) -> None:
-    """Test the two collection queries not otherwise exercised.
+def test_merges_before_and_issues_or_prs_authored_by(tmp_path: Path) -> None:
+    """merges_before and issues_or_prs_authored_by filter as specified.
 
-    When: item #2 was merged 2026-05-10 and authored by "davida"
+    When: issue/PR #2 was merged 2026-05-10 and authored by "davida"
     Then: merges_before is exclusive of the merge date itself, and
-      items_authored_by filters by exact author login
+      issues_or_prs_authored_by filters by exact author login
     """
     store = _rebuilt_store(tmp_path)
 
@@ -107,15 +107,16 @@ def test_merges_before_and_items_authored_by(tmp_path: Path) -> None:
     merged = store.merges_before(date(2026, 5, 11))
     assert [item.number for item in merged] == [Number(2)]
 
-    assert [item.number for item in store.items_authored_by("davida")] == [Number(2)]
-    assert store.items_authored_by("nobody") == []
+    authored = store.issues_or_prs_authored_by("davida")
+    assert [item.number for item in authored] == [Number(2)]
+    assert store.issues_or_prs_authored_by("nobody") == []
 
 
 def test_null_author_maps_to_ghost(tmp_path: Path) -> None:
-    """Test that a deleted GitHub account (null author) parses as "ghost".
+    """A deleted GitHub account (null author) parses as "ghost".
 
-    When: an item's raw node carries `author: null` (a deleted account)
-    Then: the parsed item's author is the literal "ghost", not None
+    When: a raw node carries `author: null` (a deleted account)
+    Then: the parsed row's author is the literal "ghost", not None
     """
     store = Store.open(tmp_path / "cache.sqlite")
     node: JsonObject = {
@@ -139,23 +140,23 @@ def test_null_author_maps_to_ghost(tmp_path: Path) -> None:
 
     store.rebuild_from_ledgers(fetch, routing)
 
-    assert store.get_item(Number(7)).author == "ghost"
+    assert store.get_issue_or_pr(Number(7)).author == "ghost"
 
 
-def test_get_item_missing_raises(tmp_path: Path) -> None:
-    """Test that looking up an unknown item number raises.
+def test_get_issue_or_pr_missing_raises(tmp_path: Path) -> None:
+    """Looking up an unknown issue/PR number raises.
 
-    When: get_item is called with a Number absent from the corpus
-    Then: ItemNotFoundError is raised, not None returned
+    When: get_issue_or_pr is called with a Number absent from the corpus
+    Then: IssueOrPRNotFoundError is raised, not None returned
     """
     store = _rebuilt_store(tmp_path)
 
-    with pytest.raises(ItemNotFoundError):
-        store.get_item(Number(999))
+    with pytest.raises(IssueOrPRNotFoundError):
+        store.get_issue_or_pr(Number(999))
 
 
 def test_pr_diff_roundtrip(tmp_path: Path) -> None:
-    """Test that a PR diff's file stats round-trip through SQLite.
+    """A PR diff's file stats round-trip through SQLite.
 
     When: pr_diff_for is called for a PR with a diff in the fixture
     Then: its diffstat tuple matches the fixture's per-file counts
@@ -173,9 +174,9 @@ def test_pr_diff_roundtrip(tmp_path: Path) -> None:
 
 
 def test_pr_diff_missing_raises(tmp_path: Path) -> None:
-    """Test that looking up a diff for an item without one raises.
+    """Looking up a diff for a non-PR issue raises.
 
-    When: pr_diff_for is called for item #1, an issue with no PR diff
+    When: pr_diff_for is called for #1, an issue with no PR diff
     Then: PRDiffNotFoundError is raised, not None returned
     """
     store = _rebuilt_store(tmp_path)

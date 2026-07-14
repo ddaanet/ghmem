@@ -7,7 +7,7 @@ from ghmem.cli import main
 
 
 def test_version_flag_displays_version() -> None:
-    """Test that --version displays the correct version.
+    """`--version` displays the version and program name.
 
     When: ghmem --version is called
     Then: Output contains version number and program name, exit code is 0

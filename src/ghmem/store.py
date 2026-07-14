@@ -22,7 +22,7 @@ from sqlalchemy import Engine, create_engine, func, or_, select
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId, Number
-from ghmem.exceptions import ItemNotFoundError, PRDiffNotFoundError
+from ghmem.exceptions import IssueOrPRNotFoundError, PRDiffNotFoundError
 from ghmem.ingest import RoutingEvent, rebuild_from_ledgers
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
@@ -30,7 +30,7 @@ from ghmem.models import (
     Commit,
     CrossRef,
     FetchFailed,
-    Item,
+    IssueOrPR,
     PRDiff,
     Reaction,
     Review,
@@ -65,18 +65,18 @@ class Store:
         """
         rebuild_from_ledgers(self._engine, fetch, routing)
 
-    def get_item(self, number: Number) -> Item:
-        """Return the item numbered `number`.
+    def get_issue_or_pr(self, number: Number) -> IssueOrPR:
+        """Return the issue or pull request numbered `number`.
 
-        Raises `ItemNotFoundError` if no such item was ever fetched.
+        Raises `IssueOrPRNotFoundError` if no such row was ever fetched.
         """
         with Session(self._engine) as session:
-            item = session.execute(
-                select(Item).where(Item.number == number)
+            row = session.execute(
+                select(IssueOrPR).where(IssueOrPR.number == number)
             ).scalar_one_or_none()
-        if item is None:
-            raise ItemNotFoundError(number)
-        return item
+        if row is None:
+            raise IssueOrPRNotFoundError(number)
+        return row
 
     def comments_for(self, item_id: GraphQLId) -> list[Comment]:
         """Return the comments on `item_id`, oldest first."""
@@ -154,24 +154,26 @@ class Store:
                 session.execute(select(Commit).order_by(Commit.authored_date)).scalars()
             )
 
-    def merges_before(self, d: date) -> list[Item]:
+    def merges_before(self, d: date) -> list[IssueOrPR]:
         """Return merged pull requests merged strictly before `d`."""
         with Session(self._engine) as session:
             return list(
                 session.execute(
-                    select(Item)
-                    .where(Item.merged_at.isnot(None))
-                    .where(func.date(Item.merged_at) < func.date(d.isoformat()))
-                    .order_by(Item.merged_at)
+                    select(IssueOrPR)
+                    .where(IssueOrPR.merged_at.isnot(None))
+                    .where(func.date(IssueOrPR.merged_at) < func.date(d.isoformat()))
+                    .order_by(IssueOrPR.merged_at)
                 ).scalars()
             )
 
-    def items_authored_by(self, user: str) -> list[Item]:
-        """Return every item authored by `user`, ordered by number."""
+    def issues_or_prs_authored_by(self, user: str) -> list[IssueOrPR]:
+        """Return every issue or PR authored by `user`, ordered by number."""
         with Session(self._engine) as session:
             return list(
                 session.execute(
-                    select(Item).where(Item.author == user).order_by(Item.number)
+                    select(IssueOrPR)
+                    .where(IssueOrPR.author == user)
+                    .order_by(IssueOrPR.number)
                 ).scalars()
             )
 

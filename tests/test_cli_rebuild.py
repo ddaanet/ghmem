@@ -15,7 +15,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "fetch_small.jsonl"
 def test_rebuild_command_populates_sqlite(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Test that `ghmem rebuild` rebuilds the SQLite mirror in place.
+    """`ghmem rebuild` rebuilds the SQLite mirror in place.
 
     When: $GHMEM_CORPUS_DIR points at a corpus dir holding a fetch
       ledger and `ghmem rebuild` is invoked
@@ -30,4 +30,4 @@ def test_rebuild_command_populates_sqlite(
 
     assert result.exit_code == 0, result.output
     store = Store.open(corpus / "cache.sqlite")
-    assert store.get_item(Number(1)).title == "Softwrap loses column alignment"
+    assert store.get_issue_or_pr(Number(1)).title == "Softwrap loses column alignment"

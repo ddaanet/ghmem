@@ -10,12 +10,19 @@ only owns what they *are*.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ClassVar
 
 from sqlalchemy import Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    MappedAsDataclass,
+    declared_attr,
+    mapped_column,
+)
 from sqlalchemy.types import TypeDecorator
 
 from ghmem.aliases import GraphQLId, Number
@@ -102,10 +109,15 @@ class _DiffStatType(TypeDecorator[tuple[FileStat, ...]]):
         return tuple(FileStat(**f) for f in json.loads(value))
 
 
+def _camel_to_snake(name: str) -> str:
+    """Convert a CamelCase class name to snake_case (`PRDiff` -> `pr_diff`)."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", name).lower()
+
+
 class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     """Declarative base: every entity is also a dataclass (value `__eq__`).
 
-    `kw_only=True` matches how every `_parse_*` builder in `ingest.py`
+    `kw_only=True` matches how every raw-node parser in `ingest.py`
     already constructs these (all-keyword) and sidesteps dataclass
     field-ordering rules where required and nullable columns
     interleave.
@@ -117,11 +129,14 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
         datetime: _ISODateTime,
     }
 
+    @declared_attr.directive
+    def __tablename__(cls) -> str:  # noqa: N805
+        """Derive each table name from its class, in singular snake_case."""
+        return _camel_to_snake(cls.__name__)
 
-class Item(Base):
+
+class IssueOrPR(Base):
     """An issue or pull request."""
-
-    __tablename__ = "items"
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     kind: Mapped[str]
@@ -140,8 +155,6 @@ class Item(Base):
 class Comment(Base):
     """A general issue/PR comment."""
 
-    __tablename__ = "comments"
-
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     item_id: Mapped[GraphQLId]
     author: Mapped[str]
@@ -154,8 +167,6 @@ class Comment(Base):
 class Review(Base):
     """A pull-request review."""
 
-    __tablename__ = "reviews"
-
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     pr_id: Mapped[GraphQLId]
     author: Mapped[str]
@@ -166,8 +177,6 @@ class Review(Base):
 
 class ReviewComment(Base):
     """A single comment left on a pull-request review."""
-
-    __tablename__ = "review_comments"
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     review_id: Mapped[GraphQLId]
@@ -181,17 +190,13 @@ class ReviewComment(Base):
 class Reaction(Base):
     """An aggregated reaction count on some subject."""
 
-    __tablename__ = "reactions"
-
     subject_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     content: Mapped[str] = mapped_column(primary_key=True)
     count: Mapped[int]
 
 
 class CrossRef(Base):
-    """A cross-reference from one item to another (e.g. "closes")."""
-
-    __tablename__ = "cross_refs"
+    """A cross-reference from one issue/PR to another (e.g. "closes")."""
 
     src_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
     dst_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
@@ -200,8 +205,6 @@ class CrossRef(Base):
 
 class Commit(Base):
     """A single commit, as attached to a pull request."""
-
-    __tablename__ = "commits"
 
     sha: Mapped[str] = mapped_column(primary_key=True)
     author: Mapped[str]
@@ -212,8 +215,6 @@ class Commit(Base):
 class PRDiff(Base):
     """The unified diff and per-file stats for one pull request."""
 
-    __tablename__ = "pr_diffs"
-
     pr_number: Mapped[Number] = mapped_column(primary_key=True)
     diffstat: Mapped[tuple[FileStat, ...]] = mapped_column(_DiffStatType)
     diff_text: Mapped[str]
@@ -222,8 +223,6 @@ class PRDiff(Base):
 
 class FetchFailed(Base):
     """A single failed fetch, recorded verbatim from the fetch ledger."""
-
-    __tablename__ = "fetch_failed"
 
     id: Mapped[str] = mapped_column(primary_key=True)
     reason: Mapped[str]

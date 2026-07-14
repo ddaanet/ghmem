@@ -25,7 +25,13 @@ class Ledger[E]:
             os.fsync(handle.fileno())
 
     def __iter__(self) -> Iterator[E]:
-        """Stream events in append order, skipping a trailing partial line."""
+        """Stream events in append order, skipping a trailing partial line.
+
+        A ledger whose file does not exist yet is empty, not an error:
+        `append` creates the file lazily, so "never written" and "no
+        events" are the same state. Callers that must tell a missing
+        ledger from an empty one can check `exists()` first.
+        """
         if not self._path.exists():
             return
         with self._path.open(encoding="utf-8") as handle:
