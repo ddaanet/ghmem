@@ -37,6 +37,49 @@ def test_reopen_appends(tmp_path: Path) -> None:
     assert list(second) == [{"n": 1}, {"n": 2}]
 
 
+def test_sync_missing_file_is_noop(tmp_path: Path) -> None:
+    """Syncing a never-appended ledger neither raises nor creates a file.
+
+    When: sync() is called on a ledger whose file was never written
+    Then: it returns quietly and leaves the path non-existent
+    """
+    path = tmp_path / "events.jsonl"
+    ledger: Ledger[dict[str, int]] = Ledger(path)
+
+    ledger.sync()
+
+    assert not path.exists()
+
+
+def test_sync_written_ledger_does_not_crash(tmp_path: Path) -> None:
+    """Syncing a written ledger completes without error.
+
+    fsync's guarantee is on the physical disk and cannot be observed
+    from a test, so this only pins that sync() runs cleanly on a real
+    file.
+
+    When: an event is appended and then sync() is called
+    Then: sync() returns without raising
+    """
+    ledger: Ledger[dict[str, int]] = Ledger(tmp_path / "events.jsonl")
+    ledger.append({"n": 1})
+
+    ledger.sync()
+
+
+def test_exists_tracks_first_append(tmp_path: Path) -> None:
+    """exists() is false until the first append creates the file.
+
+    When: a ledger is bound to a path, then an event is appended
+    Then: exists() is false before the append and true after
+    """
+    ledger: Ledger[dict[str, int]] = Ledger(tmp_path / "events.jsonl")
+
+    assert not ledger.exists()
+    ledger.append({"n": 1})
+    assert ledger.exists()
+
+
 def test_trailing_partial_line_ignored(tmp_path: Path) -> None:
     """A truncated trailing line from a crash is skipped.
 

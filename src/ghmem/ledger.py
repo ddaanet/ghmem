@@ -17,11 +17,28 @@ class Ledger[E]:
         self._path = path
 
     def append(self, event: E) -> None:
-        """Append `event` as one JSON line, fsynced before returning."""
+        """Append `event` as one JSON line, flushed to the OS on return.
+
+        Closing the handle hands the write to the operating system, so a
+        later reader (even a crashed-and-reopened process) sees it. It
+        does *not* force the disk: surviving power loss is `sync`'s job,
+        called by the caller at its own checkpoints. Bulk ingestion thus
+        runs at memory speed and pays for durability only when it wants
+        it, instead of an fsync per event baked into every append.
+        """
         with self._path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event))
             handle.write("\n")
-            handle.flush()
+
+    def sync(self) -> None:
+        """Force previously appended events to durable storage via fsync.
+
+        A ledger whose file does not exist yet has nothing to force and
+        is a no-op, mirroring `__iter__`'s empty-ledger semantics.
+        """
+        if not self._path.exists():
+            return
+        with self._path.open("r", encoding="utf-8") as handle:
             os.fsync(handle.fileno())
 
     def __iter__(self) -> Iterator[E]:

@@ -103,7 +103,8 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
-strict = true
+strict_markers = true
+strict_config = true
 testpaths = ["tests"]
 addopts = "--no-header --tb=short -m 'not e2e'"
 markers = [
