@@ -11,3 +11,7 @@ class IssueOrPRNotFoundError(LookupError):
 
 class PRDiffNotFoundError(LookupError):
     """Raised when `Store.pr_diff_for` finds no diff for the given PR."""
+
+
+class DiscussionNotFoundError(LookupError):
+    """Raised when `Store.get_discussion` finds no matching row."""

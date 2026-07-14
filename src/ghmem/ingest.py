@@ -25,6 +25,19 @@ Two event types bypass the raw structs entirely: `"cursor"` is consumed
 by the sync driver and never stored here, and `"fetch_failed"` carries
 its own `{"id", "reason"}` shape (`FetchFailedData` in `ledger.py`)
 straight into the `fetch_failed` table.
+
+The `"discussion"` event's `data` requires `id`/`number`/`title`/`body`/
+`author`/`createdAt`/`updatedAt`/`category` (a `{name}` node)/`answer`
+(a `{id}` node or `null`); optional `authorAssociation`. The
+`"discussion_comment"` event requires `id`/`author`/`createdAt`/
+`updatedAt`/`body` plus **injected** `discussionId` and **injected**
+`parentId` (null on a top-level comment); optional
+`authorAssociation`.
+
+Every `_RawNode` subclass now sets `forbid_unknown_fields=True`
+(inherited from the base): every key on a raw-node `data` object must
+be a declared field, so the Part 3 sync driver must select exactly
+these keys from GraphQL, no more.
 """
 
 from datetime import datetime
@@ -34,13 +47,15 @@ import msgspec
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from ghmem.aliases import GraphQLId, IssueOrPRNumber, JsonObject
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber, JsonObject
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
     Base,
     Comment,
     Commit,
     CrossRef,
+    Discussion,
+    DiscussionComment,
     FetchFailed,
     FileStat,
     IssueOrPR,
@@ -107,7 +122,9 @@ def _replay_fetch_event(session: Session, event: FetchEvent) -> None:
 _RAW_BY_TYPE: dict[str, type[_RawNode]] = {}
 
 
-class _RawNode(msgspec.Struct, rename="camel", kw_only=True):
+class _RawNode(
+    msgspec.Struct, rename="camel", kw_only=True, forbid_unknown_fields=True
+):
     """Base for raw-node structs that each map to one declarative entity.
 
     A subclass sets `_event_type` (its `FetchEvent["type"]`) and
@@ -158,6 +175,23 @@ class _RawFileStat(msgspec.Struct):
     path: str
     additions: int
     deletions: int
+
+
+class _RawCategory(msgspec.Struct):
+    """A raw `{"name": ...}` discussion-category node."""
+
+    name: str
+
+
+class _RawIdRef(msgspec.Struct):
+    """A raw `{"id": ...}` reference to another node, by id."""
+
+    id: GraphQLId
+
+
+def _id_of(ref: _RawIdRef | None) -> GraphQLId | None:
+    """Resolve a raw id-reference node to its id, mapping null to None."""
+    return None if ref is None else ref.id
 
 
 class _RawIssueOrPR(_RawNode):
@@ -375,4 +409,75 @@ class _RawPRDiff(_RawNode):
             ),
             diff_text=self.diff_text,
             truncated=self.truncated,
+        )
+
+
+class _RawDiscussion(_RawNode):
+    """A raw Discussion node — the `"discussion"` event's `data`.
+
+    Keys: `id`; `number`; `title`; `body`; `author`; `createdAt`;
+    `updatedAt`; `category` (a `{"name": ...}` node); `answer` (a
+    `{"id": ...}` node, or `null` if unanswered). Optional:
+    `authorAssociation`.
+    """
+
+    _event_type: ClassVar[str] = "discussion"
+
+    id: GraphQLId
+    number: DiscussionNumber
+    title: str
+    body: str
+    author: _RawLogin | None
+    created_at: datetime
+    updated_at: datetime
+    category: _RawCategory
+    answer: _RawIdRef | None
+    author_association: str | None = None
+
+    def to_entity(self) -> Discussion:
+        return Discussion(
+            id=self.id,
+            number=self.number,
+            title=self.title,
+            body=self.body,
+            author=_login_of(self.author),
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+            category=self.category.name,
+            answer_id=_id_of(self.answer),
+            author_association=self.author_association,
+        )
+
+
+class _RawDiscussionComment(_RawNode):
+    """A raw DiscussionComment node — the `"discussion_comment"` data.
+
+    Keys: `id`; `discussionId` (**injected**: the fetch driver attaches
+    the parent discussion id); `author`; `createdAt`; `updatedAt`;
+    `body`. Optional: `authorAssociation`; `parentId` (**injected**:
+    omitted/null on a top-level comment, the parent comment's id on a
+    reply).
+    """
+
+    _event_type: ClassVar[str] = "discussion_comment"
+
+    id: GraphQLId
+    discussion_id: GraphQLId
+    author: _RawLogin | None
+    created_at: datetime
+    updated_at: datetime
+    body: str
+    author_association: str | None = None
+    parent_id: GraphQLId | None = None
+
+    def to_entity(self) -> DiscussionComment:
+        return DiscussionComment(
+            id=self.id,
+            discussion_id=self.discussion_id,
+            parent_id=self.parent_id,
+            author=_login_of(self.author),
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+            author_association=self.author_association,
+            body=self.body,
         )

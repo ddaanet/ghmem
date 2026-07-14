@@ -3,15 +3,22 @@
 from datetime import date, datetime
 from pathlib import Path
 
+import msgspec
 import pytest
 
-from ghmem.aliases import GraphQLId, IssueOrPRNumber, JsonObject
-from ghmem.exceptions import IssueOrPRNotFoundError, PRDiffNotFoundError
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber, JsonObject
+from ghmem.exceptions import (
+    DiscussionNotFoundError,
+    IssueOrPRNotFoundError,
+    PRDiffNotFoundError,
+)
+from ghmem.ingest import _RawIssueOrPR
 from ghmem.ledger import FetchEvent, ItemEvent, Ledger
 from ghmem.models import CrossRef, FileStat
 from ghmem.store import RoutingEvent, Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fetch_small.jsonl"
+DISCUSSION_FIXTURE = Path(__file__).parent / "fixtures" / "fetch_discussion.jsonl"
 
 
 @pytest.fixture
@@ -19,6 +26,16 @@ def store(tmp_path: Path) -> Store:
     """Return a Store rebuilt from the small fixture ledger."""
     store = Store.open(tmp_path / "cache.sqlite")
     fetch: Ledger[FetchEvent] = Ledger(FIXTURE)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+    store.rebuild_from_ledgers(fetch, routing)
+    return store
+
+
+@pytest.fixture
+def discussion_store(tmp_path: Path) -> Store:
+    """Return a Store rebuilt from the discussion fixture ledger."""
+    store = Store.open(tmp_path / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(DISCUSSION_FIXTURE)
     routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
     store.rebuild_from_ledgers(fetch, routing)
     return store
@@ -187,3 +204,91 @@ def test_pr_diff_missing_raises(store: Store) -> None:
     """
     with pytest.raises(PRDiffNotFoundError):
         store.pr_diff_for(IssueOrPRNumber(1))
+
+
+def test_discussion_roundtrips_through_rebuild(discussion_store: Store) -> None:
+    """A discussion and its comments round-trip through rebuild.
+
+    When: a discussion, a top-level comment, a reply, and a reaction are
+      replayed from the ledger
+    Then: get_discussion returns the discussion, and
+      discussion_comments_for returns both comments ordered by
+      created_at, with the reply's parent_id pointing at the top-level
+      comment
+    """
+    discussion = discussion_store.get_discussion(DiscussionNumber(1))
+
+    assert discussion.id == GraphQLId("D_1")
+    assert discussion.title == "How does softwrap interact with colorcolumn?"
+    assert discussion.author == "octavia"
+    assert discussion_store.reactions_for(discussion.id)
+
+    comments = discussion_store.discussion_comments_for(discussion.id)
+    assert [c.id for c in comments] == [GraphQLId("DC_1"), GraphQLId("DC_2")]
+    assert comments[0].parent_id is None
+    assert comments[1].parent_id == GraphQLId("DC_1")
+
+
+def test_discussion_ghost_author(discussion_store: Store) -> None:
+    """A deleted GitHub account (null author) parses as "ghost".
+
+    When: a discussion node carries `author: null` (a deleted account)
+    Then: the parsed row's author is the literal "ghost", not None
+    """
+    discussion = discussion_store.get_discussion(DiscussionNumber(2))
+
+    assert discussion.author == "ghost"
+
+
+def test_discussion_null_answer_and_category(discussion_store: Store) -> None:
+    """An unanswered discussion has no answer id, and its category sticks.
+
+    When: a discussion node carries `answer: null` and a category node
+    Then: answer_id is None, and category stores the category node's name
+    """
+    discussion = discussion_store.get_discussion(DiscussionNumber(1))
+
+    assert discussion.answer_id is None
+    assert discussion.category == "Q&A"
+
+
+def test_get_discussion_missing_raises(discussion_store: Store) -> None:
+    """Looking up an unknown discussion number raises.
+
+    When: get_discussion is called with a number absent from the corpus
+    Then: DiscussionNotFoundError is raised, not None returned
+    """
+    with pytest.raises(DiscussionNotFoundError):
+        discussion_store.get_discussion(DiscussionNumber(999))
+
+
+def test_discussion_by_id_missing_returns_none(discussion_store: Store) -> None:
+    """An unknown discussion id resolves to None, not an error.
+
+    When: discussion_by_id is called with an id absent from the corpus
+    Then: None is returned rather than raising
+    """
+    assert discussion_store.discussion_by_id(GraphQLId("D_missing")) is None
+
+
+def test_raw_node_rejects_unknown_key() -> None:
+    """forbid_unknown_fields rejects a data object with a stray key.
+
+    When: a raw node's data carries a key not declared on its struct
+    Then: msgspec raises rather than silently ignoring it
+    """
+    node: JsonObject = {
+        "id": "I_1",
+        "__typename": "Issue",
+        "number": 1,
+        "title": "t",
+        "state": "OPEN",
+        "author": None,
+        "createdAt": "2026-05-01T09:00:00Z",
+        "updatedAt": "2026-05-01T09:00:00Z",
+        "body": "b",
+        "surpriseKey": "unexpected",
+    }
+
+    with pytest.raises(msgspec.ValidationError, match="surpriseKey"):
+        _RawIssueOrPR.parse(node)

@@ -25,7 +25,7 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.types import TypeDecorator
 
-from ghmem.aliases import GraphQLId, IssueOrPRNumber
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +126,7 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     type_annotation_map: ClassVar[dict[type, Any]] = {
         GraphQLId: String,
         IssueOrPRNumber: Integer,
+        DiscussionNumber: Integer,
         datetime: _ISODateTime,
     }
 
@@ -219,6 +220,34 @@ class PRDiff(Base):
     diffstat: Mapped[tuple[FileStat, ...]] = mapped_column(_DiffStatType)
     diff_text: Mapped[str]
     truncated: Mapped[bool]
+
+
+class Discussion(Base):
+    """A GitHub Discussion."""
+
+    id: Mapped[GraphQLId] = mapped_column(primary_key=True)
+    number: Mapped[DiscussionNumber] = mapped_column(unique=True)
+    title: Mapped[str]
+    body: Mapped[str]
+    author: Mapped[str]
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    category: Mapped[str]
+    answer_id: Mapped[GraphQLId | None]
+    author_association: Mapped[str | None]
+
+
+class DiscussionComment(Base):
+    """A comment on a discussion."""
+
+    id: Mapped[GraphQLId] = mapped_column(primary_key=True)
+    discussion_id: Mapped[GraphQLId]
+    parent_id: Mapped[GraphQLId | None]
+    author: Mapped[str]
+    created_at: Mapped[datetime]
+    updated_at: Mapped[datetime]
+    author_association: Mapped[str | None]
+    body: Mapped[str]
 
 
 class FetchFailed(Base):

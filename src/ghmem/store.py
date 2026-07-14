@@ -21,14 +21,20 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine, func, or_, select
 from sqlalchemy.orm import Session
 
-from ghmem.aliases import GraphQLId, IssueOrPRNumber
-from ghmem.exceptions import IssueOrPRNotFoundError, PRDiffNotFoundError
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
+from ghmem.exceptions import (
+    DiscussionNotFoundError,
+    IssueOrPRNotFoundError,
+    PRDiffNotFoundError,
+)
 from ghmem.ingest import RoutingEvent, rebuild_from_ledgers
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
     Comment,
     Commit,
     CrossRef,
+    Discussion,
+    DiscussionComment,
     FetchFailed,
     IssueOrPR,
     PRDiff,
@@ -185,6 +191,42 @@ class Store:
                     select(IssueOrPR)
                     .where(IssueOrPR.author == user)
                     .order_by(IssueOrPR.number)
+                ).scalars()
+            )
+
+    def get_discussion(self, number: DiscussionNumber) -> Discussion:
+        """Return the discussion numbered `number`.
+
+        Raises `DiscussionNotFoundError` if no such row was ever fetched.
+        """
+        with Session(self._engine) as session:
+            row = session.execute(
+                select(Discussion).where(Discussion.number == number)
+            ).scalar_one_or_none()
+        if row is None:
+            raise DiscussionNotFoundError(number)
+        return row
+
+    def discussion_by_id(self, discussion_id: GraphQLId) -> Discussion | None:
+        """Return the discussion with graphql id `discussion_id`.
+
+        Returns `None` if no such row was ever fetched.
+        """
+        with Session(self._engine) as session:
+            return session.execute(
+                select(Discussion).where(Discussion.id == discussion_id)
+            ).scalar_one_or_none()
+
+    def discussion_comments_for(
+        self, discussion_id: GraphQLId
+    ) -> list[DiscussionComment]:
+        """Return the comments on `discussion_id`, oldest first."""
+        with Session(self._engine) as session:
+            return list(
+                session.execute(
+                    select(DiscussionComment)
+                    .where(DiscussionComment.discussion_id == discussion_id)
+                    .order_by(DiscussionComment.created_at)
                 ).scalars()
             )
 

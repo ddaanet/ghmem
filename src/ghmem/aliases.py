@@ -7,3 +7,4 @@ type JsonObject = dict[str, Json]
 
 GraphQLId = NewType("GraphQLId", str)
 IssueOrPRNumber = NewType("IssueOrPRNumber", int)
+DiscussionNumber = NewType("DiscussionNumber", int)
