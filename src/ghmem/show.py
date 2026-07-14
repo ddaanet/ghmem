@@ -9,17 +9,25 @@ snapshot-testable: it only ever reads from an already-populated
 `Store`, never the network.
 """
 
+from collections import defaultdict
 from datetime import datetime
 
-from ghmem.aliases import GraphQLId, IssueOrPRNumber
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 from ghmem.exceptions import PRDiffNotFoundError
-from ghmem.models import Comment, FileStat, IssueOrPR, Review
+from ghmem.models import (
+    Comment,
+    Discussion,
+    DiscussionComment,
+    FileStat,
+    IssueOrPR,
+    Review,
+)
 from ghmem.standing import StandingTable
 from ghmem.store import Store
 
 DIFF_BODY_MAX_CHARS = 300  # PROVISIONAL — calibrated in subproject 4
 
-__all__ = ["DIFF_BODY_MAX_CHARS", "render"]
+__all__ = ["DIFF_BODY_MAX_CHARS", "render", "render_discussion"]
 
 
 def render(store: Store, standing: StandingTable, number: IssueOrPRNumber) -> str:
@@ -123,6 +131,87 @@ def _render_reactions(store: Store, item_id: GraphQLId) -> list[str]:
     lines = ["## Reactions", ""]
     lines.extend(f"- {r.content}\N{MULTIPLICATION SIGN}{r.count}" for r in reactions)
     lines.append("")
+    return lines
+
+
+def render_discussion(
+    store: Store, standing: StandingTable, number: DiscussionNumber
+) -> str:
+    """Render discussion `number`'s whole thread as deterministic markdown.
+
+    Resolves the discussion via `store.get_discussion`, so an unknown
+    `number` propagates `DiscussionNotFoundError` uncaught.
+    """
+    discussion = store.get_discussion(number)
+    lines: list[str] = [
+        *_render_discussion_header(discussion, standing),
+        "",
+        discussion.body,
+        "",
+    ]
+    lines.extend(_render_discussion_comments(store, standing, discussion))
+    lines.extend(_render_reactions(store, discussion.id))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_discussion_header(
+    discussion: Discussion, standing: StandingTable
+) -> list[str]:
+    """Render the title line and the category/author summary block."""
+    who = standing.annotation(discussion.author, discussion.created_at.date())
+    return [
+        f"# discussion #{discussion.number} {discussion.title}",
+        "",
+        f"- category: {discussion.category}",
+        f"- author: {who}",
+    ]
+
+
+def _render_discussion_comments(
+    store: Store, standing: StandingTable, discussion: Discussion
+) -> list[str]:
+    """Render comments nested one level: top-level, each followed by its replies.
+
+    GitHub discussions nest exactly one level, so this is a two-pass
+    group-by-`parent_id` over the single `discussion_comments_for`
+    list rather than a recursive render.
+    """
+    comments = store.discussion_comments_for(discussion.id)
+    top_level = [c for c in comments if c.parent_id is None]
+    if not top_level:
+        return []
+    replies_by_parent: dict[GraphQLId, list[DiscussionComment]] = defaultdict(list)
+    for c in comments:
+        if c.parent_id is not None:
+            replies_by_parent[c.parent_id].append(c)
+    lines = ["## Comments", ""]
+    for comment in top_level:
+        lines.extend(_render_discussion_comment(comment, standing, discussion))
+        lines.append("")
+        for reply in replies_by_parent[comment.id]:
+            lines.extend(
+                _render_discussion_comment(reply, standing, discussion, indent=True)
+            )
+            lines.append("")
+    return lines
+
+
+def _render_discussion_comment(
+    comment: DiscussionComment,
+    standing: StandingTable,
+    discussion: Discussion,
+    *,
+    indent: bool = False,
+) -> list[str]:
+    """Render one discussion comment or reply, marking it if it's the answer."""
+    prefix = "  " if indent else ""
+    who = standing.annotation(comment.author, comment.created_at.date())
+    lines = []
+    if comment.id == discussion.answer_id:
+        lines.append(f"{prefix}**\N{CHECK MARK} Accepted answer**")
+    lines.append(f"{prefix}### {comment.created_at.isoformat()} — {who}")
+    lines.append("")
+    lines.append(f"{prefix}{comment.body}")
     return lines
 
 

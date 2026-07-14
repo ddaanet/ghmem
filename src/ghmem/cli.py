@@ -2,11 +2,11 @@
 
 import click
 
-from ghmem.aliases import IssueOrPRNumber
-from ghmem.exceptions import IssueOrPRNotFoundError
+from ghmem.aliases import DiscussionNumber, IssueOrPRNumber
+from ghmem.exceptions import DiscussionNotFoundError, IssueOrPRNotFoundError
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
-from ghmem.show import render
+from ghmem.show import render, render_discussion
 from ghmem.standing import build_standing
 from ghmem.store import RoutingEvent, Store
 
@@ -41,5 +41,19 @@ def show(number: int) -> None:
         output = render(store, table, IssueOrPRNumber(number))
     except IssueOrPRNotFoundError:
         click.echo(f"ghmem show: no issue or pull request numbered #{number}", err=True)
+        raise SystemExit(1) from None
+    click.echo(output, nl=False)
+
+
+@main.command()
+@click.argument("number", type=int)
+def discussion(number: int) -> None:
+    """Render one discussion's whole thread as markdown."""
+    store = Store.open(sqlite_path())
+    table = build_standing(store)
+    try:
+        output = render_discussion(store, table, DiscussionNumber(number))
+    except DiscussionNotFoundError:
+        click.echo(f"ghmem discussion: no discussion numbered #{number}", err=True)
         raise SystemExit(1) from None
     click.echo(output, nl=False)
