@@ -219,6 +219,15 @@ emit from the local corpus.
   ~2022; 180 merges at time of comment)`), from a derived standing
   table rebuilt from corpus data; `triage` and `topic` output carries
   the same annotations.
+- `ghmem discussion <number>` — the read primitive for GitHub
+  Discussions, which carry their own number sequence disjoint from
+  issues/PRs (hence a distinct command, not a `show` mode: number `5`
+  can name both an issue and a discussion). Renders one discussion as
+  compact markdown: body, then comments interleaved with their
+  one-level replies, the accepted answer marked, and reactions — no
+  diff, reviews, merge line, or cross-references. Authors carry the
+  same standing annotation as `show`; discussion activity is
+  display-only and does not feed the standing derivation.
 - `ghmem heat` — deterministic ranking over the corpus: comment count,
   reaction count, distinct participants, cross-reference degree,
   recurrence span (years between first and last activity).
