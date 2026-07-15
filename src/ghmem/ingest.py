@@ -30,12 +30,14 @@ The base's `forbid_unknown_fields=True` makes the contract exact: an
 undeclared key on a raw-node `data` object is an error, so the sync
 driver must select the declared keys from GraphQL and no others.
 
-Replay being this strict, and the ledger being append-only with no
-rewrite path, the fetch driver must parse-then-append — validate a node
-against its `_RawNode` struct *before* writing it. A node that fails
-validation once it is on disk poisons that ledger line permanently:
-`rebuild_from_ledgers` raises on it every time, and recovery means
-hand-editing the durable artifact.
+Replay being this strict, the fetch driver must parse-then-append —
+validate a node against its `_RawNode` struct *before* writing it. This
+is not a data-loss guard; the ledger is JSONL, so a bad line can be
+repaired or dropped by hand. It is about where the error surfaces:
+validating at fetch time turns an ingestion error into a sync error,
+attributable to the call that produced the bad node, instead of one
+`rebuild_from_ledgers` raises later with only a JSON line to work back
+from.
 """
 
 from datetime import datetime
