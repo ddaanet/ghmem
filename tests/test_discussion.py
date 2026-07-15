@@ -34,14 +34,43 @@ def standing_table(store: Store) -> StandingTable:
     return build_standing(store)
 
 
+def _reply(comment_id: str, parent_id: str | None, minute: int) -> dict[str, object]:
+    """Build one discussion_comment fetch event on D_1, at 12:`minute`."""
+    stamp = f"2026-06-01T12:{minute:02d}:00Z"
+    return {
+        "type": "discussion_comment",
+        "data": {
+            "id": comment_id,
+            "discussionId": "D_1",
+            "parentId": parent_id,
+            "author": {"login": "stray1"},
+            "createdAt": stamp,
+            "updatedAt": stamp,
+            "body": f"Body of {comment_id}.",
+        },
+    }
+
+
+def _store_with(tmp_path: Path, *events: dict[str, object]) -> Store:
+    """Return a Store rebuilt from the fixture corpus plus `events`."""
+    fetch_path = tmp_path / "fetch.jsonl"
+    lines = [*FIXTURE.read_text().splitlines(), *(json.dumps(e) for e in events)]
+    fetch_path.write_text("\n".join(lines) + "\n")
+    store = Store.open(tmp_path / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(fetch_path)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+    store.rebuild_from_ledgers(fetch, routing)
+    return store
+
+
 def test_render_discussion_golden(store: Store, standing_table: StandingTable) -> None:
     """Full markdown snapshot: header, body, nested comments, answer, reactions.
 
     When: discussion #1 is rendered
     Then: the output matches the expected markdown exactly — header with
       category and annotated author, body, chronological comments with
-      the reply indented under its parent, the answer marked in place,
-      and the reaction count
+      the reply one heading level below its parent, the answer marked in
+      place, and the reaction count
     """
     output = render_discussion(store, standing_table, DiscussionNumber(1))
 
@@ -60,9 +89,9 @@ def test_render_discussion_golden(store: Store, standing_table: StandingTable) -
 
         First top-level comment.
 
-          ### 2026-06-01T10:30:00+00:00 — asker1 (newcomer)
+        #### 2026-06-01T10:30:00+00:00 — asker1 (newcomer)
 
-          Reply to the first comment.
+        Reply to the first comment.
 
         **\N{CHECK MARK} Accepted answer**
         ### 2026-06-01T11:00:00+00:00 — answerer1 (newcomer)
@@ -76,58 +105,40 @@ def test_render_discussion_golden(store: Store, standing_table: StandingTable) -
     )
 
 
-def test_reply_indented_under_parent(
+def test_reply_nested_one_heading_below_parent(
     store: Store, standing_table: StandingTable
 ) -> None:
-    """A reply renders indented one level, immediately after its parent.
+    """A reply renders one heading level below its parent, right after it.
 
     When: discussion #1's DC_2 replies to top-level comment DC_1
-    Then: the reply's heading is indented and appears after the parent's
-      body but before the next top-level comment
+    Then: the reply's heading is an h4 and appears after the parent's
+      body but before the next top-level comment, which is back at h3
     """
     output = render_discussion(store, standing_table, DiscussionNumber(1))
 
     parent_body = output.index("First top-level comment.")
-    reply_heading = output.index("  ### 2026-06-01T10:30:00+00:00 — asker1")
-    next_top_level = output.index("### 2026-06-01T11:00:00+00:00 — answerer1")
+    reply_heading = output.index("\n#### 2026-06-01T10:30:00+00:00 — asker1")
+    next_top_level = output.index("\n### 2026-06-01T11:00:00+00:00 — answerer1")
     assert parent_body < reply_heading < next_top_level
 
 
 def test_orphan_reply_rendered_at_top_level_with_warning(tmp_path: Path) -> None:
-    """A reply whose parent is absent still renders, un-indented, and warns.
+    """A reply whose parent is absent still renders, at top level, and warns.
 
     When: DC_9 on discussion #1 names parent DC_absent, which the corpus
       never fetched
     Then: OrphanReplyWarning is raised and the reply's body still appears,
-      with its heading un-indented since it has no parent to nest under
+      at h3 rather than h4, since it has no parent to nest under
     """
-    lines = FIXTURE.read_text().splitlines()
-    orphan = {
-        "type": "discussion_comment",
-        "data": {
-            "id": "DC_9",
-            "discussionId": "D_1",
-            "parentId": "DC_absent",
-            "author": {"login": "stray1"},
-            "createdAt": "2026-06-01T12:00:00Z",
-            "updatedAt": "2026-06-01T12:00:00Z",
-            "body": "Reply to a comment we never fetched.",
-        },
-    }
-    fetch_path = tmp_path / "fetch.jsonl"
-    fetch_path.write_text("\n".join([*lines, json.dumps(orphan)]) + "\n")
-    store = Store.open(tmp_path / "cache.sqlite")
-    fetch: Ledger[FetchEvent] = Ledger(fetch_path)
-    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
-    store.rebuild_from_ledgers(fetch, routing)
+    store = _store_with(tmp_path, _reply("DC_9", "DC_absent", 0))
     standing = build_standing(store)
 
     with pytest.warns(OrphanReplyWarning, match="DC_absent"):
         output = render_discussion(store, standing, DiscussionNumber(1))
 
-    assert "Reply to a comment we never fetched." in output
-    assert "### 2026-06-01T12:00:00+00:00 — stray1" in output
-    assert "  ### 2026-06-01T12:00:00+00:00 — stray1" not in output
+    assert "Body of DC_9." in output
+    assert "\n### 2026-06-01T12:00:00+00:00 — stray1" in output
+    assert "\n#### 2026-06-01T12:00:00+00:00 — stray1" not in output
 
 
 def test_accepted_answer_marked(store: Store, standing_table: StandingTable) -> None:

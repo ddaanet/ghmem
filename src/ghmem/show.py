@@ -5,10 +5,10 @@ header, body, timeline (comments merged with reviews and their nested
 review comments), cross-references, reactions, and (for pull requests)
 the diff — as deterministic markdown, annotating every author with
 their standing as of that entry's own date. `render_discussion` does
-the same for a discussion by number: header, body, comments nested one
-level (reply under parent, accepted answer marked in place), and
-reactions. Offline and snapshot-testable: both only ever read from an
-already-populated `Store`, never the network.
+the same for a discussion by number: header, body, comments nested by
+heading depth (each reply one level below its parent, accepted answer
+marked in place), and reactions. Offline and snapshot-testable: both
+only ever read from an already-populated `Store`, never the network.
 """
 
 import warnings
@@ -29,6 +29,9 @@ from ghmem.standing import StandingTable
 from ghmem.store import Store
 
 DIFF_BODY_MAX_CHARS = 300  # PROVISIONAL — calibrated in subproject 4
+
+_TOP_HEADING_LEVEL = 3  # `###`, under the `## Comments` section
+_REPLY_HEADING_LEVEL = 4  # `####`, one below its parent comment
 
 __all__ = [
     "DIFF_BODY_MAX_CHARS",
@@ -184,17 +187,17 @@ def _render_discussion_comments(
 ) -> list[str]:
     """Render comments nested one level: top-level, each followed by its replies.
 
-    GitHub discussions nest exactly one level, so this is a two-pass
-    group-by-`parent_id` over the single `discussion_comments_for`
-    list rather than a recursive render.
+    GitHub discussions nest exactly one level — a reply cannot itself be
+    replied to — so this is a two-pass group-by-`parent_id` over the
+    single `discussion_comments_for` list rather than a recursive render.
 
-    A reply whose `parent_id` names a comment absent from that list has
-    nowhere to nest, so it renders un-indented in its own chronological
-    place and warns. Corpus content is never dropped for want of a
-    parent; the warning is what surfaces the gap for a sync driver to
-    close.
+    A reply whose `parent_id` names a comment absent from the corpus has
+    nowhere to nest, so it renders at top level and warns — a partial
+    fetch should not make a comment vanish from the render.
     """
     comments = store.discussion_comments_for(discussion.id)
+    if not comments:
+        return []
     by_id = {c.id: c for c in comments}
     top_level: list[DiscussionComment] = []
     replies_by_parent: dict[GraphQLId, list[DiscussionComment]] = defaultdict(list)
@@ -211,15 +214,19 @@ def _render_discussion_comments(
                 stacklevel=2,
             )
             top_level.append(c)
-    if not top_level:
-        return []
     lines = ["## Comments", ""]
     for comment in top_level:
-        lines.extend(_render_discussion_comment(comment, standing, discussion))
+        lines.extend(
+            _render_discussion_comment(
+                comment, standing, discussion, level=_TOP_HEADING_LEVEL
+            )
+        )
         lines.append("")
         for reply in replies_by_parent[comment.id]:
             lines.extend(
-                _render_discussion_comment(reply, standing, discussion, indent=True)
+                _render_discussion_comment(
+                    reply, standing, discussion, level=_REPLY_HEADING_LEVEL
+                )
             )
             lines.append("")
     return lines
@@ -230,17 +237,24 @@ def _render_discussion_comment(
     standing: StandingTable,
     discussion: Discussion,
     *,
-    indent: bool = False,
+    level: int,
 ) -> list[str]:
-    """Render one discussion comment or reply, marking it if it's the answer."""
-    prefix = "  " if indent else ""
+    """Render one discussion comment or reply, marking it if it's the answer.
+
+    `level` is the heading depth: `_TOP_HEADING_LEVEL` for a top-level
+    comment, `_REPLY_HEADING_LEVEL` for a reply. Depth is what carries
+    the nesting, because leading spaces cannot — markdown allows a
+    heading to be indented up to three spaces, so an indented `###`
+    either renders identically to its unindented parent or, in stricter
+    parsers, stops being a heading at all.
+    """
     who = standing.annotation(comment.author, comment.created_at.date())
     lines = []
     if comment.id == discussion.answer_id:
-        lines.append(f"{prefix}**\N{CHECK MARK} Accepted answer**")
-    lines.append(f"{prefix}### {comment.created_at.isoformat()} — {who}")
+        lines.append("**\N{CHECK MARK} Accepted answer**")
+    lines.append(f"{'#' * level} {comment.created_at.isoformat()} — {who}")
     lines.append("")
-    lines.append(f"{prefix}{comment.body}")
+    lines.append(comment.body)
     return lines
 
 
