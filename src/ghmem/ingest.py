@@ -26,27 +26,16 @@ by the sync driver and never stored here, and `"fetch_failed"` carries
 its own `{"id", "reason"}` shape (`FetchFailedData` in `ledger.py`)
 straight into the `fetch_failed` table.
 
-The `"discussion"` event's `data` requires `id`/`number`/`title`/`body`/
-`author`/`createdAt`/`updatedAt`/`category` (a `{name}` node)/`answer`
-(a `{id}` node or `null`); optional `authorAssociation`. The
-`"discussion_comment"` event requires `id`/`author`/`createdAt`/
-`updatedAt`/`body` plus **injected** `discussionId` and **injected**
-`parentId` (null on a top-level comment); optional
-`authorAssociation`.
+The base's `forbid_unknown_fields=True` makes the contract exact: an
+undeclared key on a raw-node `data` object is an error, so the sync
+driver must select the declared keys from GraphQL and no others.
 
-Every `_RawNode` subclass now sets `forbid_unknown_fields=True`
-(inherited from the base): every key on a raw-node `data` object must
-be a declared field, so the Part 3 sync driver must select exactly
-these keys from GraphQL, no more.
-
-Because replay is this strict and the ledger is append-only with no
-rewrite path, the fetch driver must parse-then-append: validate each
-node against its `_RawNode` struct *before* writing it to the ledger,
-never after. A node that fails validation once it's already on disk
-poisons that ledger line permanently — `rebuild_from_ledgers` raises on
-it every time, and recovering means hand-editing the durable artifact.
-Parsing first turns a stray or missing key into a fetch-time error
-instead of a replay-time one.
+Replay being this strict, and the ledger being append-only with no
+rewrite path, the fetch driver must parse-then-append — validate a node
+against its `_RawNode` struct *before* writing it. A node that fails
+validation once it is on disk poisons that ledger line permanently:
+`rebuild_from_ledgers` raises on it every time, and recovery means
+hand-editing the durable artifact.
 """
 
 from datetime import datetime

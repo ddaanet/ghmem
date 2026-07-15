@@ -1,5 +1,7 @@
 """Test the `show.render_discussion` renderer and its CLI wiring."""
 
+import json
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -9,7 +11,7 @@ from ghmem.aliases import DiscussionNumber
 from ghmem.cli import main
 from ghmem.exceptions import DiscussionNotFoundError
 from ghmem.ledger import FetchEvent, Ledger
-from ghmem.show import render_discussion
+from ghmem.show import OrphanReplyWarning, render_discussion
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import RoutingEvent, Store
 
@@ -43,32 +45,34 @@ def test_render_discussion_golden(store: Store, standing_table: StandingTable) -
     """
     output = render_discussion(store, standing_table, DiscussionNumber(1))
 
-    assert output == (
-        "# discussion #1 Why does wrapping jump at colorcolumn?\n"
-        "\n"
-        "- category: Q&A\n"
-        "- author: asker1 (newcomer)\n"
-        "\n"
-        "Body of discussion one.\n"
-        "\n"
-        "## Comments\n"
-        "\n"
-        "### 2026-06-01T10:00:00+00:00 — commenter1 (newcomer)\n"
-        "\n"
-        "First top-level comment.\n"
-        "\n"
-        "  ### 2026-06-01T10:30:00+00:00 — asker1 (newcomer)\n"
-        "\n"
-        "  Reply to the first comment.\n"
-        "\n"
-        "**\N{CHECK MARK} Accepted answer**\n"
-        "### 2026-06-01T11:00:00+00:00 — answerer1 (newcomer)\n"
-        "\n"
-        "Second top-level comment, the accepted answer.\n"
-        "\n"
-        "## Reactions\n"
-        "\n"
-        "- THUMBS_UP\N{MULTIPLICATION SIGN}2\n"
+    assert output == textwrap.dedent(
+        """\
+        # discussion #1 Why does wrapping jump at colorcolumn?
+
+        - category: Q&A
+        - author: asker1 (newcomer)
+
+        Body of discussion one.
+
+        ## Comments
+
+        ### 2026-06-01T10:00:00+00:00 — commenter1 (newcomer)
+
+        First top-level comment.
+
+          ### 2026-06-01T10:30:00+00:00 — asker1 (newcomer)
+
+          Reply to the first comment.
+
+        **\N{CHECK MARK} Accepted answer**
+        ### 2026-06-01T11:00:00+00:00 — answerer1 (newcomer)
+
+        Second top-level comment, the accepted answer.
+
+        ## Reactions
+
+        - THUMBS_UP\N{MULTIPLICATION SIGN}2
+        """
     )
 
 
@@ -87,6 +91,43 @@ def test_reply_indented_under_parent(
     reply_heading = output.index("  ### 2026-06-01T10:30:00+00:00 — asker1")
     next_top_level = output.index("### 2026-06-01T11:00:00+00:00 — answerer1")
     assert parent_body < reply_heading < next_top_level
+
+
+def test_orphan_reply_rendered_at_top_level_with_warning(tmp_path: Path) -> None:
+    """A reply whose parent is absent still renders, un-indented, and warns.
+
+    When: DC_9 on discussion #1 names parent DC_absent, which the corpus
+      never fetched
+    Then: OrphanReplyWarning is raised and the reply's body still appears,
+      with its heading un-indented since it has no parent to nest under
+    """
+    lines = FIXTURE.read_text().splitlines()
+    orphan = {
+        "type": "discussion_comment",
+        "data": {
+            "id": "DC_9",
+            "discussionId": "D_1",
+            "parentId": "DC_absent",
+            "author": {"login": "stray1"},
+            "createdAt": "2026-06-01T12:00:00Z",
+            "updatedAt": "2026-06-01T12:00:00Z",
+            "body": "Reply to a comment we never fetched.",
+        },
+    }
+    fetch_path = tmp_path / "fetch.jsonl"
+    fetch_path.write_text("\n".join([*lines, json.dumps(orphan)]) + "\n")
+    store = Store.open(tmp_path / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(fetch_path)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+    store.rebuild_from_ledgers(fetch, routing)
+    standing = build_standing(store)
+
+    with pytest.warns(OrphanReplyWarning, match="DC_absent"):
+        output = render_discussion(store, standing, DiscussionNumber(1))
+
+    assert "Reply to a comment we never fetched." in output
+    assert "### 2026-06-01T12:00:00+00:00 — stray1" in output
+    assert "  ### 2026-06-01T12:00:00+00:00 — stray1" not in output
 
 
 def test_accepted_answer_marked(store: Store, standing_table: StandingTable) -> None:

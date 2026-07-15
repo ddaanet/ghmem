@@ -262,15 +262,6 @@ def test_get_discussion_missing_raises(discussion_store: Store) -> None:
         discussion_store.get_discussion(DiscussionNumber(999))
 
 
-def test_discussion_by_id_missing_returns_none(discussion_store: Store) -> None:
-    """An unknown discussion id resolves to None, not an error.
-
-    When: discussion_by_id is called with an id absent from the corpus
-    Then: None is returned rather than raising
-    """
-    assert discussion_store.discussion_by_id(GraphQLId("D_missing")) is None
-
-
 def test_raw_node_rejects_unknown_key() -> None:
     """forbid_unknown_fields rejects a data object with a stray key.
 

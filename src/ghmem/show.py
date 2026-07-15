@@ -11,6 +11,7 @@ reactions. Offline and snapshot-testable: both only ever read from an
 already-populated `Store`, never the network.
 """
 
+import warnings
 from collections import defaultdict
 from datetime import datetime
 
@@ -29,7 +30,16 @@ from ghmem.store import Store
 
 DIFF_BODY_MAX_CHARS = 300  # PROVISIONAL — calibrated in subproject 4
 
-__all__ = ["DIFF_BODY_MAX_CHARS", "render", "render_discussion"]
+__all__ = [
+    "DIFF_BODY_MAX_CHARS",
+    "OrphanReplyWarning",
+    "render",
+    "render_discussion",
+]
+
+
+class OrphanReplyWarning(UserWarning):
+    """A discussion reply names a parent comment absent from the corpus."""
 
 
 def render(store: Store, standing: StandingTable, number: IssueOrPRNumber) -> str:
@@ -178,19 +188,31 @@ def _render_discussion_comments(
     group-by-`parent_id` over the single `discussion_comments_for`
     list rather than a recursive render.
 
-    Assumes every reply's `parent_id` names a comment present in that
-    same list: a reply whose parent is absent is silently dropped, not
-    rendered under a fallback. A future sync driver owns keeping that
-    invariant true.
+    A reply whose `parent_id` names a comment absent from that list has
+    nowhere to nest, so it renders un-indented in its own chronological
+    place and warns. Corpus content is never dropped for want of a
+    parent; the warning is what surfaces the gap for a sync driver to
+    close.
     """
     comments = store.discussion_comments_for(discussion.id)
-    top_level = [c for c in comments if c.parent_id is None]
-    if not top_level:
-        return []
+    by_id = {c.id: c for c in comments}
+    top_level: list[DiscussionComment] = []
     replies_by_parent: dict[GraphQLId, list[DiscussionComment]] = defaultdict(list)
     for c in comments:
-        if c.parent_id is not None:
+        if c.parent_id is None:
+            top_level.append(c)
+        elif c.parent_id in by_id:
             replies_by_parent[c.parent_id].append(c)
+        else:
+            warnings.warn(
+                f"discussion #{discussion.number}: reply {c.id} names absent "
+                f"parent {c.parent_id}; rendering it at top level",
+                OrphanReplyWarning,
+                stacklevel=2,
+            )
+            top_level.append(c)
+    if not top_level:
+        return []
     lines = ["## Comments", ""]
     for comment in top_level:
         lines.extend(_render_discussion_comment(comment, standing, discussion))

@@ -207,16 +207,6 @@ class Store:
             raise DiscussionNotFoundError(number)
         return row
 
-    def discussion_by_id(self, discussion_id: GraphQLId) -> Discussion | None:
-        """Return the discussion with graphql id `discussion_id`.
-
-        Returns `None` if no such row was ever fetched.
-        """
-        with Session(self._engine) as session:
-            return session.execute(
-                select(Discussion).where(Discussion.id == discussion_id)
-            ).scalar_one_or_none()
-
     def discussion_comments_for(
         self, discussion_id: GraphQLId
     ) -> list[DiscussionComment]:
