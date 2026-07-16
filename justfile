@@ -2,15 +2,19 @@
 help:
     @just --list --unsorted
 
+# Sync deps into .venv; skipped in the sandbox, which can't write uv's cache
+sync:
+    [ -n "$SANDBOX_RUNTIME" ] || uv sync --quiet
+
 # Format code: ruff fixes, ruff format, docformatter
-format:
-    uv run ruff check -q --fix-only
-    uv run ruff format -q
+format: sync
+    .venv/bin/ruff check -q --fix-only
+    .venv/bin/ruff format -q
     docformatter src tests
 
 # Format, lint, typecheck, test
 green: format
-    uv run ruff check -q
+    .venv/bin/ruff check -q
     docformatter -c src tests
-    uv run mypy
-    uv run pytest
+    .venv/bin/mypy
+    .venv/bin/pytest
