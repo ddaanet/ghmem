@@ -113,11 +113,20 @@ Modified in Part 3:
   deliberately: a plan that omits a file gets implementers who never
   open it, and that gap cost the discussions slice an Important
   finding. `FetchEvent` already unions all twelve kinds sync emits, so
-  **no new kind is expected**. But the drivers are the first code to
-  type-check `append` literals against that union — the read path
-  launders every line through `cast("E", json.loads(line))` — so if a
-  kind is missing or misshapen, T2/T3 is where mypy finally says so.
-  Fix it here if it fires; never paper over it with a `cast`.
+  **no new kind is expected**. Two checks guard the drivers, on
+  different axes — keep them straight:
+  - **Kind, static.** `Ledger.__iter__` is generic over `E` and returns
+    `cast("E", json.loads(line))` — a static-only cast, no runtime
+    check — so mypy never re-validates events on read. The T2/T3
+    `append` literals are therefore the first place it tests a
+    `type`/`data` envelope against the `FetchEvent` union. A missing or
+    wrong kind surfaces there: fix `ledger.py`, never silence it with a
+    `cast`.
+  - **Node shape, runtime.** A misshapen `data` payload is msgspec's
+    job, not mypy's (`data` is `JsonObject`, opaque to mypy):
+    `ingest`'s `msgspec.convert(..., forbid_unknown_fields=True)`
+    rejects it at rebuild. That is the parse-before-append contract
+    below, exercised by `test_appended_nodes_satisfy_raw_contract`.
 
 **Consumed from Parts 1–2** (not redefined here): `Ledger[FetchEvent]`
 and the `FetchEvent` schema (`ledger.py`), `Store`
@@ -160,42 +169,45 @@ Modify `src/ghmem/exceptions.py` (add the github errors), `pyproject.toml`
 
 **Produces:**
 
-- `class GitHubClient`; `GitHubClient.from_env() -> GitHubClient`
-  (token: `$GITHUB_TOKEN` else `gh auth token`; raise `AuthError` if
-  neither). **Construct githubkit with `auto_retry=False`**, or a
+- `class GitHubClient`; `GitHubClient.from_env() -> GitHubClient` —
+  token from `$GITHUB_TOKEN`, else `gh auth token`, else raise
+  `AuthError`.
+- **Construct githubkit with `auto_retry=False`** (or a
   `RetryDecisionFunc` that declines on rate-limit errors while keeping
-  the 5xx retries. This is not optional: githubkit defaults
-  `auto_retry=True`, whose `RetryRateLimit` reacts to a rate limit by
-  **blocking** in `time.sleep(x-ratelimit-reset - now)` — up to a full
-  hour on a primary limit. That silently swallows the
-  persist-cursor-and-exit design below and hangs the sync instead.
+  the 5xx retries). Not optional: githubkit defaults `auto_retry=True`,
+  whose `RetryRateLimit` reacts to a rate limit by **blocking** in
+  `time.sleep(x-ratelimit-reset - now)` — up to a full hour on a
+  primary limit. That silently swallows the persist-cursor-and-exit
+  design below and hangs the sync instead.
 - `graphql[R: msgspec.Struct](query: str, variables: JsonObject,
-  response: type[R]) -> R` — **every query must select `rateLimit {
-  cost remaining resetAt }`** (verified 2026-07-15, not an inherited
-  assumption: githubkit does zero cost accounting, and this is the only
-  way to see the budget in **points**, GraphQL's real currency — a call
-  is not 1 point. `github.graphql()` returns the parsed `data` block
-  only, so the budget must arrive inside `data`). The wrapper reads
-  `rateLimit` from the raw `data` for accounting — raising
-  `RateLimitError(reset_at)` when `remaining` drops below a
-  safety-margin constant (e.g. one page's cost) instead of issuing the
-  next call — then converts the `data` block into the caller-supplied
-  Struct via `msgspec.convert(..., strict=True)`. Return type is the
-  query's own Struct,
-  not `JsonObject` — `type[R]` with `R: msgspec.Struct` type-checks
-  cleanly under strict mypy and validates the response at runtime.
-  `variables` stays `JsonObject`: a GraphQL variable map is arbitrary
-  JSON keyed by name and differs per query, so a second type param buys
-  nothing.
+  response: type[R]) -> R` — one call, four obligations:
+  - **Every query selects `rateLimit { cost remaining resetAt }`.**
+    Verified 2026-07-15, not an inherited assumption: githubkit does
+    zero cost accounting, and this is the only way to see the budget in
+    **points** — GraphQL's real currency, where a call is not 1 point.
+    `github.graphql()` returns the parsed `data` block only, so the
+    budget must arrive inside `data`.
+  - **Meter, then raise or proceed.** Read `rateLimit` from the raw
+    `data`; if `remaining` has fallen below a safety-margin constant
+    (e.g. one page's cost), raise `RateLimitError(reset_at)` rather than
+    issue the next call.
+  - **Convert into the caller's Struct** via `msgspec.convert(...,
+    strict=True)`, validating the response at runtime.
+  - **Return type is the query's own Struct, not `JsonObject`.**
+    `type[R]` with `R: msgspec.Struct` type-checks cleanly under strict
+    mypy. `variables` stays `JsonObject`, though: a GraphQL variable map
+    is arbitrary JSON keyed by name and differs per query, so a second
+    type param buys nothing.
 - `pr_diff_text(number: IssueOrPRNumber) -> tuple[str, bool]` — REST
   diff endpoint with `Accept: application/vnd.github.v3.diff`,
-  returning `(diff_text, truncated)`. **Diff text only.** The per-file
-  additions/deletions stats that `_RawPRDiff.files` wants come from the
-  GraphQL `pullRequest.files` connection in T2, not from here; the spec
-  pins REST at ~1 call/PR precisely because it is fetching only the
-  text. `truncated` is `True` when REST refuses an outsized diff —
-  discover its actual refusal signal (status and/or body) against the
-  live API and encode that, do not guess.
+  returning `(diff_text, truncated)`.
+  - **Diff text only.** The per-file additions/deletions stats that
+    `_RawPRDiff.files` wants come from the GraphQL `pullRequest.files`
+    connection in T2, not here; the spec pins REST at ~1 call/PR
+    precisely because it fetches only the text.
+  - `truncated` is `True` when REST refuses an outsized diff. Discover
+    its actual refusal signal (status and/or body) against the live API
+    and encode that — do not guess.
 - Added to `exceptions.py`: `class RateLimitError(Exception)` (carries
   `reset_at: datetime`; `Error` suffix per PEP 8, not
   `Exhausted`/`Exception`), `class AuthError(Exception)`.
@@ -240,11 +252,11 @@ githubkit responses; no network.
   T2 wires issues/PRs and commits; T3 extends this same entry point.
 - `cli.sync` — `ghmem sync [--resume]`; on `RateLimitError`, persist
   cursor (already in ledger), print resume hint, exit 0.
-- Per-query msgspec response Structs (issues page, PRs page,
-  nested-connection follow-up), each passed as `graphql(...,
-  response=<Struct>)`. These type the **wire**; they are not the
-  ledger's schema and are distinct from `ingest.py`'s `_Raw*` structs,
-  which type what gets **appended**.
+- Per-query msgspec response Structs — issues page, PRs page,
+  nested-connection follow-up — each passed as `graphql(...,
+  response=<Struct>)`. These type the **wire**, not the ledger's
+  schema; they are distinct from `ingest.py`'s `_Raw*` structs, which
+  type what gets **appended**.
 
 **Tricky algorithm — GraphQL batching with explicit nested cursors.**
 One top-level query paginates `repository.issues` (then
@@ -338,11 +350,10 @@ helpers — reuse them, do not fork a parallel implementation.
 
 **Produces:**
 
-- Discussions folded into `sync()`: paginate
-  `repository.discussions` (its own connection and its own number
-  space — `DiscussionNumber`, which collides with issue/PR numbers and
-  is deliberately kept separate), appending `discussion` and
-  `discussion_comment` events.
+- Discussions folded into `sync()`: paginate `repository.discussions`,
+  appending `discussion` and `discussion_comment` events. It is its own
+  connection with its own number space — `DiscussionNumber` collides
+  with issue/PR numbers and is deliberately kept separate.
 - Per-query msgspec response Structs for the discussions page and its
   nested comment/reply follow-ups.
 
