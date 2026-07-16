@@ -31,7 +31,11 @@
           "reactionGroups": [
             {"content": "THUMBS_UP", "users": {"totalCount": 3}},
             {"content": "HEART", "users": {"totalCount": 0}}
-          ]
+          ],
+          "timelineItems": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": []
+          }
         }
       ]
     }

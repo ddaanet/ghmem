@@ -33,7 +33,12 @@
           "reactionGroups": [
             {"content": "HOORAY", "users": {"totalCount": 2}}
           ],
+          "timelineItems": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": []
+          },
           "reviews": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": [
               {
                 "id": "RV_1",
@@ -42,6 +47,7 @@
                 "submittedAt": "2026-05-09T08:00:00Z",
                 "body": "LGTM",
                 "comments": {
+                  "pageInfo": {"hasNextPage": false, "endCursor": null},
                   "nodes": [
                     {
                       "id": "RVC_1",
@@ -57,12 +63,14 @@
             ]
           },
           "files": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": [
               {"path": "internal/display/softwrap.go", "additions": 42, "deletions": 5},
               {"path": "runtime/help/options.md", "additions": 3, "deletions": 0}
             ]
           },
           "closingIssuesReferences": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": [{"id": "I_1"}]
           }
         }

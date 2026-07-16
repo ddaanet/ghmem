@@ -2,12 +2,14 @@
 
 Fills the fetch ledger `store.rebuild_from_ledgers` replays. `sync()`
 drains three of the repository's connections in turn — `"issues"`,
-`"pull_requests"`, `"commits"` — each paginated `UPDATED_AT` ascending
-(commits oldest-first), persisting a `cursor` event per connection
-after every page is fully drained so `--resume` can restart each
-connection independently. T3 folds `"discussions"` into the same
-`sync()` entry point and reuses `_drain_follow_up` below for comment
-and reply pagination.
+`"pull_requests"`, `"commits"` — persisting a `cursor` event per
+connection after every page is fully drained so `--resume` can
+restart each connection independently. Issues and PRs paginate
+`UPDATED_AT` ascending; `Commit.history` has no `orderBy` argument and
+GitHub always returns it newest-first, so its high-water mark comes
+from the first node on a page, not the last. T3 folds `"discussions"`
+into the same `sync()` entry point and reuses `_drain_follow_up` below
+for comment and reply pagination.
 
 Two Struct families exist by design and must not be confused: the
 `_Wire` hierarchy here types what GraphQL sends back (camelCase,
@@ -24,10 +26,14 @@ raised — see `_drain_items_page`.
 
 Design notes on where this departs from a literal GraphQL schema walk:
 
-- **Cross-references** come from `PullRequest.closingIssuesReferences`
-  (a direct connection of the issues a PR closes), not by parsing
-  `timelineItems` for close events — same synthesized `cross_ref`
-  contract, a simpler and more reliable source.
+- **Cross-references** come from two sources, kept deliberately
+  separate rather than merged into one: `PullRequest.
+  closingIssuesReferences` (a direct connection of the issues a PR
+  closes) still supplies `"closes"` edges, unchanged; `timelineItems`,
+  filtered server-side to `CROSS_REFERENCED_EVENT` and selected on
+  both issues and PRs, supplies `"cross_referenced"` edges — the
+  associative issue↔issue and issue↔PR mentions `closingIssuesReferences`
+  never carried. Neither source double-emits the other's edge kind.
 - **Reactions** come from `reactionGroups` (GitHub's own aggregate,
   non-paginated `[{content, users{totalCount}}]`), not by paginating
   individual `reactions` and counting client-side.
@@ -37,9 +43,12 @@ Design notes on where this departs from a literal GraphQL schema walk:
   ISO-8601 `Z`-suffixed strings of the same shape still compare
   correctly for the `updated_at_hwm` high-water mark.
 - **Nested pagination beyond an item's own comments** (reviews, review
-  comments, reaction groups, files, closing issues) is taken as a
-  first page only — no test requires draining a second page there, and
-  `_drain_follow_up` is ready if that's ever needed.
+  comments, files, closing issues, timelineItems) is taken as a first
+  page only, but never silently: each one selects `pageInfo`, and a
+  first page reporting `hasNextPage` records a `fetch_failed` instead
+  of losing the overflow (`_check_truncated`) — loud truncation, not a
+  full drain. `_drain_follow_up` remains ready if a full drain is ever
+  needed instead.
 """
 
 from collections import Counter
@@ -96,15 +105,15 @@ class _PageInfo(_Wire):
 
 
 class _Page[T](_Wire):
-    """A paginated connection page: `{pageInfo, nodes}`."""
+    """A paginated connection page: `{pageInfo, nodes}`.
+
+    Every first-page-only nested connection (reviews, review comments,
+    files, closing issues, timelineItems) selects `pageInfo` too, not
+    just `nodes` — `_check_truncated` uses it to detect a first page
+    that didn't fully drain the connection.
+    """
 
     page_info: _PageInfo
-    nodes: list[T]
-
-
-class _Connection[T](_Wire):
-    """A first-page-only connection's node list: `{nodes}`."""
-
     nodes: list[T]
 
 
@@ -145,7 +154,7 @@ class _ReviewCommentNode(_Wire):
     path: str
 
 
-type _ReviewCommentsFirstPage = _Connection[_ReviewCommentNode]
+type _ReviewCommentsFirstPage = _Page[_ReviewCommentNode]
 
 
 class _ReviewNode(_Wire):
@@ -159,7 +168,7 @@ class _ReviewNode(_Wire):
     comments: _ReviewCommentsFirstPage
 
 
-type _ReviewsFirstPage = _Connection[_ReviewNode]
+type _ReviewsFirstPage = _Page[_ReviewNode]
 
 
 class _UserCount(_Wire):
@@ -183,8 +192,35 @@ class _FileStatNode(_Wire):
     deletions: int
 
 
-type _FilesFirstPage = _Connection[_FileStatNode]
-type _ClosingIssues = _Connection[_NodeRef]
+type _FilesFirstPage = _Page[_FileStatNode]
+type _ClosingIssues = _Page[_NodeRef]
+
+
+class _ReferencedSubject(_Wire):
+    """A `ReferencedSubject` union node (`Issue | PullRequest`), by id.
+
+    Both possible types carry `id`, so the two inline fragments GraphQL
+    requires on a union (`... on Issue { id } ... on PullRequest { id
+    }`) merge into this one bare `{id}` shape.
+    """
+
+    id: GraphQLId
+
+
+class _CrossReferencedEventNode(_Wire):
+    """A wire `CrossReferencedEvent` timelineItems node.
+
+    Only `source` (the referencing issue/PR) is selected — `target`
+    (the item whose timeline this event appears on) is always the
+    parent `_ItemNode` this connection was queried from, so
+    `_append_item_and_nested` injects it as `dstId` the same way it
+    injects `itemId` on a comment.
+    """
+
+    source: _ReferencedSubject
+
+
+type _TimelineItemsFirstPage = _Page[_CrossReferencedEventNode]
 
 
 class _ItemNode(_Wire):
@@ -193,7 +229,9 @@ class _ItemNode(_Wire):
     `reviews`, `files`, and `closing_issues_references` are `None` on
     an Issue node (GraphQL selects them only inside a `... on
     PullRequest` fragment); `merged_by`/`merged_at` are `None` on an
-    Issue node or an unmerged pull request.
+    Issue node or an unmerged pull request. `timeline_items` is
+    selected on both — cross-references (an issue or PR mentioning
+    another) occur on either.
     """
 
     id: GraphQLId
@@ -207,6 +245,7 @@ class _ItemNode(_Wire):
     body: str
     comments: _CommentsPage
     reaction_groups: list[_ReactionGroupNode]
+    timeline_items: _TimelineItemsFirstPage
     reviews: _ReviewsFirstPage | None = None
     merged_by: _Author | None = None
     merged_at: str | None = None
@@ -314,21 +353,37 @@ _ITEM_FIELDS = """
       nodes { id author { login } createdAt updatedAt body authorAssociation }
     }
     reactionGroups { content users { totalCount } }
+    timelineItems(first: 10, itemTypes: [CROSS_REFERENCED_EVENT]) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        ... on CrossReferencedEvent {
+          source { ... on Issue { id } ... on PullRequest { id } }
+        }
+      }
+    }
 """
 
 _PR_EXTRA_FIELDS = """
     mergedBy { login }
     mergedAt
     reviews(first: 20) {
+      pageInfo { hasNextPage endCursor }
       nodes {
         id author { login } state submittedAt body
         comments(first: 20) {
+          pageInfo { hasNextPage endCursor }
           nodes { id author { login } createdAt updatedAt body path }
         }
       }
     }
-    files(first: 50) { nodes { path additions deletions } }
-    closingIssuesReferences(first: 10) { nodes { id } }
+    files(first: 50) {
+      pageInfo { hasNextPage endCursor }
+      nodes { path additions deletions }
+    }
+    closingIssuesReferences(first: 10) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id }
+    }
 """
 
 _ISSUES_PAGE_QUERY = f"""
@@ -530,20 +585,36 @@ def _append_item_and_nested(ctx: _Sync, node: _ItemNode) -> None:
                     },
                 },
             )
-    if node.reviews is not None:
-        for review in node.reviews.nodes:
+    _append_reviews(ctx, node)
+    _append_cross_refs(ctx, node)
+    if node.files is not None:
+        _check_truncated(ctx, node.id, "files", node.files)
+
+
+def _append_reviews(ctx: _Sync, node: _ItemNode) -> None:
+    """Append a PR's first-page reviews and their first-page comments."""
+    if node.reviews is None:
+        return
+    _check_truncated(ctx, node.id, "reviews", node.reviews)
+    for review in node.reviews.nodes:
+        _append_validated(
+            ctx, {"type": "review", "data": _review_data(review, node.id)}
+        )
+        _check_truncated(ctx, node.id, "review comments", review.comments)
+        for review_comment in review.comments.nodes:
             _append_validated(
-                ctx, {"type": "review", "data": _review_data(review, node.id)}
+                ctx,
+                {
+                    "type": "review_comment",
+                    "data": _review_comment_data(review_comment, review.id),
+                },
             )
-            for review_comment in review.comments.nodes:
-                _append_validated(
-                    ctx,
-                    {
-                        "type": "review_comment",
-                        "data": _review_comment_data(review_comment, review.id),
-                    },
-                )
+
+
+def _append_cross_refs(ctx: _Sync, node: _ItemNode) -> None:
+    """Append this item's cross_ref edges: closing refs and mentions."""
     if node.closing_issues_references is not None:
+        _check_truncated(ctx, node.id, "closing issues", node.closing_issues_references)
         for ref in node.closing_issues_references.nodes:
             _append_validated(
                 ctx,
@@ -552,6 +623,19 @@ def _append_item_and_nested(ctx: _Sync, node: _ItemNode) -> None:
                     "data": {"srcId": node.id, "dstId": ref.id, "kind": "closes"},
                 },
             )
+    _check_truncated(ctx, node.id, "timelineItems", node.timeline_items)
+    for event in node.timeline_items.nodes:
+        _append_validated(
+            ctx,
+            {
+                "type": "cross_ref",
+                "data": {
+                    "srcId": event.source.id,
+                    "dstId": node.id,
+                    "kind": "cross_referenced",
+                },
+            },
+        )
 
 
 def _drain_item_comments(ctx: _Sync, node: _ItemNode) -> None:
@@ -593,7 +677,7 @@ def _append_pr_diff(ctx: _Sync, node: _ItemNode) -> None:
 
 
 def _sync_commits(ctx: _Sync, *, resume: bool) -> None:
-    """Drain the default branch's commit history, oldest-authored first."""
+    """Drain the default branch's commit history, newest-authored first."""
     after = _resume_cursor(ctx.fetch, "commits") if resume else None
     while True:
         response = ctx.client.graphql(
@@ -615,7 +699,7 @@ def _sync_commits(ctx: _Sync, *, resume: bool) -> None:
                     },
                 },
             )
-        hwm = page.nodes[-1].authored_date if page.nodes else ""
+        hwm = page.nodes[0].authored_date if page.nodes else ""
         if page.page_info.end_cursor is not None:
             ctx.fetch.append(
                 {
@@ -725,6 +809,27 @@ def _append_fetch_failed(ctx: _Sync, node_id: str, reason: str) -> None:
         {"type": "fetch_failed", "data": {"id": node_id, "reason": reason}}
     )
     ctx.counts["fetch_failed"] += 1
+
+
+def _check_truncated[T](
+    ctx: _Sync, item_id: GraphQLId, name: str, page: _Page[T]
+) -> None:
+    """Record a `fetch_failed` if `page`'s first page didn't fully drain.
+
+    Reviews, review comments, files, closing-issue references, and
+    timelineItems are all taken as first-page-only by design (never
+    drained past `pageInfo`) — this makes an oversized connection's
+    truncation visible via `store.fetch_failures()` instead of
+    silently losing data, without aborting the sync. Keyed by the
+    parent item's id, so a second truncated connection on the same
+    item overwrites the first's `fetch_failed` row on replay.
+    """
+    if page.page_info.has_next_page:
+        count = len(page.nodes)
+        reason = (
+            f"{name} truncated at first page ({count} nodes, hasNextPage) on {item_id}"
+        )
+        _append_fetch_failed(ctx, item_id, reason)
 
 
 def _drain_follow_up[T](

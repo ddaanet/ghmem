@@ -106,10 +106,13 @@ def test_full_sync_appends_expected_nodes(
     """A full sync appends every node kind the fixtures carry.
 
     When: `sync` drains a 2-page issues connection (one item with a
-      second nested comment page and one null node), a PR page (with a
-      review, reactions, files, and a closing issue reference), and a
+      second nested comment page, a `timelineItems` cross-referenced
+      mention, and one null node), a PR page (with a review,
+      reactions, files, and a closing issue reference), and a
       commit-history page
-    Then: the returned counts match the fixtures' node census
+    Then: the returned counts match the fixtures' node census, with
+      one `cross_ref` from the closing reference and one from the
+      `timelineItems` mention
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     client = _client(mocker, _ALL_PAGES)
@@ -122,7 +125,7 @@ def test_full_sync_appends_expected_nodes(
         review=1,
         review_comment=1,
         reaction=2,
-        cross_ref=1,
+        cross_ref=2,
         commit=2,
         pr_diff=1,
         fetch_failed=1,
@@ -170,8 +173,10 @@ def test_injected_relation_ids_attached(mocker: MockerFixture, tmp_path: Path) -
     parent it drained the connection from.
 
     When: a full sync appends a comment, a review, a review comment,
-      and a reaction
-    Then: each one's `data` carries the injected id GraphQL didn't send
+      a reaction, and both cross_ref kinds (a closing reference and a
+      `timelineItems` mention)
+    Then: each one's `data` carries the injected id GraphQL didn't
+      send, and each cross_ref carries the right `srcId`/`dstId`/`kind`
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     client = _client(mocker, _ALL_PAGES)
@@ -192,8 +197,10 @@ def test_injected_relation_ids_attached(mocker: MockerFixture, tmp_path: Path) -
     assert review_comment["reviewId"] == review["id"]
     reaction = next(r for r in by_type["reaction"] if r["subjectId"] == "I_1")
     assert reaction["content"] == "THUMBS_UP"
-    cross_ref = by_type["cross_ref"][0]
-    assert cross_ref == {"srcId": "I_3", "dstId": "I_1", "kind": "closes"}
+    closes = next(r for r in by_type["cross_ref"] if r["kind"] == "closes")
+    assert closes == {"srcId": "I_3", "dstId": "I_1", "kind": "closes"}
+    mention = next(r for r in by_type["cross_ref"] if r["kind"] == "cross_referenced")
+    assert mention == {"srcId": "I_3", "dstId": "I_2", "kind": "cross_referenced"}
 
 
 def test_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) -> None:
@@ -272,6 +279,38 @@ def test_null_node_recorded_fetch_failed(mocker: MockerFixture, tmp_path: Path) 
     assert store.get_issue_or_pr(IssueOrPRNumber(5)).id == "I_2"
 
 
+def test_truncated_nested_connection_records_fetch_failed(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A first-page-only connection past its limit is recorded, not lost.
+
+    `reviews`, review comments, files, closing issues, and
+    `timelineItems` are all taken as first-page-only by design; none of
+    them are drained past `pageInfo`. Losing data silently there would
+    defeat the point of the corpus, so an oversized one must at least
+    be visible.
+
+    When: a PR's `reviews` connection reports `hasNextPage: true` on
+      its first page
+    Then: sync records a `fetch_failed` naming the connection and node
+      count, keyed by the PR's id, and the sync still completes (the
+      PR item itself is still appended)
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+    pages = _ALL_PAGES | {(_PRsQueryResponse, None): "prs_page1_truncated_reviews.json"}
+
+    _sync_pull_requests(_ctx(mocker, fetch, pages), resume=False)
+
+    failures = [event["data"] for event in fetch if event["type"] == "fetch_failed"]
+    assert len(failures) == 1
+    assert failures[0]["id"] == "I_3"
+    assert failures[0]["reason"] == (
+        "reviews truncated at first page (1 nodes, hasNextPage) on I_3"
+    )
+    items = [event["data"] for event in fetch if event["type"] == "item"]
+    assert len(items) == 1
+
+
 def test_pr_diff_appended(mocker: MockerFixture, tmp_path: Path) -> None:
     """A PR's diff combines GraphQL file stats with REST diff text.
 
@@ -309,7 +348,29 @@ def test_commit_history_maps_oid_and_author_name(
 
     commits = [event["data"] for event in fetch if event["type"] == "commit"]
     assert len(commits) == 2
-    assert commits[0]["sha"] == "abc123def456"
-    assert commits[0]["author"] == "David Allouche"
-    assert commits[1]["sha"] == "def456abc789"
-    assert commits[1]["author"] == "Octavia Reviewer"
+    assert commits[0]["sha"] == "def456abc789"
+    assert commits[0]["author"] == "Octavia Reviewer"
+    assert commits[1]["sha"] == "abc123def456"
+    assert commits[1]["author"] == "David Allouche"
+
+
+def test_commit_hwm_is_newest_authored_date(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """The persisted commits cursor's hwm is the newest commit, not oldest.
+
+    GitHub's `Commit.history` connection has no `orderBy` and always
+    returns newest-first, so the fixture is newest-first too (matching
+    the live API) — the high-water mark must come from the first node
+    on the page, not the last.
+
+    When: `_sync_commits` drains a commit-history page
+    Then: the persisted `cursor` event's `updated_at_hwm` is the
+      newest commit's `authoredDate`
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+
+    cursors = [event["data"] for event in fetch if event["type"] == "cursor"]
+    assert cursors[0]["updated_at_hwm"] == "2026-05-09T07:00:00Z"

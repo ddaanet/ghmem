@@ -19,7 +19,13 @@
             "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": []
           },
-          "reactionGroups": []
+          "reactionGroups": [],
+          "timelineItems": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": [
+              {"source": {"id": "I_3"}}
+            ]
+          }
         },
         null
       ]
