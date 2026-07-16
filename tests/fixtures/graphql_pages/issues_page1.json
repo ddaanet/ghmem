@@ -1,0 +1,39 @@
+{
+  "rateLimit": {"cost": 1, "remaining": 4999, "resetAt": "2026-07-16T18:00:00Z"},
+  "repository": {
+    "issues": {
+      "pageInfo": {"hasNextPage": true, "endCursor": "issues-cursor-1"},
+      "nodes": [
+        {
+          "id": "I_1",
+          "__typename": "Issue",
+          "number": 1,
+          "title": "Softwrap loses column alignment",
+          "state": "OPEN",
+          "author": {"login": "octavia"},
+          "createdAt": "2026-05-01T09:00:00Z",
+          "updatedAt": "2026-05-02T10:00:00Z",
+          "body": "Wrapping ignores colorcolumn.",
+          "authorAssociation": "MEMBER",
+          "comments": {
+            "pageInfo": {"hasNextPage": true, "endCursor": "comments-cursor-1"},
+            "nodes": [
+              {
+                "id": "C_1",
+                "author": {"login": "reviewer1"},
+                "createdAt": "2026-05-01T11:00:00Z",
+                "updatedAt": "2026-05-01T11:00:00Z",
+                "body": "Can you add a test?",
+                "authorAssociation": "MEMBER"
+              }
+            ]
+          },
+          "reactionGroups": [
+            {"content": "THUMBS_UP", "users": {"totalCount": 3}},
+            {"content": "HEART", "users": {"totalCount": 0}}
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "rateLimit": {"cost": 1, "remaining": 4996, "resetAt": "2026-07-16T18:00:00Z"},
+  "repository": {
+    "pullRequests": {
+      "pageInfo": {"hasNextPage": false, "endCursor": "prs-cursor-1"},
+      "nodes": [
+        {
+          "id": "I_3",
+          "__typename": "PullRequest",
+          "number": 10,
+          "title": "Add softwrapcolumn option",
+          "state": "MERGED",
+          "author": {"login": "davida"},
+          "createdAt": "2026-05-03T09:00:00Z",
+          "updatedAt": "2026-05-10T12:00:00Z",
+          "body": "Implements the option.",
+          "authorAssociation": "CONTRIBUTOR",
+          "mergedBy": {"login": "maintainer"},
+          "mergedAt": "2026-05-10T12:00:00Z",
+          "comments": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": [
+              {
+                "id": "C_3",
+                "author": {"login": "maintainer"},
+                "createdAt": "2026-05-09T09:00:00Z",
+                "updatedAt": "2026-05-09T09:00:00Z",
+                "body": "Looks reasonable overall.",
+                "authorAssociation": "MEMBER"
+              }
+            ]
+          },
+          "reactionGroups": [
+            {"content": "HOORAY", "users": {"totalCount": 2}}
+          ],
+          "reviews": {
+            "nodes": [
+              {
+                "id": "RV_1",
+                "author": {"login": "maintainer"},
+                "state": "APPROVED",
+                "submittedAt": "2026-05-09T08:00:00Z",
+                "body": "LGTM",
+                "comments": {
+                  "nodes": [
+                    {
+                      "id": "RVC_1",
+                      "author": {"login": "maintainer"},
+                      "createdAt": "2026-05-09T08:00:00Z",
+                      "updatedAt": "2026-05-09T08:00:00Z",
+                      "body": "nice",
+                      "path": "src/softwrap.go"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "files": {
+            "nodes": [
+              {"path": "internal/display/softwrap.go", "additions": 42, "deletions": 5},
+              {"path": "runtime/help/options.md", "additions": 3, "deletions": 0}
+            ]
+          },
+          "closingIssuesReferences": {
+            "nodes": [{"id": "I_1"}]
+          }
+        }
+      ]
+    }
+  }
+}

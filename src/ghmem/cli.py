@@ -3,12 +3,18 @@
 import click
 
 from ghmem.aliases import DiscussionNumber, IssueOrPRNumber
-from ghmem.exceptions import DiscussionNotFoundError, IssueOrPRNotFoundError
+from ghmem.exceptions import (
+    DiscussionNotFoundError,
+    IssueOrPRNotFoundError,
+    RateLimitError,
+)
+from ghmem.github import GitHubClient
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
 from ghmem.show import render, render_discussion
 from ghmem.standing import build_standing
 from ghmem.store import RoutingEvent, Store
+from ghmem.sync import sync as run_sync
 
 
 @click.group()
@@ -29,6 +35,28 @@ def rebuild() -> None:
     routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
     store.rebuild_from_ledgers(fetch, routing)
     click.echo(f"Rebuilt {path}")
+
+
+@main.command()
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Resume each connection from its last persisted cursor.",
+)
+def sync(*, resume: bool) -> None:
+    """Fetch issues, pull requests, and commits into the fetch ledger."""
+    client = GitHubClient.from_env()
+    fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())
+    try:
+        result = run_sync(client, fetch, resume=resume)
+    except RateLimitError as exc:
+        click.echo(
+            f"ghmem sync: rate limit exhausted, resets at {exc.reset_at}. "
+            "Resume with `ghmem sync --resume`.",
+            err=True,
+        )
+        raise SystemExit(0) from None
+    click.echo(f"Synced: {dict(result.counts)}")
 
 
 @main.command()

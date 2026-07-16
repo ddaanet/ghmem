@@ -1,0 +1,18 @@
+{
+  "rateLimit": {"cost": 1, "remaining": 4998, "resetAt": "2026-07-16T18:00:00Z"},
+  "node": {
+    "comments": {
+      "pageInfo": {"hasNextPage": false, "endCursor": "comments-cursor-2"},
+      "nodes": [
+        {
+          "id": "C_2",
+          "author": {"login": "octavia"},
+          "createdAt": "2026-05-01T12:00:00Z",
+          "updatedAt": "2026-05-01T12:00:00Z",
+          "body": "Sure, adding one now.",
+          "authorAssociation": "MEMBER"
+        }
+      ]
+    }
+  }
+}

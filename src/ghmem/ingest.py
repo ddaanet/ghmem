@@ -97,6 +97,23 @@ def rebuild_from_ledgers(
 type RoutingEvent = JsonObject
 
 
+def validate_raw_node(event_type: str, data: JsonObject) -> None:
+    """Validate `data` against `event_type`'s raw-node contract.
+
+    The public half of parse-before-append: the sync driver calls this
+    on every node's `data` dict before appending it to the fetch
+    ledger, so a contract violation surfaces as a sync error naming the
+    call that produced it, instead of something `rebuild_from_ledgers`
+    raises later with only a ledger line to reason back from. Raises
+    `msgspec.ValidationError` on a violation (or `KeyError` if
+    `event_type` isn't a raw-node kind, e.g. `"cursor"` or
+    `"fetch_failed"`, neither of which has a `_Raw*` struct). Reuses
+    `_RawNode.parse`, discarding the entity it builds — only the
+    validation it performs as a side effect is wanted here.
+    """
+    _RAW_BY_TYPE[event_type].parse(data)
+
+
 def _replay_fetch_event(session: Session, event: FetchEvent) -> None:
     """Dispatch one `FetchEvent` to its table-specific upsert.
 
