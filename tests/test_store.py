@@ -12,9 +12,9 @@ from ghmem.exceptions import (
     IssueOrPRNotFoundError,
     PRDiffNotFoundError,
 )
-from ghmem.ingest import _RawIssueOrPR
 from ghmem.ledger import FetchEvent, Ledger, RawNodeEvent
 from ghmem.models import CrossRef, FileStat
+from ghmem.raw_nodes import _RawIssueOrPR
 from ghmem.store import RoutingEvent, Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fetch_small.jsonl"
