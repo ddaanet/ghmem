@@ -47,6 +47,7 @@ def _reply(comment_id: str, parent_id: str | None, minute: int) -> dict[str, obj
             "createdAt": stamp,
             "updatedAt": stamp,
             "body": f"Body of {comment_id}.",
+            "authorAssociation": "NONE",
         },
     }
 

@@ -64,73 +64,39 @@ class Ledger[E]:
         return self._path.exists()
 
 
-class ItemEvent(TypedDict):
-    """A raw GraphQL issue/PR node, as fetched."""
+type RawNodeType = Literal[
+    "item",
+    "comment",
+    "review",
+    "review_comment",
+    "reaction",
+    "cross_ref",
+    "commit",
+    "pr_diff",
+    "discussion",
+    "discussion_comment",
+]
+"""The `FetchEvent["type"]` tags whose `data` is a raw GraphQL node.
 
-    type: Literal["item"]
-    data: JsonObject
-
-
-class CommentEvent(TypedDict):
-    """A raw GraphQL comment node, as fetched."""
-
-    type: Literal["comment"]
-    data: JsonObject
-
-
-class ReviewEvent(TypedDict):
-    """A raw GraphQL review node, as fetched."""
-
-    type: Literal["review"]
-    data: JsonObject
-
-
-class ReviewCommentEvent(TypedDict):
-    """A raw GraphQL review-comment node, as fetched."""
-
-    type: Literal["review_comment"]
-    data: JsonObject
+The one enumeration of the raw-node kinds. `ingest.py`'s `_RawNode`
+subclasses annotate `_event_type` with this, so a struct claiming a tag
+this list doesn't have is a type error. The converse is not checked: a
+tag listed here with no struct to parse it stays a `KeyError` raised by
+`_RAW_BY_TYPE` at replay, since nothing can see the registry's contents
+statically.
+"""
 
 
-class ReactionEvent(TypedDict):
-    """A raw GraphQL reaction node, as fetched."""
+class RawNodeEvent(TypedDict):
+    """A raw GraphQL node, as fetched, tagged by which kind it is.
 
-    type: Literal["reaction"]
-    data: JsonObject
+    The ledger deliberately does not type `data` beyond `JsonObject`:
+    the shape of a raw node is `ingest.py`'s contract (its `_Raw*`
+    structs), not this module's, and duplicating it here would be a
+    second declaration to keep in step for no added checking.
+    """
 
-
-class CrossRefEvent(TypedDict):
-    """A raw GraphQL cross-reference node, as fetched."""
-
-    type: Literal["cross_ref"]
-    data: JsonObject
-
-
-class CommitEvent(TypedDict):
-    """A raw GraphQL commit node, as fetched."""
-
-    type: Literal["commit"]
-    data: JsonObject
-
-
-class PRDiffEvent(TypedDict):
-    """A raw GraphQL PR diff node, as fetched."""
-
-    type: Literal["pr_diff"]
-    data: JsonObject
-
-
-class DiscussionEvent(TypedDict):
-    """A raw GraphQL discussion node, as fetched."""
-
-    type: Literal["discussion"]
-    data: JsonObject
-
-
-class DiscussionCommentEvent(TypedDict):
-    """A raw GraphQL discussion-comment node, as fetched."""
-
-    type: Literal["discussion_comment"]
+    type: RawNodeType
     data: JsonObject
 
 
@@ -163,17 +129,4 @@ class FetchFailedEvent(TypedDict):
     data: FetchFailedData
 
 
-type FetchEvent = (
-    ItemEvent
-    | CommentEvent
-    | ReviewEvent
-    | ReviewCommentEvent
-    | ReactionEvent
-    | CrossRefEvent
-    | CommitEvent
-    | PRDiffEvent
-    | DiscussionEvent
-    | DiscussionCommentEvent
-    | CursorEvent
-    | FetchFailedEvent
-)
+type FetchEvent = RawNodeEvent | CursorEvent | FetchFailedEvent

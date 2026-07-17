@@ -22,6 +22,16 @@ the per-struct docstrings only flag departures from them:
 - a field marked **injected** has no analogue on the real GraphQL node
   and must be attached by the fetch driver itself.
 
+A key is optional here only where GitHub itself can omit it, never
+merely to be lenient. `authorAssociation` is required on every struct
+that has one, because GraphQL types it `CommentAuthorAssociation!` —
+non-null on every type carrying it. Were it optional, a driver that
+stopped selecting the field would look identical to one that selected
+it: the wire struct would default it to `None`, this contract would
+accept that `null`, and the column would go quietly empty for the whole
+corpus. `mergedBy` and `mergedAt` stay optional because an Issue node
+genuinely has neither.
+
 Two event types bypass the raw structs entirely: `"cursor"` is consumed
 by `sync.py` and never stored here, and `"fetch_failed"` carries
 its own `{"id", "reason"}` shape (`FetchFailedData` in `ledger.py`)
@@ -49,7 +59,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber, JsonObject
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RawNodeType
 from ghmem.models import (
     Base,
     Comment,
@@ -152,7 +162,7 @@ class _RawNode(
     self-contained class.
     """
 
-    _event_type: ClassVar[str]
+    _event_type: ClassVar[RawNodeType]
 
     def __init_subclass__(cls) -> None:
         # msgspec's metaclass consumes every struct-config class kwarg
@@ -217,12 +227,12 @@ class _RawIssueOrPR(_RawNode):
 
     Keys: `id`; `__typename` (`"Issue"` or `"PullRequest"`, the
     issue/PR discriminant); `number`; `title`; `state`; `author`;
-    `createdAt`; `updatedAt`; `body`. Optional: `mergedBy`
-    (`{"login": ...}` or `null`; omitted entirely for a
-    non-PR/unmerged node), `mergedAt`, `authorAssociation`.
+    `createdAt`; `updatedAt`; `body`; `authorAssociation`. Optional:
+    `mergedBy` (`{"login": ...}` or `null`; omitted entirely for a
+    non-PR/unmerged node), `mergedAt`.
     """
 
-    _event_type: ClassVar[str] = "item"
+    _event_type: ClassVar[RawNodeType] = "item"
 
     id: GraphQLId
     typename: str = msgspec.field(name="__typename")
@@ -233,9 +243,9 @@ class _RawIssueOrPR(_RawNode):
     created_at: datetime
     updated_at: datetime
     body: str
+    author_association: str
     merged_by: _RawLogin | None = None
     merged_at: datetime | None = None
-    author_association: str | None = None
 
     def to_entity(self) -> IssueOrPR:
         return IssueOrPR(
@@ -258,11 +268,11 @@ class _RawComment(_RawNode):
     """A raw IssueComment node — the `"comment"` event's `data`.
 
     Keys: `id`; `itemId` (**injected**: the fetch driver attaches the
-    parent issue/PR id); `author`; `createdAt`; `updatedAt`; `body`.
-    Optional: `authorAssociation`.
+    parent issue/PR id); `author`; `createdAt`; `updatedAt`; `body`;
+    `authorAssociation`.
     """
 
-    _event_type: ClassVar[str] = "comment"
+    _event_type: ClassVar[RawNodeType] = "comment"
 
     id: GraphQLId
     item_id: GraphQLId
@@ -270,7 +280,7 @@ class _RawComment(_RawNode):
     created_at: datetime
     updated_at: datetime
     body: str
-    author_association: str | None = None
+    author_association: str
 
     def to_entity(self) -> Comment:
         return Comment(
@@ -291,7 +301,7 @@ class _RawReview(_RawNode):
     `author`; `state`; `submittedAt`; `body`.
     """
 
-    _event_type: ClassVar[str] = "review"
+    _event_type: ClassVar[RawNodeType] = "review"
 
     id: GraphQLId
     pr_id: GraphQLId
@@ -318,7 +328,7 @@ class _RawReviewComment(_RawNode):
     `updatedAt`; `body`; `path`.
     """
 
-    _event_type: ClassVar[str] = "review_comment"
+    _event_type: ClassVar[RawNodeType] = "review_comment"
 
     id: GraphQLId
     review_id: GraphQLId
@@ -347,7 +357,7 @@ class _RawReaction(_RawNode):
     the group hangs off), `content`, `count`.
     """
 
-    _event_type: ClassVar[str] = "reaction"
+    _event_type: ClassVar[RawNodeType] = "reaction"
 
     subject_id: GraphQLId
     content: str
@@ -368,7 +378,7 @@ class _RawCrossRef(_RawNode):
     `dstId`, `kind` (e.g. `"closes"`).
     """
 
-    _event_type: ClassVar[str] = "cross_ref"
+    _event_type: ClassVar[RawNodeType] = "cross_ref"
 
     src_id: GraphQLId
     dst_id: GraphQLId
@@ -387,7 +397,7 @@ class _RawCommit(_RawNode):
     `authoredDate`, `message`.
     """
 
-    _event_type: ClassVar[str] = "commit"
+    _event_type: ClassVar[RawNodeType] = "commit"
 
     sha: str
     author: str
@@ -411,7 +421,7 @@ class _RawPRDiff(_RawNode):
     `diffText`; `truncated`.
     """
 
-    _event_type: ClassVar[str] = "pr_diff"
+    _event_type: ClassVar[RawNodeType] = "pr_diff"
 
     pr_number: IssueOrPRNumber
     files: list[_RawFileStat]
@@ -435,11 +445,10 @@ class _RawDiscussion(_RawNode):
 
     Keys: `id`; `number`; `title`; `body`; `author`; `createdAt`;
     `updatedAt`; `category` (a `{"name": ...}` node); `answer` (a
-    `{"id": ...}` node, or `null` if unanswered). Optional:
-    `authorAssociation`.
+    `{"id": ...}` node, or `null` if unanswered); `authorAssociation`.
     """
 
-    _event_type: ClassVar[str] = "discussion"
+    _event_type: ClassVar[RawNodeType] = "discussion"
 
     id: GraphQLId
     number: DiscussionNumber
@@ -450,7 +459,7 @@ class _RawDiscussion(_RawNode):
     updated_at: datetime
     category: _RawCategory
     answer: _RawIdRef | None
-    author_association: str | None = None
+    author_association: str
 
     def to_entity(self) -> Discussion:
         return Discussion(
@@ -472,12 +481,12 @@ class _RawDiscussionComment(_RawNode):
 
     Keys: `id`; `discussionId` (**injected**: the fetch driver attaches
     the parent discussion id); `author`; `createdAt`; `updatedAt`;
-    `body`. Optional: `authorAssociation`; `parentId` (**injected**:
+    `body`; `authorAssociation`. Optional: `parentId` (**injected**:
     omitted/null on a top-level comment, the parent comment's id on a
     reply).
     """
 
-    _event_type: ClassVar[str] = "discussion_comment"
+    _event_type: ClassVar[RawNodeType] = "discussion_comment"
 
     id: GraphQLId
     discussion_id: GraphQLId
@@ -485,7 +494,7 @@ class _RawDiscussionComment(_RawNode):
     created_at: datetime
     updated_at: datetime
     body: str
-    author_association: str | None = None
+    author_association: str
     parent_id: GraphQLId | None = None
 
     def to_entity(self) -> DiscussionComment:

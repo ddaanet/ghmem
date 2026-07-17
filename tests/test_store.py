@@ -13,7 +13,7 @@ from ghmem.exceptions import (
     PRDiffNotFoundError,
 )
 from ghmem.ingest import _RawIssueOrPR
-from ghmem.ledger import FetchEvent, ItemEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RawNodeEvent
 from ghmem.models import CrossRef, FileStat
 from ghmem.store import RoutingEvent, Store
 
@@ -141,10 +141,10 @@ def test_null_author_maps_to_ghost(tmp_path: Path) -> None:
         "updatedAt": "2026-05-01T09:00:00Z",
         "mergedBy": None,
         "mergedAt": None,
-        "authorAssociation": None,
+        "authorAssociation": "NONE",
         "body": "orphaned",
     }
-    event: ItemEvent = {"type": "item", "data": node}
+    event: RawNodeEvent = {"type": "item", "data": node}
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     fetch.append(event)
     routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")

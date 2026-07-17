@@ -57,39 +57,12 @@ import msgspec
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber, Json, JsonObject
 from ghmem.github import GitHubClient
 from ghmem.ingest import validate_raw_node
-from ghmem.ledger import (
-    CommentEvent,
-    CommitEvent,
-    CrossRefEvent,
-    CursorData,
-    DiscussionCommentEvent,
-    DiscussionEvent,
-    FetchEvent,
-    ItemEvent,
-    Ledger,
-    PRDiffEvent,
-    ReactionEvent,
-    ReviewCommentEvent,
-    ReviewEvent,
-)
+from ghmem.ledger import CursorData, FetchEvent, Ledger, RawNodeEvent
 
 _OWNER = "micro-editor"
 _REPO = "micro"
 _PAGE_SIZE = 50
 _COMMIT_PAGE_SIZE = 100
-
-type _RawFetchEvent = (
-    ItemEvent
-    | CommentEvent
-    | ReviewEvent
-    | ReviewCommentEvent
-    | ReactionEvent
-    | CrossRefEvent
-    | CommitEvent
-    | PRDiffEvent
-    | DiscussionEvent
-    | DiscussionCommentEvent
-)
 
 # --- Wire Structs: type what GraphQL sends back, not what gets appended. ---
 
@@ -138,7 +111,7 @@ class _CommentNode(_Wire):
     created_at: str
     updated_at: str
     body: str
-    author_association: str | None = None
+    author_association: str
 
 
 type _CommentsPage = _Page[_CommentNode]
@@ -233,7 +206,7 @@ class _ItemFields(_Wire):
     """The contract fields of an Issue/PullRequest node.
 
     `merged_by`/`merged_at` are `None` on an Issue node or an unmerged
-    pull request.
+    pull request — the only fields here GraphQL may leave out.
     """
 
     id: GraphQLId
@@ -245,9 +218,9 @@ class _ItemFields(_Wire):
     created_at: str
     updated_at: str
     body: str
+    author_association: str
     merged_by: _Author | None = None
     merged_at: str | None = None
-    author_association: str | None = None
 
 
 class _ItemNode(_ItemFields, kw_only=True):
@@ -369,7 +342,7 @@ class _DiscussionCommentFields(_Wire):
     created_at: str
     updated_at: str
     body: str
-    author_association: str | None = None
+    author_association: str
 
 
 type _RepliesFirstPage = _Page[_DiscussionCommentFields]
@@ -402,7 +375,7 @@ class _DiscussionFields(_Wire):
     updated_at: str
     category: _DiscussionCategoryNode
     answer: _NodeRef | None
-    author_association: str | None = None
+    author_association: str
 
 
 class _DiscussionNode(_DiscussionFields, kw_only=True):
@@ -448,240 +421,6 @@ class _RepliesFollowUpResponse(_Wire):
     """Top-level response for a comment's replies follow-up page."""
 
     node: _NodeReplies
-
-
-# --- GraphQL query text. ---
-
-
-class _Query(Template):
-    """A GraphQL query template, with `%name` placeholders.
-
-    GraphQL is brace-dense and spells its own variables `$name`, which
-    rules out both of the obvious notations: an f-string would need
-    every literal brace in the query doubled, and `string.Template`'s
-    default `$` delimiter would collide with `$after`/`$id`/`$since`.
-    `%` is not a token in GraphQL's grammar, so a `%name` placeholder
-    cannot be mistaken for anything in the query it sits in.
-
-    Values that GraphQL can carry as real query variables are passed
-    that way instead — see each query's `query(...)` signature. What is
-    left for this template is what GraphQL has no variables for: the
-    repository coordinates and the composed field sets.
-    """
-
-    delimiter = "%"
-
-
-_COMMENT_FIELDS = "id author { login } createdAt updatedAt body authorAssociation"
-"""The `_CommentNode` selection, shared by the item queries and the follow-up.
-
-Selected in three places — an issue's comments, a PR's comments, and
-the follow-up page for either — which must stay identical: they all
-decode into the same `_CommentNode`.
-"""
-
-_ITEM_FIELDS = _Query("""
-    id
-    __typename
-    number
-    title
-    state
-    author { login }
-    createdAt
-    updatedAt
-    body
-    authorAssociation
-    comments(first: %page_size) {
-      pageInfo { hasNextPage endCursor }
-      nodes { %comment_fields }
-    }
-    reactionGroups { content users { totalCount } }
-    timelineItems(first: 10, itemTypes: [CROSS_REFERENCED_EVENT]) {
-      pageInfo { hasNextPage endCursor }
-      nodes {
-        ... on CrossReferencedEvent {
-          source { ... on Issue { id } ... on PullRequest { id } }
-        }
-      }
-    }
-""").substitute(page_size=_PAGE_SIZE, comment_fields=_COMMENT_FIELDS)
-
-_PR_EXTRA_FIELDS = """
-    mergedBy { login }
-    mergedAt
-    reviews(first: 20) {
-      pageInfo { hasNextPage endCursor }
-      nodes {
-        id author { login } state submittedAt body
-        comments(first: 20) {
-          pageInfo { hasNextPage endCursor }
-          nodes { id author { login } createdAt updatedAt body path }
-        }
-      }
-    }
-    files(first: 50) {
-      pageInfo { hasNextPage endCursor }
-      nodes { path additions deletions }
-    }
-    closingIssuesReferences(first: 10) {
-      pageInfo { hasNextPage endCursor }
-      nodes { id }
-    }
-"""
-
-_ISSUES_PAGE_QUERY = _Query("""
-query($first: Int!, $after: String) {
-  rateLimit { cost remaining resetAt }
-  repository(owner: "%owner", name: "%repo") {
-    issues(first: $first, after: $after,
-           orderBy: {field: UPDATED_AT, direction: ASC}) {
-      pageInfo { hasNextPage endCursor }
-      nodes { %item_fields }
-    }
-  }
-}
-""").substitute(owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS)
-
-_PRS_PAGE_QUERY = _Query("""
-query($first: Int!, $after: String) {
-  rateLimit { cost remaining resetAt }
-  repository(owner: "%owner", name: "%repo") {
-    pullRequests(first: $first, after: $after,
-                 orderBy: {field: UPDATED_AT, direction: ASC}) {
-      pageInfo { hasNextPage endCursor }
-      nodes { %item_fields %pr_extra_fields }
-    }
-  }
-}
-""").substitute(
-    owner=_OWNER,
-    repo=_REPO,
-    item_fields=_ITEM_FIELDS,
-    pr_extra_fields=_PR_EXTRA_FIELDS,
-)
-
-_ITEM_COMMENTS_FOLLOWUP_QUERY = _Query("""
-query($id: ID!, $first: Int!, $after: String) {
-  rateLimit { cost remaining resetAt }
-  node(id: $id) {
-    ... on Issue {
-      comments(first: $first, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes { %comment_fields }
-      }
-    }
-    ... on PullRequest {
-      comments(first: $first, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes { %comment_fields }
-      }
-    }
-  }
-}
-""").substitute(comment_fields=_COMMENT_FIELDS)
-
-_COMMIT_HISTORY_QUERY = _Query("""
-query($first: Int!, $after: String, $since: GitTimestamp) {
-  rateLimit { cost remaining resetAt }
-  repository(owner: "%owner", name: "%repo") {
-    defaultBranchRef {
-      target {
-        ... on Commit {
-          history(first: $first, after: $after, since: $since) {
-            pageInfo { hasNextPage endCursor }
-            nodes { oid author { name } authoredDate committedDate message }
-          }
-        }
-      }
-    }
-  }
-}
-""").substitute(owner=_OWNER, repo=_REPO)
-
-_DISCUSSION_COMMENT_FIELDS = """
-    id
-    author { login }
-    createdAt
-    updatedAt
-    body
-    authorAssociation
-"""
-
-_DISCUSSION_COMMENTS_WITH_REPLIES = _Query("""
-          %discussion_comment_fields
-          replies(first: %page_size) {
-            pageInfo { hasNextPage endCursor }
-            nodes { %discussion_comment_fields }
-          }
-""").substitute(
-    page_size=_PAGE_SIZE, discussion_comment_fields=_DISCUSSION_COMMENT_FIELDS
-)
-"""One top-level discussion comment plus its first page of replies.
-
-Selected identically by the discussions page and by the comments
-follow-up, because both decode into `_DiscussionCommentNode`.
-"""
-
-_DISCUSSIONS_PAGE_QUERY = _Query("""
-query($first: Int!, $after: String) {
-  rateLimit { cost remaining resetAt }
-  repository(owner: "%owner", name: "%repo") {
-    discussions(first: $first, after: $after,
-                orderBy: {field: UPDATED_AT, direction: ASC}) {
-      pageInfo { hasNextPage endCursor }
-      nodes {
-        id
-        number
-        title
-        body
-        author { login }
-        createdAt
-        updatedAt
-        authorAssociation
-        category { name }
-        answer { id }
-        comments(first: %page_size) {
-          pageInfo { hasNextPage endCursor }
-          nodes { %comments_with_replies }
-        }
-      }
-    }
-  }
-}
-""").substitute(
-    owner=_OWNER,
-    repo=_REPO,
-    page_size=_PAGE_SIZE,
-    comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES,
-)
-
-_DISCUSSION_COMMENTS_FOLLOWUP_QUERY = _Query("""
-query($id: ID!, $first: Int!, $after: String) {
-  rateLimit { cost remaining resetAt }
-  node(id: $id) {
-    ... on Discussion {
-      comments(first: $first, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes { %comments_with_replies }
-      }
-    }
-  }
-}
-""").substitute(comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES)
-
-_DISCUSSION_REPLIES_FOLLOWUP_QUERY = _Query("""
-query($id: ID!, $first: Int!, $after: String) {
-  rateLimit { cost remaining resetAt }
-  node(id: $id) {
-    ... on DiscussionComment {
-      replies(first: $first, after: $after) {
-        pageInfo { hasNextPage endCursor }
-        nodes { %discussion_comment_fields }
-      }
-    }
-  }
-}
-""").substitute(discussion_comment_fields=_DISCUSSION_COMMENT_FIELDS)
 
 
 # --- sync() and its result. ---
@@ -737,6 +476,9 @@ def sync(client: GitHubClient, fetch: Ledger[FetchEvent]) -> SyncResult:
     return SyncResult(ctx.counts, cursors)
 
 
+# --- Issues and pull requests. ---
+
+
 def _sync_issues(ctx: _Sync) -> None:
     """Drain `repository.issues`, oldest-updated first."""
     after = _resume_cursor(ctx.fetch, "issues")
@@ -753,6 +495,84 @@ def _sync_issues(ctx: _Sync) -> None:
             return
 
 
+class _Query(Template):
+    """A GraphQL query template, with `%name` placeholders.
+
+    GraphQL is brace-dense and spells its own variables `$name`, which
+    rules out both of the obvious notations: an f-string would need
+    every literal brace in the query doubled, and `string.Template`'s
+    default `$` delimiter would collide with `$after`/`$id`/`$since`.
+    `%` is not a token in GraphQL's grammar, so a `%name` placeholder
+    cannot be mistaken for anything in the query it sits in.
+
+    Values that GraphQL can carry as real query variables are passed
+    that way instead — see each query's `graphql(...)` call. What is
+    left for this template is what GraphQL has no variables for: the
+    repository coordinates and the composed field sets.
+
+    A query built with this reads below the function that issues it, but
+    the field-set fragments it composes must read above it: `substitute`
+    runs at import, so unlike a name used inside a function body, these
+    bind in definition order.
+    """
+
+    delimiter = "%"
+
+
+_COMMENT_FIELDS = "id author { login } createdAt updatedAt body authorAssociation"
+"""The `_CommentNode` selection, shared by the item queries and the follow-up.
+
+Selected in three places — an issue's comments, a PR's comments, and
+the follow-up page for either — which must stay identical: they all
+decode into the same `_CommentNode`.
+"""
+
+_ITEM_FIELDS = _Query("""
+    id
+    __typename
+    number
+    title
+    state
+    author { login }
+    createdAt
+    updatedAt
+    body
+    authorAssociation
+    comments(first: %page_size) {
+      pageInfo { hasNextPage endCursor }
+      nodes { %comment_fields }
+    }
+    reactionGroups { content users { totalCount } }
+    timelineItems(first: 10, itemTypes: [CROSS_REFERENCED_EVENT]) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        ... on CrossReferencedEvent {
+          source { ... on Issue { id } ... on PullRequest { id } }
+        }
+      }
+    }
+""").substitute(page_size=_PAGE_SIZE, comment_fields=_COMMENT_FIELDS)
+"""The `_ItemNode` selection common to an issue and a pull request.
+
+Shared by `_ISSUES_PAGE_QUERY` and `_PRS_PAGE_QUERY`, which decode into
+the same `_ItemNode`; the PR query appends the `... on PullRequest`
+fields on top.
+"""
+
+_ISSUES_PAGE_QUERY = _Query("""
+query($first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    issues(first: $first, after: $after,
+           orderBy: {field: UPDATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { %item_fields }
+    }
+  }
+}
+""").substitute(owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS)
+
+
 def _sync_pull_requests(ctx: _Sync) -> None:
     """Drain `repository.pullRequests`, oldest-updated first."""
     after = _resume_cursor(ctx.fetch, "pull_requests")
@@ -767,6 +587,42 @@ def _sync_pull_requests(ctx: _Sync) -> None:
         )
         if after is None:
             return
+
+
+_PRS_PAGE_QUERY = _Query("""
+query($first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    pullRequests(first: $first, after: $after,
+                 orderBy: {field: UPDATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        %item_fields
+        mergedBy { login }
+        mergedAt
+        reviews(first: 20) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id author { login } state submittedAt body
+            comments(first: 20) {
+              pageInfo { hasNextPage endCursor }
+              nodes { id author { login } createdAt updatedAt body path }
+            }
+          }
+        }
+        files(first: 50) {
+          pageInfo { hasNextPage endCursor }
+          nodes { path additions deletions }
+        }
+        closingIssuesReferences(first: 10) {
+          pageInfo { hasNextPage endCursor }
+          nodes { id }
+        }
+      }
+    }
+  }
+}
+""").substitute(owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS)
 
 
 def _drain_items_page(
@@ -908,6 +764,27 @@ def _drain_item_comments(ctx: _Sync, node: _ItemNode) -> None:
         )
 
 
+_ITEM_COMMENTS_FOLLOWUP_QUERY = _Query("""
+query($id: ID!, $first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  node(id: $id) {
+    ... on Issue {
+      comments(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { %comment_fields }
+      }
+    }
+    ... on PullRequest {
+      comments(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { %comment_fields }
+      }
+    }
+  }
+}
+""").substitute(comment_fields=_COMMENT_FIELDS)
+
+
 def _append_pr_diff(ctx: _Sync, node: _ItemNode) -> None:
     """Fetch diff text over REST and append the `pr_diff` node."""
     diff_text, truncated = ctx.client.pr_diff_text(node.number)
@@ -926,6 +803,9 @@ def _append_pr_diff(ctx: _Sync, node: _ItemNode) -> None:
         "truncated": truncated,
     }
     _append_validated(ctx, {"type": "pr_diff", "data": data})
+
+
+# --- Commit history. ---
 
 
 def _sync_commits(ctx: _Sync) -> None:
@@ -984,6 +864,28 @@ def _sync_commits(ctx: _Sync) -> None:
         return
 
 
+_COMMIT_HISTORY_QUERY = _Query("""
+query($first: Int!, $after: String, $since: GitTimestamp) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    defaultBranchRef {
+      target {
+        ... on Commit {
+          history(first: $first, after: $after, since: $since) {
+            pageInfo { hasNextPage endCursor }
+            nodes { oid author { name } authoredDate committedDate message }
+          }
+        }
+      }
+    }
+  }
+}
+""").substitute(owner=_OWNER, repo=_REPO)
+
+
+# --- Discussions. ---
+
+
 def _sync_discussions(ctx: _Sync) -> None:
     """Drain `repository.discussions`, oldest-updated first."""
     after = _resume_cursor(ctx.fetch, "discussions")
@@ -996,6 +898,65 @@ def _sync_discussions(ctx: _Sync) -> None:
         after = _drain_discussions_page(ctx, response.repository.discussions)
         if after is None:
             return
+
+
+_DISCUSSION_COMMENT_FIELDS = """
+    id
+    author { login }
+    createdAt
+    updatedAt
+    body
+    authorAssociation
+"""
+"""The `_DiscussionCommentFields` selection — a comment or a reply alike."""
+
+_DISCUSSION_COMMENTS_WITH_REPLIES = _Query("""
+          %discussion_comment_fields
+          replies(first: %page_size) {
+            pageInfo { hasNextPage endCursor }
+            nodes { %discussion_comment_fields }
+          }
+""").substitute(
+    page_size=_PAGE_SIZE, discussion_comment_fields=_DISCUSSION_COMMENT_FIELDS
+)
+"""One top-level discussion comment plus its first page of replies.
+
+Selected identically by the discussions page and by the comments
+follow-up, because both decode into `_DiscussionCommentNode`.
+"""
+
+_DISCUSSIONS_PAGE_QUERY = _Query("""
+query($first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    discussions(first: $first, after: $after,
+                orderBy: {field: UPDATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        number
+        title
+        body
+        author { login }
+        createdAt
+        updatedAt
+        authorAssociation
+        category { name }
+        answer { id }
+        comments(first: %page_size) {
+          pageInfo { hasNextPage endCursor }
+          nodes { %comments_with_replies }
+        }
+      }
+    }
+  }
+}
+""").substitute(
+    owner=_OWNER,
+    repo=_REPO,
+    page_size=_PAGE_SIZE,
+    comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES,
+)
 
 
 def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
@@ -1083,6 +1044,21 @@ def _drain_discussion_comments_follow_up(
     return drained
 
 
+_DISCUSSION_COMMENTS_FOLLOWUP_QUERY = _Query("""
+query($id: ID!, $first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  node(id: $id) {
+    ... on Discussion {
+      comments(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { %comments_with_replies }
+      }
+    }
+  }
+}
+""").substitute(comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES)
+
+
 def _append_comment_replies(
     ctx: _Sync, discussion_id: GraphQLId, comment: _DiscussionCommentNode
 ) -> None:
@@ -1123,6 +1099,21 @@ def _append_comment_replies(
                 ),
             },
         )
+
+
+_DISCUSSION_REPLIES_FOLLOWUP_QUERY = _Query("""
+query($id: ID!, $first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  node(id: $id) {
+    ... on DiscussionComment {
+      replies(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { %discussion_comment_fields }
+      }
+    }
+  }
+}
+""").substitute(discussion_comment_fields=_DISCUSSION_COMMENT_FIELDS)
 
 
 # --- Raw-node reshaping: wire Struct -> ingest.py's `data` contract. ---
@@ -1170,7 +1161,7 @@ def _commit_data(commit: _CommitNode) -> JsonObject:
 # --- Shared plumbing: parse-before-append, follow-up draining, cursors. ---
 
 
-def _append_validated(ctx: _Sync, event: _RawFetchEvent) -> None:
+def _append_validated(ctx: _Sync, event: RawNodeEvent) -> None:
     """Validate `event`'s data against the raw-node contract, then append.
 
     Raises on a contract violation instead of writing: a malformed

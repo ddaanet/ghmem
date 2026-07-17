@@ -149,7 +149,7 @@ class IssueOrPR(Base):
     updated_at: Mapped[datetime]
     merged_by: Mapped[str | None]
     merged_at: Mapped[datetime | None]
-    author_association: Mapped[str | None]
+    author_association: Mapped[str]
     body: Mapped[str]
 
 
@@ -161,7 +161,7 @@ class Comment(Base):
     author: Mapped[str]
     created_at: Mapped[datetime]
     updated_at: Mapped[datetime]
-    author_association: Mapped[str | None]
+    author_association: Mapped[str]
     body: Mapped[str]
 
 
@@ -234,7 +234,7 @@ class Discussion(Base):
     updated_at: Mapped[datetime]
     category: Mapped[str]
     answer_id: Mapped[GraphQLId | None]
-    author_association: Mapped[str | None]
+    author_association: Mapped[str]
 
 
 class DiscussionComment(Base):
@@ -246,7 +246,7 @@ class DiscussionComment(Base):
     author: Mapped[str]
     created_at: Mapped[datetime]
     updated_at: Mapped[datetime]
-    author_association: Mapped[str | None]
+    author_association: Mapped[str]
     body: Mapped[str]
 
 
