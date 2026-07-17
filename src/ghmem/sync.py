@@ -660,10 +660,11 @@ class _Sync(NamedTuple):
 def sync(
     client: GitHubClient, fetch: Ledger[FetchEvent], *, resume: bool
 ) -> SyncResult:
-    """Fetch issues, pull requests (reviews/reactions/diffs), and commits.
+    """Fetch issues, pull requests, discussions, and commit history.
 
-    Drains the "issues", "pull_requests", and "commits" connections in
-    turn, appending every node behind parse-before-append and
+    Drains the "issues", "pull_requests", "commits", and "discussions"
+    connections in turn (issues/PRs bring their reviews, reactions, and
+    diffs), appending every node behind parse-before-append and
     persisting a `cursor` event per connection after each page is
     fully drained. On `resume=True`, each connection restarts from its
     own last-persisted cursor (`_resume_cursor`); one with no prior
@@ -785,7 +786,7 @@ def _append_reviews(ctx: _Sync, node: _ItemNode) -> None:
         _append_validated(
             ctx, {"type": "review", "data": _review_data(review, node.id)}
         )
-        _check_truncated(ctx, node.id, "review comments", review.comments)
+        _check_truncated(ctx, review.id, "review comments", review.comments)
         for review_comment in review.comments.nodes:
             _append_validated(
                 ctx,
@@ -1174,16 +1175,18 @@ def _check_truncated[T](
     timelineItems are all taken as first-page-only by design (never
     drained past `pageInfo`) — this makes an oversized connection's
     truncation visible via `store.fetch_failures()` instead of
-    silently losing data, without aborting the sync. Keyed by the
-    parent item's id, so a second truncated connection on the same
-    item overwrites the first's `fetch_failed` row on replay.
+    silently losing data, without aborting the sync. `item_id` is the
+    connection's owner — the PR for most, but the review for review
+    comments. Keyed by `f"{item_id}:{name}"` so two truncated
+    connections on one owner stay distinct rows instead of colliding
+    on replay.
     """
     if page.page_info.has_next_page:
         count = len(page.nodes)
         reason = (
             f"{name} truncated at first page ({count} nodes, hasNextPage) on {item_id}"
         )
-        _append_fetch_failed(ctx, item_id, reason)
+        _append_fetch_failed(ctx, f"{item_id}:{name}", reason)
 
 
 def _drain_follow_up[T](

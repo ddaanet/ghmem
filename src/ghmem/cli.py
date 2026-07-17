@@ -44,7 +44,7 @@ def rebuild() -> None:
     help="Resume each connection from its last persisted cursor.",
 )
 def sync(*, resume: bool) -> None:
-    """Fetch issues, pull requests, and commits into the fetch ledger."""
+    """Fetch issues, PRs, discussions, and commits into the fetch ledger."""
     client = GitHubClient.from_env()
     fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())
     try:

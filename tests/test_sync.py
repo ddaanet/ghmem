@@ -310,8 +310,8 @@ def test_truncated_nested_connection_records_fetch_failed(
     When: a PR's `reviews` connection reports `hasNextPage: true` on
       its first page
     Then: sync records a `fetch_failed` naming the connection and node
-      count, keyed by the PR's id, and the sync still completes (the
-      PR item itself is still appended)
+      count, keyed by the PR id and connection name, and the sync still
+      completes (the PR item itself is still appended)
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     pages = _ALL_PAGES | {(_PRsQueryResponse, None): "prs_page1_truncated_reviews.json"}
@@ -320,7 +320,7 @@ def test_truncated_nested_connection_records_fetch_failed(
 
     failures = [event["data"] for event in fetch if event["type"] == "fetch_failed"]
     assert len(failures) == 1
-    assert failures[0]["id"] == "I_3"
+    assert failures[0]["id"] == "I_3:reviews"
     assert failures[0]["reason"] == (
         "reviews truncated at first page (1 nodes, hasNextPage) on I_3"
     )
