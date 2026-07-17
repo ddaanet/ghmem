@@ -1,67 +1,56 @@
 """Resumable GraphQL sync: issues, PRs, commits, and discussions.
 
-Fills the fetch ledger `store.rebuild_from_ledgers` replays. `sync()`
-drains four of the repository's connections in turn — `"issues"`,
-`"pull_requests"`, `"commits"`, `"discussions"` — persisting a
-`cursor` event per connection after every page is fully drained so
-`--resume` can restart each connection independently. Issues, PRs,
-and discussions paginate `UPDATED_AT` ascending; `Commit.history` has
-no `orderBy` argument and GitHub always returns it newest-first, so
-its high-water mark comes from the first node on a page, not the
-last. Discussions reuse `_drain_follow_up` below for both a
-discussion's comments and a comment's replies.
+Fills the fetch ledger that `store.rebuild_from_ledgers` replays.
+`sync()` drains the `"issues"`, `"pull_requests"`, `"commits"`, and
+`"discussions"` connections in turn, persisting a `cursor` event after
+every fully drained page so each connection resumes independently.
 
-Two Struct families exist by design and must not be confused: the
-`_Wire` hierarchy here types what GraphQL sends back (camelCase,
-GraphQL connection shapes); `ingest.py`'s `_Raw*` structs type what
-gets appended (the ledger's schema-agnostic `data` contract). Every
-node this driver appends is reshaped from a wire Struct into a raw
-`data` dict and passed through `ingest.validate_raw_node` first —
-parse-before-append — so a reshaping bug surfaces immediately as a
-raised `msgspec.ValidationError`, not silently, and never reaches the
-ledger. That is distinct from a GraphQL connection returning a literal
-`null` list entry (an observed real-world API gap, not a driver bug):
-that case is recorded as a `fetch_failed` event and skipped, never
-raised — see `_drain_items_page`.
+Two Struct families exist by design and must not be confused. The
+`_Wire` hierarchy here types what GraphQL sends back; `ingest.py`'s
+`_Raw*` structs type what gets appended. Every node is encoded from a
+wire Struct into a raw `data` dict and passed through
+`ingest.validate_raw_node` before it is appended, so a reshaping bug
+raises `msgspec.ValidationError` at the offending call instead of
+reaching the ledger. A GraphQL connection returning a literal `null`
+entry is a real API gap rather than a driver bug, so it is recorded as
+`fetch_failed` and skipped — see `_drain_items_page`.
 
-Design notes on where this departs from a literal GraphQL schema walk:
+Where this departs from a literal GraphQL schema walk:
 
-- **Cross-references** come from two sources, kept deliberately
-  separate rather than merged into one: `PullRequest.
-  closingIssuesReferences` (a direct connection of the issues a PR
-  closes) still supplies `"closes"` edges, unchanged; `timelineItems`,
-  filtered server-side to `CROSS_REFERENCED_EVENT` and selected on
-  both issues and PRs, supplies `"cross_referenced"` edges — the
-  associative issue↔issue and issue↔PR mentions `closingIssuesReferences`
-  never carried. Neither source double-emits the other's edge kind.
-- **Reactions** come from `reactionGroups` (GitHub's own aggregate,
-  non-paginated `[{content, users{totalCount}}]`), not by paginating
-  individual `reactions` and counting client-side.
-- **Timestamps stay `str`** end to end in every wire Struct: they pass
-  straight through into the raw-node `data` dict unmodified, so there
-  is no risk of a reformatting drift from the string GitHub sent.
-  ISO-8601 `Z`-suffixed strings of the same shape still compare
+- **Cross-references** come from two deliberately separate sources.
+  `PullRequest.closingIssuesReferences` supplies `"closes"` edges.
+  `timelineItems`, filtered server-side to `CROSS_REFERENCED_EVENT`
+  and selected on both issues and PRs, supplies `"cross_referenced"`
+  edges — the associative mentions `closingIssuesReferences` never
+  carried. Neither source emits the other's edge kind.
+- **Reactions** come from `reactionGroups`, GitHub's own non-paginated
+  aggregate, rather than from counting individual `reactions`.
+- **Timestamps stay `str`** in every wire Struct, passing through to
+  the raw `data` dict unmodified, so GitHub's own string can never
+  drift through a reformat. Same-shape ISO-8601 strings still compare
   correctly for the `updated_at_hwm` high-water mark.
-- **Nested pagination beyond an item's own comments** (reviews, review
-  comments, files, closing issues, timelineItems) is taken as a first
-  page only, but never silently: each one selects `pageInfo`, and a
-  first page reporting `hasNextPage` records a `fetch_failed` instead
-  of losing the overflow (`_check_truncated`) — loud truncation, not a
-  full drain. `_drain_follow_up` remains ready if a full drain is ever
-  needed instead.
-- **Discussion comments and replies are fully drained**, unlike the
-  first-page-only nested connections above: every top-level comment on
-  a discussion (first page plus any follow-up pages) is appended
-  before any of that discussion's replies, so a reply's parent comment
-  is always already in the ledger by the time the reply is —
-  `_append_discussion_comments` is where this ordering lives, and it's
-  what keeps `show.OrphanReplyWarning` from ever firing on pagination
-  order alone.
+- **Commit history is a special case.** `Commit.history` takes no
+  `orderBy` and GitHub always returns it newest-first, so its
+  high-water mark is the first node on a page rather than the last,
+  and it resumes by `since:` rather than by cursor — see
+  `_sync_commits`.
+- **Nested connections other than comments** (reviews, review
+  comments, files, closing issues, timelineItems) are taken as a first
+  page only, but never silently: each selects `pageInfo`, and a first
+  page reporting `hasNextPage` records a `fetch_failed` via
+  `_check_truncated` rather than dropping the overflow.
+- **Discussion comments and replies are fully drained.** Every
+  top-level comment on a discussion is appended before any of that
+  discussion's replies, so a reply's parent is always already in the
+  ledger. `_append_discussion_comments` owns that ordering, and it is
+  what keeps `show.OrphanReplyWarning` from firing on pagination order
+  alone.
 """
 
 from collections import Counter
 from collections.abc import Callable, Iterator
-from typing import NamedTuple
+from string import Template
+from typing import NamedTuple, cast
 
 import msgspec
 
@@ -169,14 +158,19 @@ class _ReviewCommentNode(_Wire):
 type _ReviewCommentsFirstPage = _Page[_ReviewCommentNode]
 
 
-class _ReviewNode(_Wire):
-    """A wire PullRequestReview node with its first comments page."""
+class _ReviewFields(_Wire):
+    """The contract fields of a PullRequestReview node."""
 
     id: GraphQLId
     author: _Author | None
     state: str
     submitted_at: str
     body: str
+
+
+class _ReviewNode(_ReviewFields):
+    """A wire PullRequestReview node with its first comments page."""
+
     comments: _ReviewCommentsFirstPage
 
 
@@ -235,15 +229,11 @@ class _CrossReferencedEventNode(_Wire):
 type _TimelineItemsFirstPage = _Page[_CrossReferencedEventNode]
 
 
-class _ItemNode(_Wire):
-    """A wire Issue/PullRequest node: fields plus first-page nested data.
+class _ItemFields(_Wire):
+    """The contract fields of an Issue/PullRequest node.
 
-    `reviews`, `files`, and `closing_issues_references` are `None` on
-    an Issue node (GraphQL selects them only inside a `... on
-    PullRequest` fragment); `merged_by`/`merged_at` are `None` on an
-    Issue node or an unmerged pull request. `timeline_items` is
-    selected on both — cross-references (an issue or PR mentioning
-    another) occur on either.
+    `merged_by`/`merged_at` are `None` on an Issue node or an unmerged
+    pull request.
     """
 
     id: GraphQLId
@@ -255,13 +245,25 @@ class _ItemNode(_Wire):
     created_at: str
     updated_at: str
     body: str
+    merged_by: _Author | None = None
+    merged_at: str | None = None
+    author_association: str | None = None
+
+
+class _ItemNode(_ItemFields, kw_only=True):
+    """A wire Issue/PullRequest node: fields plus first-page nested data.
+
+    `reviews`, `files`, and `closing_issues_references` are `None` on
+    an Issue node (GraphQL selects them only inside a `... on
+    PullRequest` fragment). `timeline_items` is selected on both —
+    cross-references (an issue or PR mentioning another) occur on
+    either.
+    """
+
     comments: _CommentsPage
     reaction_groups: list[_ReactionGroupNode]
     timeline_items: _TimelineItemsFirstPage
     reviews: _ReviewsFirstPage | None = None
-    merged_by: _Author | None = None
-    merged_at: str | None = None
-    author_association: str | None = None
     closing_issues_references: _ClosingIssues | None = None
     files: _FilesFirstPage | None = None
 
@@ -312,11 +314,17 @@ class _GitActor(_Wire):
 
 
 class _CommitNode(_Wire):
-    """A wire Commit node from a `history` connection."""
+    """A wire Commit node from a `history` connection.
+
+    `committed_date` is selected but never appended: it exists solely
+    to drive the `since:` high-water mark, because that is the date
+    `history(since:)` filters on. See `_sync_commits`.
+    """
 
     oid: str
     author: _GitActor
     authored_date: str
+    committed_date: str
     message: str
 
 
@@ -347,12 +355,13 @@ class _CommitHistoryQueryResponse(_Wire):
     repository: _CommitsRepo
 
 
-class _ReplyNode(_Wire):
-    """A wire DiscussionComment reply node — no further nesting.
+class _DiscussionCommentFields(_Wire):
+    """The contract fields of a DiscussionComment, top-level or reply.
 
     GitHub discussions nest exactly one level (`show.render_discussion`
-    makes the same assumption on the read side), so a reply selects no
-    `replies` field of its own.
+    makes the same assumption on the read side), so a reply is exactly
+    these fields: it selects no `replies` connection of its own, and
+    needs no struct distinct from this one.
     """
 
     id: GraphQLId
@@ -363,19 +372,13 @@ class _ReplyNode(_Wire):
     author_association: str | None = None
 
 
-type _RepliesFirstPage = _Page[_ReplyNode]
+type _RepliesFirstPage = _Page[_DiscussionCommentFields]
 
 
-class _DiscussionCommentNode(_Wire):
+class _DiscussionCommentNode(_DiscussionCommentFields, kw_only=True):
     """A wire top-level DiscussionComment node with its first replies page."""
 
-    id: GraphQLId
-    author: _Author | None
-    created_at: str
-    updated_at: str
-    body: str
     replies: _RepliesFirstPage
-    author_association: str | None = None
 
 
 type _DiscussionCommentsPage = _Page[_DiscussionCommentNode]
@@ -387,8 +390,8 @@ class _DiscussionCategoryNode(_Wire):
     name: str
 
 
-class _DiscussionNode(_Wire):
-    """A wire Discussion node: fields plus its first-page comments."""
+class _DiscussionFields(_Wire):
+    """The contract fields of a Discussion node."""
 
     id: GraphQLId
     number: DiscussionNumber
@@ -399,8 +402,13 @@ class _DiscussionNode(_Wire):
     updated_at: str
     category: _DiscussionCategoryNode
     answer: _NodeRef | None
-    comments: _DiscussionCommentsPage
     author_association: str | None = None
+
+
+class _DiscussionNode(_DiscussionFields, kw_only=True):
+    """A wire Discussion node: fields plus its first-page comments."""
+
+    comments: _DiscussionCommentsPage
 
 
 type _DiscussionsPage = _Page[_DiscussionNode]
@@ -444,7 +452,35 @@ class _RepliesFollowUpResponse(_Wire):
 
 # --- GraphQL query text. ---
 
-_ITEM_FIELDS = """
+
+class _Query(Template):
+    """A GraphQL query template, with `%name` placeholders.
+
+    GraphQL is brace-dense and spells its own variables `$name`, which
+    rules out both of the obvious notations: an f-string would need
+    every literal brace in the query doubled, and `string.Template`'s
+    default `$` delimiter would collide with `$after`/`$id`/`$since`.
+    `%` is not a token in GraphQL's grammar, so a `%name` placeholder
+    cannot be mistaken for anything in the query it sits in.
+
+    Values that GraphQL can carry as real query variables are passed
+    that way instead — see each query's `query(...)` signature. What is
+    left for this template is what GraphQL has no variables for: the
+    repository coordinates and the composed field sets.
+    """
+
+    delimiter = "%"
+
+
+_COMMENT_FIELDS = "id author { login } createdAt updatedAt body authorAssociation"
+"""The `_CommentNode` selection, shared by the item queries and the follow-up.
+
+Selected in three places — an issue's comments, a PR's comments, and
+the follow-up page for either — which must stay identical: they all
+decode into the same `_CommentNode`.
+"""
+
+_ITEM_FIELDS = _Query("""
     id
     __typename
     number
@@ -455,9 +491,9 @@ _ITEM_FIELDS = """
     updatedAt
     body
     authorAssociation
-    comments(first: 50) {
+    comments(first: %page_size) {
       pageInfo { hasNextPage endCursor }
-      nodes { id author { login } createdAt updatedAt body authorAssociation }
+      nodes { %comment_fields }
     }
     reactionGroups { content users { totalCount } }
     timelineItems(first: 10, itemTypes: [CROSS_REFERENCED_EVENT]) {
@@ -468,7 +504,7 @@ _ITEM_FIELDS = """
         }
       }
     }
-"""
+""").substitute(page_size=_PAGE_SIZE, comment_fields=_COMMENT_FIELDS)
 
 _PR_EXTRA_FIELDS = """
     mergedBy { login }
@@ -493,69 +529,74 @@ _PR_EXTRA_FIELDS = """
     }
 """
 
-_ISSUES_PAGE_QUERY = f"""
-query($after: String) {{
-  rateLimit {{ cost remaining resetAt }}
-  repository(owner: "{_OWNER}", name: "{_REPO}") {{
-    issues(first: {_PAGE_SIZE}, after: $after,
-           orderBy: {{field: UPDATED_AT, direction: ASC}}) {{
-      pageInfo {{ hasNextPage endCursor }}
-      nodes {{ {_ITEM_FIELDS} }}
-    }}
-  }}
-}}
-"""
+_ISSUES_PAGE_QUERY = _Query("""
+query($first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    issues(first: $first, after: $after,
+           orderBy: {field: UPDATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { %item_fields }
+    }
+  }
+}
+""").substitute(owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS)
 
-_PRS_PAGE_QUERY = f"""
-query($after: String) {{
-  rateLimit {{ cost remaining resetAt }}
-  repository(owner: "{_OWNER}", name: "{_REPO}") {{
-    pullRequests(first: {_PAGE_SIZE}, after: $after,
-                 orderBy: {{field: UPDATED_AT, direction: ASC}}) {{
-      pageInfo {{ hasNextPage endCursor }}
-      nodes {{ {_ITEM_FIELDS} {_PR_EXTRA_FIELDS} }}
-    }}
-  }}
-}}
-"""
+_PRS_PAGE_QUERY = _Query("""
+query($first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    pullRequests(first: $first, after: $after,
+                 orderBy: {field: UPDATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes { %item_fields %pr_extra_fields }
+    }
+  }
+}
+""").substitute(
+    owner=_OWNER,
+    repo=_REPO,
+    item_fields=_ITEM_FIELDS,
+    pr_extra_fields=_PR_EXTRA_FIELDS,
+)
 
-_ITEM_COMMENTS_FOLLOWUP_QUERY = """
-query($id: ID!, $after: String) {
+_ITEM_COMMENTS_FOLLOWUP_QUERY = _Query("""
+query($id: ID!, $first: Int!, $after: String) {
   rateLimit { cost remaining resetAt }
   node(id: $id) {
     ... on Issue {
-      comments(first: 50, after: $after) {
+      comments(first: $first, after: $after) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login } createdAt updatedAt body authorAssociation }
+        nodes { %comment_fields }
       }
     }
     ... on PullRequest {
-      comments(first: 50, after: $after) {
+      comments(first: $first, after: $after) {
         pageInfo { hasNextPage endCursor }
-        nodes { id author { login } createdAt updatedAt body authorAssociation }
+        nodes { %comment_fields }
       }
     }
   }
 }
-"""
+""").substitute(comment_fields=_COMMENT_FIELDS)
 
-_COMMIT_HISTORY_QUERY = f"""
-query($after: String) {{
-  rateLimit {{ cost remaining resetAt }}
-  repository(owner: "{_OWNER}", name: "{_REPO}") {{
-    defaultBranchRef {{
-      target {{
-        ... on Commit {{
-          history(first: {_COMMIT_PAGE_SIZE}, after: $after) {{
-            pageInfo {{ hasNextPage endCursor }}
-            nodes {{ oid author {{ name }} authoredDate message }}
-          }}
-        }}
-      }}
-    }}
-  }}
-}}
-"""
+_COMMIT_HISTORY_QUERY = _Query("""
+query($first: Int!, $after: String, $since: GitTimestamp) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    defaultBranchRef {
+      target {
+        ... on Commit {
+          history(first: $first, after: $after, since: $since) {
+            pageInfo { hasNextPage endCursor }
+            nodes { oid author { name } authoredDate committedDate message }
+          }
+        }
+      }
+    }
+  }
+}
+""").substitute(owner=_OWNER, repo=_REPO)
 
 _DISCUSSION_COMMENT_FIELDS = """
     id
@@ -566,73 +607,81 @@ _DISCUSSION_COMMENT_FIELDS = """
     authorAssociation
 """
 
-_DISCUSSIONS_PAGE_QUERY = f"""
-query($after: String) {{
-  rateLimit {{ cost remaining resetAt }}
-  repository(owner: "{_OWNER}", name: "{_REPO}") {{
-    discussions(first: {_PAGE_SIZE}, after: $after,
-                orderBy: {{field: UPDATED_AT, direction: ASC}}) {{
-      pageInfo {{ hasNextPage endCursor }}
-      nodes {{
+_DISCUSSION_COMMENTS_WITH_REPLIES = _Query("""
+          %discussion_comment_fields
+          replies(first: %page_size) {
+            pageInfo { hasNextPage endCursor }
+            nodes { %discussion_comment_fields }
+          }
+""").substitute(
+    page_size=_PAGE_SIZE, discussion_comment_fields=_DISCUSSION_COMMENT_FIELDS
+)
+"""One top-level discussion comment plus its first page of replies.
+
+Selected identically by the discussions page and by the comments
+follow-up, because both decode into `_DiscussionCommentNode`.
+"""
+
+_DISCUSSIONS_PAGE_QUERY = _Query("""
+query($first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  repository(owner: "%owner", name: "%repo") {
+    discussions(first: $first, after: $after,
+                orderBy: {field: UPDATED_AT, direction: ASC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
         id
         number
         title
         body
-        author {{ login }}
+        author { login }
         createdAt
         updatedAt
         authorAssociation
-        category {{ name }}
-        answer {{ id }}
-        comments(first: {_PAGE_SIZE}) {{
-          pageInfo {{ hasNextPage endCursor }}
-          nodes {{
-            {_DISCUSSION_COMMENT_FIELDS}
-            replies(first: {_PAGE_SIZE}) {{
-              pageInfo {{ hasNextPage endCursor }}
-              nodes {{ {_DISCUSSION_COMMENT_FIELDS} }}
-            }}
-          }}
-        }}
-      }}
-    }}
-  }}
-}}
-"""
+        category { name }
+        answer { id }
+        comments(first: %page_size) {
+          pageInfo { hasNextPage endCursor }
+          nodes { %comments_with_replies }
+        }
+      }
+    }
+  }
+}
+""").substitute(
+    owner=_OWNER,
+    repo=_REPO,
+    page_size=_PAGE_SIZE,
+    comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES,
+)
 
-_DISCUSSION_COMMENTS_FOLLOWUP_QUERY = f"""
-query($id: ID!, $after: String) {{
-  rateLimit {{ cost remaining resetAt }}
-  node(id: $id) {{
-    ... on Discussion {{
-      comments(first: {_PAGE_SIZE}, after: $after) {{
-        pageInfo {{ hasNextPage endCursor }}
-        nodes {{
-          {_DISCUSSION_COMMENT_FIELDS}
-          replies(first: {_PAGE_SIZE}) {{
-            pageInfo {{ hasNextPage endCursor }}
-            nodes {{ {_DISCUSSION_COMMENT_FIELDS} }}
-          }}
-        }}
-      }}
-    }}
-  }}
-}}
-"""
+_DISCUSSION_COMMENTS_FOLLOWUP_QUERY = _Query("""
+query($id: ID!, $first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  node(id: $id) {
+    ... on Discussion {
+      comments(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { %comments_with_replies }
+      }
+    }
+  }
+}
+""").substitute(comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES)
 
-_DISCUSSION_REPLIES_FOLLOWUP_QUERY = f"""
-query($id: ID!, $after: String) {{
-  rateLimit {{ cost remaining resetAt }}
-  node(id: $id) {{
-    ... on DiscussionComment {{
-      replies(first: {_PAGE_SIZE}, after: $after) {{
-        pageInfo {{ hasNextPage endCursor }}
-        nodes {{ {_DISCUSSION_COMMENT_FIELDS} }}
-      }}
-    }}
-  }}
-}}
-"""
+_DISCUSSION_REPLIES_FOLLOWUP_QUERY = _Query("""
+query($id: ID!, $first: Int!, $after: String) {
+  rateLimit { cost remaining resetAt }
+  node(id: $id) {
+    ... on DiscussionComment {
+      replies(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { %discussion_comment_fields }
+      }
+    }
+  }
+}
+""").substitute(discussion_comment_fields=_DISCUSSION_COMMENT_FIELDS)
 
 
 # --- sync() and its result. ---
@@ -657,27 +706,29 @@ class _Sync(NamedTuple):
     counts: Counter[str]
 
 
-def sync(
-    client: GitHubClient, fetch: Ledger[FetchEvent], *, resume: bool
-) -> SyncResult:
+def sync(client: GitHubClient, fetch: Ledger[FetchEvent]) -> SyncResult:
     """Fetch issues, pull requests, discussions, and commit history.
 
     Drains the "issues", "pull_requests", "commits", and "discussions"
     connections in turn (issues/PRs bring their reviews, reactions, and
     diffs), appending every node behind parse-before-append and
-    persisting a `cursor` event per connection after each page is
-    fully drained. On `resume=True`, each connection restarts from its
-    own last-persisted cursor (`_resume_cursor`); one with no prior
-    cursor starts at `after=None` regardless. Raises `RateLimitError`
-    if the budget runs out mid-page: nothing from that in-flight page
-    is appended, and the ledger's last persisted cursor per connection
-    remains the resume point.
+    persisting a `cursor` event per connection after each page is fully
+    drained.
+
+    Every connection always resumes from its own last-persisted
+    checkpoint, and one with no checkpoint starts from the beginning.
+    Resuming is therefore not a mode: on a first run there is nothing
+    to resume from and this drains everything, while on a later run
+    re-fetching from the beginning would only re-append nodes that
+    `rebuild_from_ledgers` dedups away. Raises `RateLimitError` if the
+    budget runs out mid-page; nothing from that in-flight page is
+    appended, so the last persisted checkpoint stays the resume point.
     """
     ctx = _Sync(client, fetch, Counter())
-    _sync_issues(ctx, resume=resume)
-    _sync_pull_requests(ctx, resume=resume)
-    _sync_commits(ctx, resume=resume)
-    _sync_discussions(ctx, resume=resume)
+    _sync_issues(ctx)
+    _sync_pull_requests(ctx)
+    _sync_commits(ctx)
+    _sync_discussions(ctx)
     cursors = {
         connection: cursor
         for connection in ("issues", "pull_requests", "commits", "discussions")
@@ -686,12 +737,14 @@ def sync(
     return SyncResult(ctx.counts, cursors)
 
 
-def _sync_issues(ctx: _Sync, *, resume: bool) -> None:
+def _sync_issues(ctx: _Sync) -> None:
     """Drain `repository.issues`, oldest-updated first."""
-    after = _resume_cursor(ctx.fetch, "issues") if resume else None
+    after = _resume_cursor(ctx.fetch, "issues")
     while True:
         response = ctx.client.graphql(
-            _ISSUES_PAGE_QUERY, {"after": after}, response=_IssuesQueryResponse
+            _ISSUES_PAGE_QUERY,
+            {"first": _PAGE_SIZE, "after": after},
+            response=_IssuesQueryResponse,
         )
         after = _drain_items_page(
             ctx, "issues", response.repository.issues, is_pr=False
@@ -700,12 +753,14 @@ def _sync_issues(ctx: _Sync, *, resume: bool) -> None:
             return
 
 
-def _sync_pull_requests(ctx: _Sync, *, resume: bool) -> None:
+def _sync_pull_requests(ctx: _Sync) -> None:
     """Drain `repository.pullRequests`, oldest-updated first."""
-    after = _resume_cursor(ctx.fetch, "pull_requests") if resume else None
+    after = _resume_cursor(ctx.fetch, "pull_requests")
     while True:
         response = ctx.client.graphql(
-            _PRS_PAGE_QUERY, {"after": after}, response=_PRsQueryResponse
+            _PRS_PAGE_QUERY,
+            {"first": _PAGE_SIZE, "after": after},
+            response=_PRsQueryResponse,
         )
         after = _drain_items_page(
             ctx, "pull_requests", response.repository.pull_requests, is_pr=True
@@ -753,10 +808,14 @@ def _drain_items_page(
 
 def _append_item_and_nested(ctx: _Sync, node: _ItemNode) -> None:
     """Append one item plus its first-page comments/reactions/reviews/xrefs."""
-    _append_validated(ctx, {"type": "item", "data": _item_data(node)})
+    _append_validated(ctx, {"type": "item", "data": _raw_data(node, _ItemFields)})
     for comment in node.comments.nodes:
         _append_validated(
-            ctx, {"type": "comment", "data": _comment_data(comment, node.id)}
+            ctx,
+            {
+                "type": "comment",
+                "data": _raw_data(comment, _CommentNode, itemId=node.id),
+            },
         )
     for group in node.reaction_groups:
         if group.users.total_count > 0:
@@ -784,7 +843,8 @@ def _append_reviews(ctx: _Sync, node: _ItemNode) -> None:
     _check_truncated(ctx, node.id, "reviews", node.reviews)
     for review in node.reviews.nodes:
         _append_validated(
-            ctx, {"type": "review", "data": _review_data(review, node.id)}
+            ctx,
+            {"type": "review", "data": _raw_data(review, _ReviewFields, prId=node.id)},
         )
         _check_truncated(ctx, review.id, "review comments", review.comments)
         for review_comment in review.comments.nodes:
@@ -792,7 +852,9 @@ def _append_reviews(ctx: _Sync, node: _ItemNode) -> None:
                 ctx,
                 {
                     "type": "review_comment",
-                    "data": _review_comment_data(review_comment, review.id),
+                    "data": _raw_data(
+                        review_comment, _ReviewCommentNode, reviewId=review.id
+                    ),
                 },
             )
 
@@ -830,7 +892,7 @@ def _drain_item_comments(ctx: _Sync, node: _ItemNode) -> None:
     def fetch_page(cursor: str) -> tuple[list[_CommentNode], _PageInfo]:
         response = ctx.client.graphql(
             _ITEM_COMMENTS_FOLLOWUP_QUERY,
-            {"id": node.id, "after": cursor},
+            {"id": node.id, "first": _PAGE_SIZE, "after": cursor},
             response=_ItemCommentsFollowUpResponse,
         )
         page = response.node.comments
@@ -838,7 +900,11 @@ def _drain_item_comments(ctx: _Sync, node: _ItemNode) -> None:
 
     for comment in _drain_follow_up(node.comments.page_info, fetch_page):
         _append_validated(
-            ctx, {"type": "comment", "data": _comment_data(comment, node.id)}
+            ctx,
+            {
+                "type": "comment",
+                "data": _raw_data(comment, _CommentNode, itemId=node.id),
+            },
         )
 
 
@@ -862,30 +928,48 @@ def _append_pr_diff(ctx: _Sync, node: _ItemNode) -> None:
     _append_validated(ctx, {"type": "pr_diff", "data": data})
 
 
-def _sync_commits(ctx: _Sync, *, resume: bool) -> None:
-    """Drain the default branch's commit history, newest-authored first."""
-    after = _resume_cursor(ctx.fetch, "commits") if resume else None
+def _sync_commits(ctx: _Sync) -> None:
+    """Drain the default branch's commit history, resuming by `since:`.
+
+    Commits resume differently from every other connection, because
+    `Commit.history` takes no `orderBy` and GitHub always returns it
+    newest-first. A cursor into a newest-first connection points at
+    *older* commits, so resuming from one would drain further into the
+    past and never see anything new; catching up means re-entering the
+    connection at its head with `since:` set past everything already
+    fetched.
+
+    `since:` filters on **committedDate**, not `authoredDate` —
+    verified against `micro-editor/micro` on 2026-07-17, where 633 of
+    ~3530 commits carry the two dates apart, by up to 2.5 months. The
+    high-water mark is therefore the newest `committedDate` seen, and
+    `_CommitNode` selects that field for no other reason. `since:` is
+    inclusive (also verified), so each catch-up refetches the boundary
+    commit; `rebuild_from_ledgers` dedups it on sha.
+
+    The cursor is persisted only once the history is fully drained, so
+    a `commits` cursor in the ledger always means "everything up to
+    this hwm is present". A run interrupted mid-drain persists nothing
+    and is redone from the previous hwm — re-fetching a bounded amount
+    rather than stranding the undrained tail behind a hwm that claims
+    it was already seen.
+    """
+    since = _last_hwm(ctx.fetch, "commits")
+    hwm = since or ""
+    after: str | None = None
     while True:
         response = ctx.client.graphql(
             _COMMIT_HISTORY_QUERY,
-            {"after": after},
+            {"first": _COMMIT_PAGE_SIZE, "after": after, "since": since},
             response=_CommitHistoryQueryResponse,
         )
         page = response.repository.default_branch_ref.target.history
         for commit in page.nodes:
-            _append_validated(
-                ctx,
-                {
-                    "type": "commit",
-                    "data": {
-                        "sha": commit.oid,
-                        "author": commit.author.name,
-                        "authoredDate": commit.authored_date,
-                        "message": commit.message,
-                    },
-                },
-            )
-        hwm = page.nodes[0].authored_date if page.nodes else ""
+            _append_validated(ctx, {"type": "commit", "data": _commit_data(commit)})
+        hwm = max([hwm, *(commit.committed_date for commit in page.nodes)])
+        if page.page_info.has_next_page:
+            after = page.page_info.end_cursor
+            continue
         if page.page_info.end_cursor is not None:
             ctx.fetch.append(
                 {
@@ -897,18 +981,16 @@ def _sync_commits(ctx: _Sync, *, resume: bool) -> None:
                     },
                 }
             )
-        if not page.page_info.has_next_page:
-            return
-        after = page.page_info.end_cursor
+        return
 
 
-def _sync_discussions(ctx: _Sync, *, resume: bool) -> None:
+def _sync_discussions(ctx: _Sync) -> None:
     """Drain `repository.discussions`, oldest-updated first."""
-    after = _resume_cursor(ctx.fetch, "discussions") if resume else None
+    after = _resume_cursor(ctx.fetch, "discussions")
     while True:
         response = ctx.client.graphql(
             _DISCUSSIONS_PAGE_QUERY,
-            {"after": after},
+            {"first": _PAGE_SIZE, "after": after},
             response=_DiscussionsQueryResponse,
         )
         after = _drain_discussions_page(ctx, response.repository.discussions)
@@ -926,7 +1008,9 @@ def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
     from, or `None` once `hasNextPage` is false.
     """
     for node in page.nodes:
-        _append_validated(ctx, {"type": "discussion", "data": _discussion_data(node)})
+        _append_validated(
+            ctx, {"type": "discussion", "data": _raw_data(node, _DiscussionFields)}
+        )
     for node in page.nodes:
         _append_discussion_comments(ctx, node)
     hwm = max((node.updated_at for node in page.nodes), default="")
@@ -959,7 +1043,9 @@ def _append_discussion_comments(ctx: _Sync, node: _DiscussionNode) -> None:
             ctx,
             {
                 "type": "discussion_comment",
-                "data": _discussion_comment_data(comment, node.id),
+                "data": _raw_data(
+                    comment, _DiscussionCommentFields, discussionId=node.id
+                ),
             },
         )
     top_level.extend(_drain_discussion_comments_follow_up(ctx, node))
@@ -977,7 +1063,7 @@ def _drain_discussion_comments_follow_up(
     ) -> tuple[list[_DiscussionCommentNode], _PageInfo]:
         response = ctx.client.graphql(
             _DISCUSSION_COMMENTS_FOLLOWUP_QUERY,
-            {"id": node.id, "after": cursor},
+            {"id": node.id, "first": _PAGE_SIZE, "after": cursor},
             response=_DiscussionCommentsFollowUpResponse,
         )
         page = response.node.comments
@@ -989,7 +1075,9 @@ def _drain_discussion_comments_follow_up(
             ctx,
             {
                 "type": "discussion_comment",
-                "data": _discussion_comment_data(comment, node.id),
+                "data": _raw_data(
+                    comment, _DiscussionCommentFields, discussionId=node.id
+                ),
             },
         )
     return drained
@@ -1004,16 +1092,19 @@ def _append_comment_replies(
             ctx,
             {
                 "type": "discussion_comment",
-                "data": _discussion_comment_data(
-                    reply, discussion_id, parent_id=comment.id
+                "data": _raw_data(
+                    reply,
+                    _DiscussionCommentFields,
+                    discussionId=discussion_id,
+                    parentId=comment.id,
                 ),
             },
         )
 
-    def fetch_page(cursor: str) -> tuple[list[_ReplyNode], _PageInfo]:
+    def fetch_page(cursor: str) -> tuple[list[_DiscussionCommentFields], _PageInfo]:
         response = ctx.client.graphql(
             _DISCUSSION_REPLIES_FOLLOWUP_QUERY,
-            {"id": comment.id, "after": cursor},
+            {"id": comment.id, "first": _PAGE_SIZE, "after": cursor},
             response=_RepliesFollowUpResponse,
         )
         page = response.node.replies
@@ -1024,8 +1115,11 @@ def _append_comment_replies(
             ctx,
             {
                 "type": "discussion_comment",
-                "data": _discussion_comment_data(
-                    reply, discussion_id, parent_id=comment.id
+                "data": _raw_data(
+                    reply,
+                    _DiscussionCommentFields,
+                    discussionId=discussion_id,
+                    parentId=comment.id,
                 ),
             },
         )
@@ -1034,113 +1128,43 @@ def _append_comment_replies(
 # --- Raw-node reshaping: wire Struct -> ingest.py's `data` contract. ---
 
 
-def _author_data(author: _Author | None) -> JsonObject | None:
-    """Reshape a wire author node into the raw `{"login": ...}` shape."""
-    return None if author is None else {"login": author.login}
-
-
-def _item_data(node: _ItemNode) -> JsonObject:
-    """Reshape a wire item node into the `item` raw-node contract's data."""
-    data: JsonObject = {
-        "id": node.id,
-        "__typename": node.typename,
-        "number": node.number,
-        "title": node.title,
-        "state": node.state,
-        "author": _author_data(node.author),
-        "createdAt": node.created_at,
-        "updatedAt": node.updated_at,
-        "body": node.body,
-    }
-    if node.merged_by is not None:
-        data["mergedBy"] = _author_data(node.merged_by)
-    if node.merged_at is not None:
-        data["mergedAt"] = node.merged_at
-    if node.author_association is not None:
-        data["authorAssociation"] = node.author_association
-    return data
-
-
-def _comment_data(comment: _CommentNode, item_id: GraphQLId) -> JsonObject:
-    """Reshape a wire comment node, injecting its parent `itemId`."""
-    data: JsonObject = {
-        "id": comment.id,
-        "itemId": item_id,
-        "author": _author_data(comment.author),
-        "createdAt": comment.created_at,
-        "updatedAt": comment.updated_at,
-        "body": comment.body,
-    }
-    if comment.author_association is not None:
-        data["authorAssociation"] = comment.author_association
-    return data
-
-
-def _review_data(review: _ReviewNode, pr_id: GraphQLId) -> JsonObject:
-    """Reshape a wire review node, injecting its parent `prId`."""
-    return {
-        "id": review.id,
-        "prId": pr_id,
-        "author": _author_data(review.author),
-        "state": review.state,
-        "submittedAt": review.submitted_at,
-        "body": review.body,
-    }
-
-
-def _review_comment_data(
-    review_comment: _ReviewCommentNode, review_id: GraphQLId
+def _raw_data[F: msgspec.Struct](
+    node: _Wire, fields: type[F], **injected: Json
 ) -> JsonObject:
-    """Reshape a wire review-comment node, injecting its parent `reviewId`."""
+    """Project a wire node onto `fields` and encode it as raw `data`.
+
+    `fields` is the contract-shaped base of `node`'s wire struct, so
+    projecting onto it drops the nested connections the driver drains
+    separately and keeps exactly the keys `ingest.py`'s matching
+    `_Raw*` struct declares. Encoding rather than hand-copying is what
+    keeps the two in step: `rename="camel"` applies on the way out, so
+    the wire struct's own field list *is* the emitted key list, and a
+    field added on one side cannot silently go missing on the other.
+
+    `injected` carries the relation ids no GraphQL node supplies —
+    `itemId`, `prId`, `reviewId`, `discussionId`, `parentId` — which
+    the driver knows only from the parent it drained the connection
+    from.
+    """
+    projected = msgspec.convert(node, fields, from_attributes=True)
+    return cast("JsonObject", msgspec.to_builtins(projected)) | injected
+
+
+def _commit_data(commit: _CommitNode) -> JsonObject:
+    """Reshape a wire commit node into the `commit` raw-node contract.
+
+    Two transforms with no analogue elsewhere: `oid` becomes `sha`, and
+    the `GitActor` node collapses to a bare `author` string — a commit
+    author need not be a GitHub account, the one exception to the
+    `{"login": ...}` convention. `committedDate` is dropped; it drives
+    the `since:` high-water mark only and is not part of the contract.
+    """
     return {
-        "id": review_comment.id,
-        "reviewId": review_id,
-        "author": _author_data(review_comment.author),
-        "createdAt": review_comment.created_at,
-        "updatedAt": review_comment.updated_at,
-        "body": review_comment.body,
-        "path": review_comment.path,
+        "sha": commit.oid,
+        "author": commit.author.name,
+        "authoredDate": commit.authored_date,
+        "message": commit.message,
     }
-
-
-def _discussion_data(node: _DiscussionNode) -> JsonObject:
-    """Reshape a wire discussion node into the `discussion` event contract."""
-    data: JsonObject = {
-        "id": node.id,
-        "number": node.number,
-        "title": node.title,
-        "body": node.body,
-        "author": _author_data(node.author),
-        "createdAt": node.created_at,
-        "updatedAt": node.updated_at,
-        "category": {"name": node.category.name},
-        "answer": None if node.answer is None else {"id": node.answer.id},
-    }
-    if node.author_association is not None:
-        data["authorAssociation"] = node.author_association
-    return data
-
-
-def _discussion_comment_data(
-    comment: _DiscussionCommentNode | _ReplyNode,
-    discussion_id: GraphQLId,
-    *,
-    parent_id: GraphQLId | None = None,
-) -> JsonObject:
-    """Reshape a comment/reply node, injecting `discussionId`/`parentId`."""
-    data: JsonObject = {
-        "id": comment.id,
-        "discussionId": discussion_id,
-        "author": _author_data(comment.author),
-        "createdAt": comment.created_at,
-        "updatedAt": comment.updated_at,
-        "body": comment.body,
-    }
-    if comment.author_association is not None:
-        data["authorAssociation"] = comment.author_association
-    if parent_id is not None:
-        data["parentId"] = parent_id
-    return data
 
 
 # --- Shared plumbing: parse-before-append, follow-up draining, cursors. ---
@@ -1196,8 +1220,8 @@ def _drain_follow_up[T](
 
     `fetch_page(cursor)` must issue exactly one follow-up GraphQL call
     for `cursor` and return that page's nodes and `pageInfo`. Shared by
-    every nested connection that can exceed one page — T3 reuses this
-    for discussion comments and replies.
+    every nested connection that can exceed one page: an item's
+    comments, a discussion's comments, and a comment's replies.
     """
     while page_info.has_next_page:
         assert page_info.end_cursor is not None, "hasNextPage true without endCursor"
@@ -1218,3 +1242,9 @@ def _resume_cursor(fetch: Ledger[FetchEvent], connection: str) -> str | None:
     """Return the `after` cursor to resume `connection` from, or `None`."""
     cursor = _last_cursor(fetch, connection)
     return None if cursor is None else cursor["top_level_cursor"]
+
+
+def _last_hwm(fetch: Ledger[FetchEvent], connection: str) -> str | None:
+    """Return `connection`'s last persisted high-water mark, if any."""
+    cursor = _last_cursor(fetch, connection)
+    return None if cursor is None else cursor["updated_at_hwm"]

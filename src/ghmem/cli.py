@@ -38,24 +38,23 @@ def rebuild() -> None:
 
 
 @main.command()
-@click.option(
-    "--resume",
-    is_flag=True,
-    help="Resume each connection from its last persisted cursor.",
-)
-def sync(*, resume: bool) -> None:
-    """Fetch issues, PRs, discussions, and commits into the fetch ledger."""
+def sync() -> None:
+    """Fetch issues, PRs, discussions, and commits into the fetch ledger.
+
+    Always continues from where the last run left off, so re-running after an
+    interruption picks up rather than starting over.
+    """
     client = GitHubClient.from_env()
     fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())
     try:
-        result = run_sync(client, fetch, resume=resume)
+        result = run_sync(client, fetch)
     except RateLimitError as exc:
         click.echo(
             f"ghmem sync: rate limit exhausted, resets at {exc.reset_at}. "
-            "Resume with `ghmem sync --resume`.",
+            "Re-run `ghmem sync` to continue from here.",
             err=True,
         )
-        raise SystemExit(0) from None
+        raise SystemExit(0) from exc
     click.echo(f"Synced: {dict(result.counts)}")
 
 
@@ -67,9 +66,9 @@ def show(number: int) -> None:
     table = build_standing(store)
     try:
         output = render(store, table, IssueOrPRNumber(number))
-    except IssueOrPRNotFoundError:
+    except IssueOrPRNotFoundError as exc:
         click.echo(f"ghmem show: no issue or pull request numbered #{number}", err=True)
-        raise SystemExit(1) from None
+        raise SystemExit(1) from exc
     click.echo(output, nl=False)
 
 
@@ -81,7 +80,7 @@ def discussion(number: int) -> None:
     table = build_standing(store)
     try:
         output = render_discussion(store, table, DiscussionNumber(number))
-    except DiscussionNotFoundError:
+    except DiscussionNotFoundError as exc:
         click.echo(f"ghmem discussion: no discussion numbered #{number}", err=True)
-        raise SystemExit(1) from None
+        raise SystemExit(1) from exc
     click.echo(output, nl=False)

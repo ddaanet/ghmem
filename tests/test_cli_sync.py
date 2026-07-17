@@ -45,11 +45,11 @@ def test_sync_command_reports_counts(
 def test_sync_command_rate_limit_exits_zero(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    """A `RateLimitError` mid-sync prints a resume hint and exits 0.
+    """A `RateLimitError` mid-sync prints a continue hint and exits 0.
 
     When: the driver raises `RateLimitError`
     Then: the command exits 0 (progress is already durably persisted in
-      the ledger) and prints a `--resume` hint to stderr
+      the ledger) and points at a plain re-run to continue
     """
     _env(monkeypatch, tmp_path)
     mocker.patch(
@@ -60,24 +60,33 @@ def test_sync_command_rate_limit_exits_zero(
     result = CliRunner().invoke(main, ["sync"])
 
     assert result.exit_code == 0, result.output
-    assert "--resume" in result.stderr
+    assert "ghmem sync" in result.stderr
+    assert "rate limit exhausted" in result.stderr
 
 
-def test_sync_command_passes_resume_flag(
+def test_sync_command_takes_no_resume_flag(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    """`--resume` reaches the driver as `resume=True`.
+    """Resuming is unconditional, so no flag selects it.
+
+    Resuming from the last persisted cursor is what a bare `ghmem sync`
+    already does, so `--resume` would name the default rather than an
+    alternative to it.
 
     When: `ghmem sync --resume` is invoked
-    Then: `run_sync` is called with a `Ledger` and `resume=True`
+    Then: click rejects the unknown option, and a bare `ghmem sync`
+      reaches the driver with just a `Ledger`
     """
     _env(monkeypatch, tmp_path)
     run_sync = mocker.patch(
         "ghmem.cli.run_sync", return_value=SyncResult(Counter(), {})
     )
 
-    result = CliRunner().invoke(main, ["sync", "--resume"])
+    rejected = CliRunner().invoke(main, ["sync", "--resume"])
+    assert rejected.exit_code != 0
+
+    result = CliRunner().invoke(main, ["sync"])
 
     assert result.exit_code == 0, result.output
-    assert run_sync.call_args.kwargs["resume"] is True
+    assert run_sync.call_args.kwargs == {}
     assert isinstance(run_sync.call_args.args[1], Ledger)

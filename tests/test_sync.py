@@ -132,7 +132,7 @@ def test_full_sync_appends_expected_nodes(
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     client = _client(mocker, _ALL_PAGES)
 
-    result = sync(client, fetch, resume=False)
+    result = sync(client, fetch)
 
     assert result.counts == Counter(
         item=3,
@@ -159,7 +159,7 @@ def test_appended_nodes_satisfy_raw_contract(
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     client = _client(mocker, _ALL_PAGES)
-    sync(client, fetch, resume=False)
+    sync(client, fetch)
 
     store = _rebuild(fetch, tmp_path)
 
@@ -175,7 +175,7 @@ def test_nested_comment_pagination(mocker: MockerFixture, tmp_path: Path) -> Non
       comment too, not just the first
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
-    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES))
 
     store = _rebuild(fetch, tmp_path)
 
@@ -197,7 +197,7 @@ def test_injected_relation_ids_attached(mocker: MockerFixture, tmp_path: Path) -
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     client = _client(mocker, _ALL_PAGES)
-    sync(client, fetch, resume=False)
+    sync(client, fetch)
 
     by_type: dict[str, list[JsonObject]] = {}
     for event in fetch:
@@ -221,12 +221,12 @@ def test_injected_relation_ids_attached(mocker: MockerFixture, tmp_path: Path) -
 
 
 def test_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) -> None:
-    """`--resume` continues a connection from its last persisted cursor.
+    """A connection always continues from its last persisted cursor.
 
     When: the issues connection is interrupted by `RateLimitError`
       right after page 1 is fully drained and its cursor persisted,
-      then resumed
-    Then: the resumed call fetches only page 2 (via `after:
+      then re-run
+    Then: the second call fetches only page 2 (via `after:
       "issues-cursor-1"`), and rebuilding finds both pages' items with
       no gaps or duplicates
     """
@@ -241,7 +241,7 @@ def test_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) -> None:
     )
 
     with pytest.raises(RateLimitError):
-        _sync_issues(_Sync(interrupted_client, fetch, Counter()), resume=False)
+        _sync_issues(_Sync(interrupted_client, fetch, Counter()))
 
     # Deliberately omits the page-1 key: if resume ever starts issues
     # over from `after=None` instead of the persisted cursor, the stub
@@ -254,7 +254,7 @@ def test_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) -> None:
         resumed_client, "graphql", side_effect=_stub_graphql(resumed_pages)
     )
 
-    _sync_issues(_Sync(resumed_client, fetch, Counter()), resume=True)
+    _sync_issues(_Sync(resumed_client, fetch, Counter()))
 
     store = _rebuild(fetch, tmp_path)
     assert store.get_issue_or_pr(IssueOrPRNumber(1)).id == "I_1"
@@ -287,7 +287,7 @@ def test_null_node_recorded_fetch_failed(mocker: MockerFixture, tmp_path: Path) 
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
-    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES))
 
     failures = [event["data"] for event in fetch if event["type"] == "fetch_failed"]
     assert len(failures) == 1
@@ -316,7 +316,7 @@ def test_truncated_nested_connection_records_fetch_failed(
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     pages = _ALL_PAGES | {(_PRsQueryResponse, None): "prs_page1_truncated_reviews.json"}
 
-    _sync_pull_requests(_ctx(mocker, fetch, pages), resume=False)
+    _sync_pull_requests(_ctx(mocker, fetch, pages))
 
     failures = [event["data"] for event in fetch if event["type"] == "fetch_failed"]
     assert len(failures) == 1
@@ -337,7 +337,7 @@ def test_pr_diff_appended(mocker: MockerFixture, tmp_path: Path) -> None:
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
-    _sync_pull_requests(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_pull_requests(_ctx(mocker, fetch, _ALL_PAGES))
 
     diffs = [event["data"] for event in fetch if event["type"] == "pr_diff"]
     assert len(diffs) == 1
@@ -361,7 +361,7 @@ def test_commit_history_maps_oid_and_author_name(
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
-    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES))
 
     commits = [event["data"] for event in fetch if event["type"] == "commit"]
     assert len(commits) == 2
@@ -371,26 +371,76 @@ def test_commit_history_maps_oid_and_author_name(
     assert commits[1]["author"] == "David Allouche"
 
 
-def test_commit_hwm_is_newest_authored_date(
+def test_commit_data_omits_committed_date(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
-    """The persisted commits cursor's hwm is the newest commit, not oldest.
+    """`committedDate` drives the hwm but is not part of the contract.
 
-    GitHub's `Commit.history` connection has no `orderBy` and always
-    returns newest-first, so the fixture is newest-first too (matching
-    the live API) — the high-water mark must come from the first node
-    on the page, not the last.
+    `_CommitNode` selects it so `since:` has a date to filter on, but
+    `_RawCommit` forbids unknown fields, so it must not be appended.
 
     When: `_sync_commits` drains a commit-history page
-    Then: the persisted `cursor` event's `updated_at_hwm` is the
-      newest commit's `authoredDate`
+    Then: no `commit` event's `data` carries a `committedDate` key
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
-    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES))
+
+    commits = [event["data"] for event in fetch if event["type"] == "commit"]
+    assert all("committedDate" not in commit for commit in commits)
+
+
+def test_commit_hwm_is_newest_committed_date(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """The commits hwm tracks `committedDate`, the date `since:` filters on.
+
+    `history(since:)` filters on committedDate, not authoredDate —
+    verified against the live API, where 633 of micro's ~3530 commits
+    carry the two dates apart. The fixture's newest commit is
+    deliberately one of those: authored 2026-05-09, committed
+    2026-05-20. A hwm taken from `authoredDate` would silently rewind
+    the next catch-up by eleven days.
+
+    When: `_sync_commits` drains a commit-history page
+    Then: the persisted cursor's `updated_at_hwm` is the newest
+      `committedDate`, not any `authoredDate`
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES))
 
     cursors = [event["data"] for event in fetch if event["type"] == "cursor"]
-    assert cursors[0]["updated_at_hwm"] == "2026-05-09T07:00:00Z"
+    assert cursors[0]["updated_at_hwm"] == "2026-05-20T09:00:00Z"
+
+
+def test_commit_catch_up_passes_since_not_cursor(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A second run re-enters commit history at its head via `since:`.
+
+    `Commit.history` is newest-first, so resuming from the persisted
+    cursor would drain further into the *past* and never see a new
+    commit. Catching up means `after: None` with `since:` set to the
+    last hwm.
+
+    When: `_sync_commits` runs again over a ledger whose commits drain
+      already completed
+    Then: the follow-up query passes `since` = the persisted hwm and
+      leaves `after` unset
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+    _sync_commits(_ctx(mocker, fetch, _ALL_PAGES))
+
+    client = GitHubClient("tok")
+    graphql = mocker.patch.object(
+        client, "graphql", side_effect=_stub_graphql(_ALL_PAGES)
+    )
+    _sync_commits(_Sync(client, fetch, Counter()))
+
+    variables = graphql.call_args_list[0].args[1]
+    assert variables["since"] == "2026-05-20T09:00:00Z"
+    assert variables["after"] is None
 
 
 def test_discussions_appended_with_injected_discussion_id(
@@ -407,7 +457,7 @@ def test_discussions_appended_with_injected_discussion_id(
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
-    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
 
     comment = next(
         event["data"]
@@ -427,7 +477,7 @@ def test_reply_carries_parent_id(mocker: MockerFixture, tmp_path: Path) -> None:
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
-    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
 
     comments = {
         event["data"]["id"]: event["data"]
@@ -458,7 +508,7 @@ def test_cross_page_reply_parent_appended_first(
     Then: rendering raises no `OrphanReplyWarning`
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
-    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
     store = _rebuild(fetch, tmp_path)
     standing = build_standing(store)
 
@@ -479,7 +529,7 @@ def test_answered_discussion_records_answer_id(
     Then: the rebuilt discussion's `answer_id` is that comment's id
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
-    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES), resume=False)
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
 
     store = _rebuild(fetch, tmp_path)
 
@@ -507,7 +557,7 @@ def test_discussion_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) ->
     )
 
     with pytest.raises(RateLimitError):
-        _sync_discussions(_Sync(interrupted_client, fetch, Counter()), resume=False)
+        _sync_discussions(_Sync(interrupted_client, fetch, Counter()))
 
     # Deliberately omits the page-1 key: if resume ever starts discussions
     # over from `after=None` instead of the persisted cursor, the stub
@@ -520,7 +570,7 @@ def test_discussion_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) ->
         resumed_client, "graphql", side_effect=_stub_graphql(resumed_pages)
     )
 
-    _sync_discussions(_Sync(resumed_client, fetch, Counter()), resume=True)
+    _sync_discussions(_Sync(resumed_client, fetch, Counter()))
 
     store = _rebuild(fetch, tmp_path)
     assert store.get_discussion(DiscussionNumber(100)).id == "D_1"

@@ -1,10 +1,10 @@
 """Thin githubkit wrapper: GraphQL metering, REST diff fetch, auth.
 
-Not a pagination driver — that's T2/T3. This module owns exactly three
-things: turning a raw GraphQL response into a caller's `msgspec.Struct`
-while metering the point budget, fetching one PR's diff text over
-REST, and resolving a token. Every retry/backoff decision beyond that
-is githubkit's own.
+Not a pagination driver — that is `sync.py`'s job. This module owns
+exactly three things: turning a raw GraphQL response into a caller's
+`msgspec.Struct` while metering the point budget, fetching one PR's
+diff text over REST, and resolving a token. Every retry/backoff
+decision beyond that is githubkit's own.
 
 `GitHub(..., auto_retry=RETRY_SERVER_ERROR)` deliberately narrows
 githubkit's default retry chain (`RETRY_DEFAULT = RETRY_RATE_LIMIT +
@@ -97,8 +97,8 @@ class GitHubClient:
         2026-07-16: HTTP 406 with a JSON body whose `errors[].code` is
         `"too_large"`. `diff_text` is `""` in that case; GitHub sends
         no diff body with the refusal. Per-file stats are not fetched
-        here — that's the GraphQL `pullRequest.files` connection in
-        T2, keeping this call to ~1 REST request per PR.
+        here — they come from the GraphQL `pullRequest.files`
+        connection, keeping this call to ~1 REST request per PR.
         """
         try:
             resp = self._gh.request(

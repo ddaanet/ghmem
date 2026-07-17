@@ -8,10 +8,11 @@ query API) lives in `store.py`.
 
 ## The raw-node JSON contract
 
-No fetch client exists yet — that's subproject 1 Part 3, `ghmem sync`.
-So the `_Raw*` structs below are not a description of an existing wire
-format: they *are* the contract that client must produce. Each decodes
-one `FetchEvent["data"]` `JsonObject`, keyed in raw GraphQL camelCase
+The `_Raw*` structs below are not a description of a wire format: they
+*are* the contract `sync.py`'s fetch driver must produce, and it
+validates every node against them before appending (see
+`validate_raw_node`). Each decodes one `FetchEvent["data"]`
+`JsonObject`, keyed in raw GraphQL camelCase
 (`rename="camel"`) unless a field note says otherwise, and each struct's
 docstring lists the keys its event requires. Two conventions recur, so
 the per-struct docstrings only flag departures from them:
@@ -22,7 +23,7 @@ the per-struct docstrings only flag departures from them:
   and must be attached by the fetch driver itself.
 
 Two event types bypass the raw structs entirely: `"cursor"` is consumed
-by the sync driver and never stored here, and `"fetch_failed"` carries
+by `sync.py` and never stored here, and `"fetch_failed"` carries
 its own `{"id", "reason"}` shape (`FetchFailedData` in `ledger.py`)
 straight into the `fetch_failed` table.
 
@@ -120,7 +121,7 @@ def _replay_fetch_event(session: Session, event: FetchEvent) -> None:
     `session.merge` is the upsert: it matches an existing row by primary
     key and updates it in place, or inserts a new one — the same "insert
     or replace by id" semantics the hand-rolled SQL used. `"cursor"` is
-    consumed by Part 3's sync driver, not stored; `"fetch_failed"` has
+    consumed by `sync.py`, not stored; `"fetch_failed"` has
     its own flat shape; every other type is a raw node dispatched by
     `_RAW_BY_TYPE`.
     """

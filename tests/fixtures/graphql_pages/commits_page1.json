@@ -10,12 +10,14 @@
               "oid": "def456abc789",
               "author": {"name": "Octavia Reviewer"},
               "authoredDate": "2026-05-09T07:00:00Z",
+              "committedDate": "2026-05-20T09:00:00Z",
               "message": "Add tests for softwrapcolumn"
             },
             {
               "oid": "abc123def456",
               "author": {"name": "David Allouche"},
               "authoredDate": "2026-05-08T14:00:00Z",
+              "committedDate": "2026-05-08T14:00:00Z",
               "message": "Implement softwrapcolumn"
             }
           ]
