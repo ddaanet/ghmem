@@ -1,0 +1,80 @@
+{
+  "rateLimit": {"cost": 1, "remaining": 4995, "resetAt": "2026-07-16T18:00:00Z"},
+  "repository": {
+    "discussions": {
+      "pageInfo": {"hasNextPage": true, "endCursor": "discussions-cursor-1"},
+      "nodes": [
+        {
+          "id": "D_1",
+          "number": 100,
+          "title": "How does softwrap interact with colorcolumn?",
+          "body": "Just curious about the wrapping behavior.",
+          "author": {"login": "octavia"},
+          "createdAt": "2026-05-01T09:00:00Z",
+          "updatedAt": "2026-05-01T09:30:00Z",
+          "authorAssociation": "MEMBER",
+          "category": {"name": "Q&A"},
+          "answer": null,
+          "comments": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": [
+              {
+                "id": "DC_A",
+                "author": {"login": "reviewer1"},
+                "createdAt": "2026-05-01T10:00:00Z",
+                "updatedAt": "2026-05-01T10:00:00Z",
+                "body": "It only affects display, not the buffer.",
+                "authorAssociation": "MEMBER",
+                "replies": {
+                  "pageInfo": {"hasNextPage": false, "endCursor": null},
+                  "nodes": []
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "D_2",
+          "number": 101,
+          "title": "Cross-page reply thread",
+          "body": "Testing pagination across comments and replies.",
+          "author": {"login": "davida"},
+          "createdAt": "2026-05-02T09:00:00Z",
+          "updatedAt": "2026-05-05T09:00:00Z",
+          "authorAssociation": "CONTRIBUTOR",
+          "category": {"name": "Ideas"},
+          "answer": null,
+          "comments": {
+            "pageInfo": {"hasNextPage": true, "endCursor": "d2-comments-cursor-1"},
+            "nodes": [
+              {
+                "id": "DC_1",
+                "author": {"login": "reviewer1"},
+                "createdAt": "2026-05-02T10:00:00Z",
+                "updatedAt": "2026-05-02T10:00:00Z",
+                "body": "First top-level comment.",
+                "authorAssociation": "MEMBER",
+                "replies": {
+                  "pageInfo": {
+                    "hasNextPage": true,
+                    "endCursor": "d2-dc1-replies-cursor-1"
+                  },
+                  "nodes": [
+                    {
+                      "id": "DC_1_R1",
+                      "author": {"login": "davida"},
+                      "createdAt": "2026-05-02T11:00:00Z",
+                      "updatedAt": "2026-05-02T11:00:00Z",
+                      "body": "First reply.",
+                      "authorAssociation": "CONTRIBUTOR"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

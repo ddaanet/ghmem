@@ -1,0 +1,39 @@
+{
+  "rateLimit": {"cost": 1, "remaining": 4994, "resetAt": "2026-07-16T18:00:00Z"},
+  "repository": {
+    "discussions": {
+      "pageInfo": {"hasNextPage": false, "endCursor": "discussions-cursor-2"},
+      "nodes": [
+        {
+          "id": "D_3",
+          "number": 102,
+          "title": "How to bind a chord to a lua command?",
+          "body": "Trying to bind Ctrl-r to a custom command.",
+          "author": {"login": "octavia"},
+          "createdAt": "2026-05-06T09:00:00Z",
+          "updatedAt": "2026-05-06T12:00:00Z",
+          "authorAssociation": "MEMBER",
+          "category": {"name": "Help"},
+          "answer": {"id": "DC_3"},
+          "comments": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": [
+              {
+                "id": "DC_3",
+                "author": {"login": "maintainer"},
+                "createdAt": "2026-05-06T10:00:00Z",
+                "updatedAt": "2026-05-06T10:00:00Z",
+                "body": "Use config.TryBindKey inside init().",
+                "authorAssociation": "MEMBER",
+                "replies": {
+                  "pageInfo": {"hasNextPage": false, "endCursor": null},
+                  "nodes": []
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

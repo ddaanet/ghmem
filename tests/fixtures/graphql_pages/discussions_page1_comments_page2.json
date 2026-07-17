@@ -1,0 +1,22 @@
+{
+  "rateLimit": {"cost": 1, "remaining": 4993, "resetAt": "2026-07-16T18:00:00Z"},
+  "node": {
+    "comments": {
+      "pageInfo": {"hasNextPage": false, "endCursor": null},
+      "nodes": [
+        {
+          "id": "DC_2",
+          "author": {"login": "davida"},
+          "createdAt": "2026-05-03T09:00:00Z",
+          "updatedAt": "2026-05-03T09:00:00Z",
+          "body": "Second top-level comment, from page 2.",
+          "authorAssociation": "CONTRIBUTOR",
+          "replies": {
+            "pageInfo": {"hasNextPage": false, "endCursor": null},
+            "nodes": []
+          }
+        }
+      ]
+    }
+  }
+}

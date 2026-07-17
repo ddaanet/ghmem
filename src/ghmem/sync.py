@@ -1,15 +1,15 @@
-"""Resumable GraphQL sync: issues, pull requests, and commit history.
+"""Resumable GraphQL sync: issues, PRs, commits, and discussions.
 
 Fills the fetch ledger `store.rebuild_from_ledgers` replays. `sync()`
-drains three of the repository's connections in turn — `"issues"`,
-`"pull_requests"`, `"commits"` — persisting a `cursor` event per
-connection after every page is fully drained so `--resume` can
-restart each connection independently. Issues and PRs paginate
-`UPDATED_AT` ascending; `Commit.history` has no `orderBy` argument and
-GitHub always returns it newest-first, so its high-water mark comes
-from the first node on a page, not the last. T3 folds `"discussions"`
-into the same `sync()` entry point and reuses `_drain_follow_up` below
-for comment and reply pagination.
+drains four of the repository's connections in turn — `"issues"`,
+`"pull_requests"`, `"commits"`, `"discussions"` — persisting a
+`cursor` event per connection after every page is fully drained so
+`--resume` can restart each connection independently. Issues, PRs,
+and discussions paginate `UPDATED_AT` ascending; `Commit.history` has
+no `orderBy` argument and GitHub always returns it newest-first, so
+its high-water mark comes from the first node on a page, not the
+last. Discussions reuse `_drain_follow_up` below for both a
+discussion's comments and a comment's replies.
 
 Two Struct families exist by design and must not be confused: the
 `_Wire` hierarchy here types what GraphQL sends back (camelCase,
@@ -49,6 +49,14 @@ Design notes on where this departs from a literal GraphQL schema walk:
   of losing the overflow (`_check_truncated`) — loud truncation, not a
   full drain. `_drain_follow_up` remains ready if a full drain is ever
   needed instead.
+- **Discussion comments and replies are fully drained**, unlike the
+  first-page-only nested connections above: every top-level comment on
+  a discussion (first page plus any follow-up pages) is appended
+  before any of that discussion's replies, so a reply's parent comment
+  is always already in the ledger by the time the reply is —
+  `_append_discussion_comments` is where this ordering lives, and it's
+  what keeps `show.OrphanReplyWarning` from ever firing on pagination
+  order alone.
 """
 
 from collections import Counter
@@ -57,7 +65,7 @@ from typing import NamedTuple
 
 import msgspec
 
-from ghmem.aliases import GraphQLId, IssueOrPRNumber, Json, JsonObject
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber, Json, JsonObject
 from ghmem.github import GitHubClient
 from ghmem.ingest import validate_raw_node
 from ghmem.ledger import (
@@ -65,6 +73,8 @@ from ghmem.ledger import (
     CommitEvent,
     CrossRefEvent,
     CursorData,
+    DiscussionCommentEvent,
+    DiscussionEvent,
     FetchEvent,
     ItemEvent,
     Ledger,
@@ -88,6 +98,8 @@ type _RawFetchEvent = (
     | CrossRefEvent
     | CommitEvent
     | PRDiffEvent
+    | DiscussionEvent
+    | DiscussionCommentEvent
 )
 
 # --- Wire Structs: type what GraphQL sends back, not what gets appended. ---
@@ -335,6 +347,101 @@ class _CommitHistoryQueryResponse(_Wire):
     repository: _CommitsRepo
 
 
+class _ReplyNode(_Wire):
+    """A wire DiscussionComment reply node — no further nesting.
+
+    GitHub discussions nest exactly one level (`show.render_discussion`
+    makes the same assumption on the read side), so a reply selects no
+    `replies` field of its own.
+    """
+
+    id: GraphQLId
+    author: _Author | None
+    created_at: str
+    updated_at: str
+    body: str
+    author_association: str | None = None
+
+
+type _RepliesFirstPage = _Page[_ReplyNode]
+
+
+class _DiscussionCommentNode(_Wire):
+    """A wire top-level DiscussionComment node with its first replies page."""
+
+    id: GraphQLId
+    author: _Author | None
+    created_at: str
+    updated_at: str
+    body: str
+    replies: _RepliesFirstPage
+    author_association: str | None = None
+
+
+type _DiscussionCommentsPage = _Page[_DiscussionCommentNode]
+
+
+class _DiscussionCategoryNode(_Wire):
+    """A wire discussion-category node."""
+
+    name: str
+
+
+class _DiscussionNode(_Wire):
+    """A wire Discussion node: fields plus its first-page comments."""
+
+    id: GraphQLId
+    number: DiscussionNumber
+    title: str
+    body: str
+    author: _Author | None
+    created_at: str
+    updated_at: str
+    category: _DiscussionCategoryNode
+    answer: _NodeRef | None
+    comments: _DiscussionCommentsPage
+    author_association: str | None = None
+
+
+type _DiscussionsPage = _Page[_DiscussionNode]
+
+
+class _DiscussionsRepo(_Wire):
+    """The `repository.discussions` field of the discussions-page query."""
+
+    discussions: _DiscussionsPage
+
+
+class _DiscussionsQueryResponse(_Wire):
+    """Top-level response for the discussions-page query."""
+
+    repository: _DiscussionsRepo
+
+
+class _NodeDiscussionComments(_Wire):
+    """The `comments` field on a discussion's `node(id:)` follow-up result."""
+
+    comments: _DiscussionCommentsPage
+
+
+class _DiscussionCommentsFollowUpResponse(_Wire):
+    """Top-level response for a discussion's comments follow-up page."""
+
+    node: _NodeDiscussionComments
+
+
+class _NodeReplies(_Wire):
+    """The `replies` field on a comment's `node(id:)` follow-up result."""
+
+    replies: _RepliesFirstPage
+
+
+class _RepliesFollowUpResponse(_Wire):
+    """Top-level response for a comment's replies follow-up page."""
+
+    node: _NodeReplies
+
+
 # --- GraphQL query text. ---
 
 _ITEM_FIELDS = """
@@ -450,6 +557,83 @@ query($after: String) {{
 }}
 """
 
+_DISCUSSION_COMMENT_FIELDS = """
+    id
+    author { login }
+    createdAt
+    updatedAt
+    body
+    authorAssociation
+"""
+
+_DISCUSSIONS_PAGE_QUERY = f"""
+query($after: String) {{
+  rateLimit {{ cost remaining resetAt }}
+  repository(owner: "{_OWNER}", name: "{_REPO}") {{
+    discussions(first: {_PAGE_SIZE}, after: $after,
+                orderBy: {{field: UPDATED_AT, direction: ASC}}) {{
+      pageInfo {{ hasNextPage endCursor }}
+      nodes {{
+        id
+        number
+        title
+        body
+        author {{ login }}
+        createdAt
+        updatedAt
+        authorAssociation
+        category {{ name }}
+        answer {{ id }}
+        comments(first: {_PAGE_SIZE}) {{
+          pageInfo {{ hasNextPage endCursor }}
+          nodes {{
+            {_DISCUSSION_COMMENT_FIELDS}
+            replies(first: {_PAGE_SIZE}) {{
+              pageInfo {{ hasNextPage endCursor }}
+              nodes {{ {_DISCUSSION_COMMENT_FIELDS} }}
+            }}
+          }}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+_DISCUSSION_COMMENTS_FOLLOWUP_QUERY = f"""
+query($id: ID!, $after: String) {{
+  rateLimit {{ cost remaining resetAt }}
+  node(id: $id) {{
+    ... on Discussion {{
+      comments(first: {_PAGE_SIZE}, after: $after) {{
+        pageInfo {{ hasNextPage endCursor }}
+        nodes {{
+          {_DISCUSSION_COMMENT_FIELDS}
+          replies(first: {_PAGE_SIZE}) {{
+            pageInfo {{ hasNextPage endCursor }}
+            nodes {{ {_DISCUSSION_COMMENT_FIELDS} }}
+          }}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+_DISCUSSION_REPLIES_FOLLOWUP_QUERY = f"""
+query($id: ID!, $after: String) {{
+  rateLimit {{ cost remaining resetAt }}
+  node(id: $id) {{
+    ... on DiscussionComment {{
+      replies(first: {_PAGE_SIZE}, after: $after) {{
+        pageInfo {{ hasNextPage endCursor }}
+        nodes {{ {_DISCUSSION_COMMENT_FIELDS} }}
+      }}
+    }}
+  }}
+}}
+"""
+
 
 # --- sync() and its result. ---
 
@@ -492,9 +676,10 @@ def sync(
     _sync_issues(ctx, resume=resume)
     _sync_pull_requests(ctx, resume=resume)
     _sync_commits(ctx, resume=resume)
+    _sync_discussions(ctx, resume=resume)
     cursors = {
         connection: cursor
-        for connection in ("issues", "pull_requests", "commits")
+        for connection in ("issues", "pull_requests", "commits", "discussions")
         if (cursor := _last_cursor(fetch, connection)) is not None
     }
     return SyncResult(ctx.counts, cursors)
@@ -716,6 +901,135 @@ def _sync_commits(ctx: _Sync, *, resume: bool) -> None:
         after = page.page_info.end_cursor
 
 
+def _sync_discussions(ctx: _Sync, *, resume: bool) -> None:
+    """Drain `repository.discussions`, oldest-updated first."""
+    after = _resume_cursor(ctx.fetch, "discussions") if resume else None
+    while True:
+        response = ctx.client.graphql(
+            _DISCUSSIONS_PAGE_QUERY,
+            {"after": after},
+            response=_DiscussionsQueryResponse,
+        )
+        after = _drain_discussions_page(ctx, response.repository.discussions)
+        if after is None:
+            return
+
+
+def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
+    """Append one discussions page, drain comments/replies, persist cursor.
+
+    Every discussion's comments (first page plus any follow-up pages)
+    are appended before any of that discussion's replies — see
+    `_append_discussion_comments` — so a reply's parent is always
+    already in the ledger. Returns the page's `endCursor` to continue
+    from, or `None` once `hasNextPage` is false.
+    """
+    for node in page.nodes:
+        _append_validated(ctx, {"type": "discussion", "data": _discussion_data(node)})
+    for node in page.nodes:
+        _append_discussion_comments(ctx, node)
+    hwm = max((node.updated_at for node in page.nodes), default="")
+    if page.page_info.end_cursor is not None:
+        ctx.fetch.append(
+            {
+                "type": "cursor",
+                "data": {
+                    "connection": "discussions",
+                    "top_level_cursor": page.page_info.end_cursor,
+                    "updated_at_hwm": hwm,
+                },
+            }
+        )
+    return page.page_info.end_cursor if page.page_info.has_next_page else None
+
+
+def _append_discussion_comments(ctx: _Sync, node: _DiscussionNode) -> None:
+    """Append one discussion's comments, then their replies.
+
+    Drains every top-level comment — the embedded first page, plus any
+    follow-up pages via `_drain_follow_up` — before draining any
+    comment's replies, so a reply's parent comment is always already
+    appended by the time the reply is: the orphan-reply property
+    (`show.OrphanReplyWarning`) never fires from pagination ordering.
+    """
+    top_level = list(node.comments.nodes)
+    for comment in top_level:
+        _append_validated(
+            ctx,
+            {
+                "type": "discussion_comment",
+                "data": _discussion_comment_data(comment, node.id),
+            },
+        )
+    top_level.extend(_drain_discussion_comments_follow_up(ctx, node))
+    for comment in top_level:
+        _append_comment_replies(ctx, node.id, comment)
+
+
+def _drain_discussion_comments_follow_up(
+    ctx: _Sync, node: _DiscussionNode
+) -> list[_DiscussionCommentNode]:
+    """Fetch, append, and return one discussion's remaining comment pages."""
+
+    def fetch_page(
+        cursor: str,
+    ) -> tuple[list[_DiscussionCommentNode], _PageInfo]:
+        response = ctx.client.graphql(
+            _DISCUSSION_COMMENTS_FOLLOWUP_QUERY,
+            {"id": node.id, "after": cursor},
+            response=_DiscussionCommentsFollowUpResponse,
+        )
+        page = response.node.comments
+        return page.nodes, page.page_info
+
+    drained = list(_drain_follow_up(node.comments.page_info, fetch_page))
+    for comment in drained:
+        _append_validated(
+            ctx,
+            {
+                "type": "discussion_comment",
+                "data": _discussion_comment_data(comment, node.id),
+            },
+        )
+    return drained
+
+
+def _append_comment_replies(
+    ctx: _Sync, discussion_id: GraphQLId, comment: _DiscussionCommentNode
+) -> None:
+    """Append one comment's first-page replies, drain any follow-up pages."""
+    for reply in comment.replies.nodes:
+        _append_validated(
+            ctx,
+            {
+                "type": "discussion_comment",
+                "data": _discussion_comment_data(
+                    reply, discussion_id, parent_id=comment.id
+                ),
+            },
+        )
+
+    def fetch_page(cursor: str) -> tuple[list[_ReplyNode], _PageInfo]:
+        response = ctx.client.graphql(
+            _DISCUSSION_REPLIES_FOLLOWUP_QUERY,
+            {"id": comment.id, "after": cursor},
+            response=_RepliesFollowUpResponse,
+        )
+        page = response.node.replies
+        return page.nodes, page.page_info
+
+    for reply in _drain_follow_up(comment.replies.page_info, fetch_page):
+        _append_validated(
+            ctx,
+            {
+                "type": "discussion_comment",
+                "data": _discussion_comment_data(
+                    reply, discussion_id, parent_id=comment.id
+                ),
+            },
+        )
+
+
 # --- Raw-node reshaping: wire Struct -> ingest.py's `data` contract. ---
 
 
@@ -786,6 +1100,46 @@ def _review_comment_data(
         "body": review_comment.body,
         "path": review_comment.path,
     }
+
+
+def _discussion_data(node: _DiscussionNode) -> JsonObject:
+    """Reshape a wire discussion node into the `discussion` event contract."""
+    data: JsonObject = {
+        "id": node.id,
+        "number": node.number,
+        "title": node.title,
+        "body": node.body,
+        "author": _author_data(node.author),
+        "createdAt": node.created_at,
+        "updatedAt": node.updated_at,
+        "category": {"name": node.category.name},
+        "answer": None if node.answer is None else {"id": node.answer.id},
+    }
+    if node.author_association is not None:
+        data["authorAssociation"] = node.author_association
+    return data
+
+
+def _discussion_comment_data(
+    comment: _DiscussionCommentNode | _ReplyNode,
+    discussion_id: GraphQLId,
+    *,
+    parent_id: GraphQLId | None = None,
+) -> JsonObject:
+    """Reshape a comment/reply node, injecting `discussionId`/`parentId`."""
+    data: JsonObject = {
+        "id": comment.id,
+        "discussionId": discussion_id,
+        "author": _author_data(comment.author),
+        "createdAt": comment.created_at,
+        "updatedAt": comment.updated_at,
+        "body": comment.body,
+    }
+    if comment.author_association is not None:
+        data["authorAssociation"] = comment.author_association
+    if parent_id is not None:
+        data["parentId"] = parent_id
+    return data
 
 
 # --- Shared plumbing: parse-before-append, follow-up draining, cursors. ---
