@@ -15,8 +15,6 @@ EXIT_CODE=0
 # reported on every run so it cannot rot quietly.
 PENDING_SPLIT=(
     src/ghmem/ingest.py
-    src/ghmem/sync.py
-    tests/test_sync.py
 )
 
 is_pending() {
