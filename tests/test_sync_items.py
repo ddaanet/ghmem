@@ -1,4 +1,4 @@
-"""Tests for the issues and pull-requests sync driver."""
+"""Test the issues and pull-requests sync driver."""
 
 from collections import Counter
 from pathlib import Path
@@ -114,17 +114,18 @@ def test_truncated_nested_connection_records_fetch_failed(
 ) -> None:
     """A first-page-only connection past its limit is recorded, not lost.
 
-    `reviews`, review comments, files, closing issues, and
-    `timelineItems` are all taken as first-page-only by design; none of
-    them are drained past `pageInfo`. Losing data silently there would
-    defeat the point of the corpus, so an oversized one must at least
-    be visible.
+    `reviews`, review comments, files, closing issues and
+    `timelineItems` are all taken as first-page-only by design — none
+    of them is drained past its `pageInfo`.
+
+    Losing data silently there would defeat the point of the corpus, so
+    an oversized connection has to be visible at least as a failure.
 
     When: a PR's `reviews` connection reports `hasNextPage: true` on
       its first page
-    Then: sync records a `fetch_failed` naming the connection and node
-      count, keyed by the PR id and connection name, and the sync still
-      completes (the PR item itself is still appended)
+    Then: sync records a `fetch_failed` naming the connection and its
+      node count, keyed by the PR id and connection name, and the sync
+      still completes — the PR item itself is still appended
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     pages = _ALL_PAGES | {(_PRsQueryResponse, None): "prs_page1_truncated_reviews.json"}
@@ -147,9 +148,10 @@ def test_comment_reactions_appended_with_injected_subject_id(
     """A comment's `reactionGroups` become `reaction` events keyed to it.
 
     Comment reactions were never fetched before — only the item's own
-    body reactions were. Zero-count groups are dropped, as everywhere
-    else: GitHub returns a group per reaction kind whether anyone used
-    it or not.
+    body reactions were.
+
+    Zero-count groups are dropped, as everywhere else: GitHub returns a
+    group per reaction kind whether anyone used it or not.
 
     When: `_sync_issues` drains an item whose first-page comment carries
       reactions
@@ -174,10 +176,13 @@ def test_followup_comment_reactions_appended(
 ) -> None:
     """A follow-up-page comment's reactions are fetched too, not just page 1.
 
-    `C_2` lands via the comments follow-up query (`_drain_item_comments`),
-    a separate GraphQL selection from the embedded first page — this
-    proves that selection carries `reactionGroups` as well, and that
-    its zero-count groups are dropped the same way page 1's are.
+    `C_2` lands via the comments follow-up query
+    (`_drain_item_comments`), a separate GraphQL selection from the
+    embedded first page.
+
+    So this proves two things about that selection: it carries
+    `reactionGroups` as well, and its zero-count groups are dropped the
+    same way page 1's are.
 
     When: `_sync_issues` drains a follow-up comments page whose comment
       has both a used and an unused reaction group
@@ -202,10 +207,11 @@ def test_comment_raw_node_carries_no_reaction_groups(
     """A `comment` event's `data` never carries `reactionGroups`.
 
     Reactions are emitted as their own `reaction` events keyed by
-    `subjectId`; leaking `reactionGroups` onto the comment's own raw
-    node would violate `_RawComment`'s `forbid_unknown_fields` contract
-    (which would already fail loudly via `_append_validated`) — this
-    pins the projection directly.
+    `subjectId`. Leaking `reactionGroups` onto the comment's own raw
+    node would violate `_RawComment`'s `forbid_unknown_fields`
+    contract, and `_append_validated` would already fail loudly on it.
+
+    This pins the projection directly rather than relying on that.
 
     When: `_sync_issues` drains an item with a reacted-to comment
     Then: the comment's `data` dict has no `reactionGroups` key

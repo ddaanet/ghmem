@@ -1,10 +1,11 @@
 """Shared fixtures and stubs for the split sync test modules.
 
-Not collected by pytest (no `test_` prefix); imported by
-`test_sync`, `test_sync_items`, `test_sync_commits`, and
-`test_sync_discussions`. `_ALL_PAGES` maps every (response type, after
-cursor) a full sync issues to its fixture file, across all four
-connections.
+Not collected by pytest — the module carries no `test_` prefix. It is
+imported by `test_sync`, `test_sync_items`, `test_sync_commits`, and
+`test_sync_discussions`.
+
+`_ALL_PAGES` maps every (response type, after cursor) pair a full sync
+issues to the fixture file answering it, across all four connections.
 """
 
 import json

@@ -1,4 +1,4 @@
-"""Tests for the commit-history sync driver."""
+"""Test the commit-history sync driver."""
 
 from collections import Counter
 from pathlib import Path
@@ -59,10 +59,11 @@ def test_commit_hwm_is_newest_committed_date(
 
     `history(since:)` filters on committedDate, not authoredDate —
     verified against the live API, where 633 of micro's ~3530 commits
-    carry the two dates apart. The fixture's newest commit is
-    deliberately one of those: authored 2026-05-09, committed
-    2026-05-20. A hwm taken from `authoredDate` would silently rewind
-    the next catch-up by eleven days.
+    carry the two dates apart.
+
+    The fixture's newest commit is deliberately one of those: authored
+    2026-05-09, committed 2026-05-20. A hwm taken from `authoredDate`
+    would silently rewind the next catch-up by eleven days.
 
     When: `_sync_commits` drains a commit-history page
     Then: the persisted cursor's `updated_at_hwm` is the newest
@@ -83,7 +84,9 @@ def test_commit_catch_up_passes_since_not_cursor(
 
     `Commit.history` is newest-first, so resuming from the persisted
     cursor would drain further into the *past* and never see a new
-    commit. Catching up means `after: None` with `since:` set to the
+    commit.
+
+    Catching up therefore means `after: None`, with `since:` set to the
     last hwm.
 
     When: `_sync_commits` runs again over a ledger whose commits drain

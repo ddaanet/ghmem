@@ -1,4 +1,4 @@
-"""Tests for the discussions sync driver."""
+"""Test the discussions sync driver."""
 
 import warnings
 from collections import Counter
@@ -70,18 +70,20 @@ def test_discussion_reactions_appended_with_injected_subject_id(
 
     `show.render_discussion` renders a Reactions section, so the
     discussions connection has to select `reactionGroups` for it to
-    have anything to render. Zero-count groups are dropped, as on
-    issues and PRs: GitHub returns a group per reaction kind whether
-    anyone used it or not.
+    have anything to render.
+
+    Zero-count groups are dropped, as on issues and PRs: GitHub returns
+    a group per reaction kind whether anyone used it or not.
+
+    Comments and replies carry reactions too. Those are pinned by
+    `test_discussion_comment_reactions_appended_with_injected_subject_id`
+    and by
+    `test_discussion_reply_reactions_appended_with_injected_subject_id`;
+    this test covers only the discussion-level ones.
 
     When: `_sync_discussions` drains a discussions page
     Then: every non-empty reaction group is appended as a `reaction`
       naming its discussion as subject, and empty ones are not
-
-    Comments and replies carry reactions too (see
-    `test_discussion_comment_reactions_appended_with_injected_subject_id`
-    and `test_discussion_reply_reactions_appended_with_injected_subject_id`)
-    — this test only pins the discussion-level ones.
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
 
@@ -103,8 +105,9 @@ def test_discussion_comment_reactions_appended_with_injected_subject_id(
     """A discussion comment's `reactionGroups` become a `reaction` event.
 
     Comment and reply reactions were never fetched before — only the
-    discussion's own body reactions were. Zero-count groups are
-    dropped, as everywhere else.
+    discussion's own body reactions were.
+
+    Zero-count groups are dropped, as everywhere else.
 
     When: `_sync_discussions` drains a discussion whose top-level
       comment carries reactions, and a follow-up-page comment (`DC_2`,
@@ -132,10 +135,10 @@ def test_discussion_reply_reactions_appended_with_injected_subject_id(
 ) -> None:
     """A reply's reactions are appended from both replies pages.
 
-    `DC_1_R1` arrives on the embedded first replies page; `DC_1_R2`
-    arrives via the replies follow-up query
-    (`_append_comment_replies`'s `_drain_follow_up` call) — a separate
-    GraphQL selection this proves also carries `reactionGroups`.
+    `DC_1_R1` arrives on the embedded first replies page. `DC_1_R2`
+    arrives via the replies follow-up query — the `_drain_follow_up`
+    call inside `_append_comment_replies`, a separate GraphQL selection
+    this proves also carries `reactionGroups`.
 
     When: `_sync_discussions` drains a comment whose replies span two
       pages and both carry reactions
@@ -212,11 +215,13 @@ def test_cross_page_reply_parent_appended_first(
     `DC_2` on page 2 via follow-up), and `DC_1`'s own replies also span
     two pages (`DC_1_R1` embedded, `DC_1_R2` via follow-up) — the shape
     that would strand a reply if comments and replies were drained out
-    of order. Live-schema discovery found replies strictly nested
-    under their own parent's `replies` connection (never flattened
-    into the top-level `comments` connection or another comment's
-    page), so an orphan from pagination order alone is
-    impossible-by-construction here; this test still proves it holds.
+    of order.
+
+    Live-schema discovery found replies strictly nested under their own
+    parent's `replies` connection, never flattened into the top-level
+    `comments` connection or another comment's page. An orphan from
+    pagination order alone is therefore impossible by construction
+    here; this test proves it holds anyway.
 
     When: the store is rebuilt from a full discussions sync and
       discussion #101 is rendered

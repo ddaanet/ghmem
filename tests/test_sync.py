@@ -17,15 +17,15 @@ def test_full_sync_appends_expected_nodes(
 ) -> None:
     """A full sync appends every node kind the fixtures carry.
 
-    When: `sync` drains a 2-page issues connection (one item with a
-      second nested comment page, a `timelineItems` cross-referenced
-      mention, and one null node), a PR page (with a review, files,
-      and a closing issue reference), and a commit-history page, and a
-      2-page discussions connection — with reactions on items,
-      comments, reviews, review comments, discussion comments, and
-      discussion replies alike
-    Then: the returned counts match the fixtures' node census, with
-      one `cross_ref` from the closing reference and one from the
+    When: `sync` drains all four connections over the fixture pages —
+      a 2-page issues connection (one item with a second nested comment
+      page, a `timelineItems` cross-referenced mention, and one null
+      node), a PR page (a review, files, and a closing issue
+      reference), a commit-history page, and a 2-page discussions
+      connection, with reactions on items, comments, reviews, review
+      comments, discussion comments and discussion replies alike
+    Then: the returned counts match the fixtures' node census — one
+      `cross_ref` from the closing reference and one from the
       `timelineItems` mention, and one `reaction` per non-empty
       reaction group across every subject kind
     """

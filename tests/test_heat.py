@@ -50,6 +50,7 @@ def store(tmp_path: Path) -> Store:
 
 
 def _score_of(scores: list[HeatScore], number: int) -> HeatScore:
+    """Return the score for issue/PR `number` out of a ranked list."""
     return next(s for s in scores if s.number == IssueOrPRNumber(number))
 
 

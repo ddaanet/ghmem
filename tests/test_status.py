@@ -59,10 +59,11 @@ def test_routing_events_for_unfetched_items_do_not_count(
 ) -> None:
     """Routing events naming items absent from the corpus change no count.
 
-    The two ledgers carry two different populations: `routing.jsonl` is
+    The two ledgers carry two different populations. `routing.jsonl` is
     original and outlives the regenerable `fetch.jsonl`, and a
-    `fetch_failed` item writes no `IssueOrPR` row at all, so a routing
-    id with no corpus row is the steady state rather than corruption.
+    `fetch_failed` item writes no `IssueOrPR` row at all — so a routing
+    id with no corpus row is the steady state, not corruption.
+
     Both ghosts route to the topic the fixture already has, keeping the
     assertion on the counts alone.
 

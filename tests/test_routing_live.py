@@ -60,9 +60,11 @@ def test_a_rejected_event_never_reaches_the_ledger(tmp_path: Path) -> None:
     `routing.jsonl` is the one file here that cannot be regenerated, and
     replay is strict — so an event the reducer rejects, once written,
     makes every future `rebuild` raise until someone edits the ledger by
-    hand. This is the same parse-before-append rule the fetch driver
-    already follows via `validate_raw_node`, and the routing ledger
-    needs it more, not less: the fetch ledger can simply be refetched.
+    hand.
+
+    This is the same parse-before-append rule the fetch driver already
+    follows via `validate_raw_node`. The routing ledger needs it more,
+    not less: the fetch ledger can simply be refetched.
 
     When: an event carrying a tag with no reducer branch is recorded
     Then: `UnknownRoutingEventError` propagates, the ledger is still

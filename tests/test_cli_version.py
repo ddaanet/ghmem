@@ -9,8 +9,9 @@ from ghmem.cli import main
 def test_version_flag_displays_version() -> None:
     """`--version` displays the version and program name.
 
-    When: ghmem --version is called
-    Then: Output contains version number and program name, exit code is 0
+    When: `ghmem --version` is called
+    Then: the output carries the version number and the program name,
+      and the exit code is 0
     """
     runner = CliRunner()
     result = runner.invoke(main, ["--version"])
