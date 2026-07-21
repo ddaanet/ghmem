@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 from ghmem.dispatch_store import (
-    _BUSY_TIMEOUT_SECONDS,
+    BUSY_TIMEOUT_SECONDS,
     dispatch_for,
     dispatched_unrouted,
     record_routing_event,
@@ -78,7 +78,7 @@ class Store:
     def open(cls, path: Path) -> Store:
         """Open (creating if absent) the SQLite database at `path`."""
         engine = create_engine(
-            f"sqlite:///{path}", connect_args={"timeout": _BUSY_TIMEOUT_SECONDS}
+            f"sqlite:///{path}", connect_args={"timeout": BUSY_TIMEOUT_SECONDS}
         )
         return cls(engine)
 

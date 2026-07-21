@@ -79,7 +79,7 @@ def session_usage(engine: Engine, session_token: str) -> tuple[int, int]:
     return (items, chars)
 
 
-_BUSY_TIMEOUT_SECONDS = 30
+BUSY_TIMEOUT_SECONDS = 30
 """How long a writer waits on SQLite's lock before raising, not 5s.
 
 `reserve_dispatch`'s conditional insert leans on SQLite's one-writer
