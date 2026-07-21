@@ -24,6 +24,13 @@ sessions cannot be handed the same item.
 **Tech Stack:** Python 3.14, click, SQLAlchemy 2.0 typed declarative,
 msgspec, pytest. `just green` is the gate.
 
+> **Over the 400-line cap by explicit exception**, at 482. The cap is a
+> reader-context budget, and the overage buys five task contracts of
+> ~80 lines each rather than one bloated one. Splitting again — a part
+> that is already B1 of B — would cost more cross-referencing than the
+> overage saves. See the honest-line-count rule: wrap, then split, but
+> never shave the reasoning to fit a number.
+
 ## Global Constraints
 
 - Every source file stays under 400 lines
@@ -52,12 +59,23 @@ msgspec, pytest. `just green` is the gate.
   slice lost a whole type contract that way.
 - **Modify `src/ghmem/ingest.py`** — a `requeue` branch in
   `apply_routing_event`.
-- **Modify `src/ghmem/store.py`** — `session_usage`, `reserve_dispatch`,
-  `stranded_dispatches`.
+- **Modify `src/ghmem/store.py`** — `session_usage`, `reserve_dispatch`.
 - **Modify `src/ghmem/exceptions.py`** — `TriageSessionError`.
 - **Modify `src/ghmem/cli.py`** — `triage`, `route`, `requeue`.
-- **Test:** `tests/test_triage.py`, `tests/test_queue.py`,
-  `tests/test_requeue.py`, plus additions to `tests/test_store.py`.
+- **Test:** `tests/test_queue.py`, `tests/test_triage.py`,
+  `tests/test_cli_triage.py`, `tests/test_requeue.py`, plus additions to
+  `tests/test_store.py`.
+
+## Execution order
+
+The numbering is not a chain. **Tasks 1, 2 and 5 are independent of one
+another** and touch disjoint files (`heat_query.py` / `store.py` /
+`ledger.py`+`ingest.py`), so they can run concurrently. Task 3 needs 1
+and 2; Task 4 needs 3.
+
+Task 5 also edits `cli.py`, which Task 4 edits — land whichever finishes
+first and rebase the other. They add separate commands and do not
+overlap textually.
 
 ---
 
@@ -214,8 +232,13 @@ race test dies. Return a hardcoded `True` and confirm it dies.
 
 **Files:**
 - Create: `src/ghmem/budget.py`, `src/ghmem/triage.py`
-- Modify: `src/ghmem/exceptions.py`, `src/ghmem/cli.py`
+- Modify: `src/ghmem/exceptions.py`
 - Test: `tests/test_triage.py`
+
+**Library only — no CLI in this task.** `show.py`/`cli.show` and
+`status.py`/`cli.status` are the established seam here: the module holds
+the logic and its tests, the command is a few lines of plumbing. Task 4
+adds the commands.
 
 **Interfaces:**
 - Consumes: `untriaged_heat_scores` (Task 1); `Store.session_usage`,
@@ -225,8 +248,13 @@ race test dies. Return a hardcoded `True` and confirm it dies.
   - `budget.BATCH_ITEMS: int`, `budget.BATCH_CHARS: int`
   - `triage.mint_session() -> str`
   - `triage.serve_next(store, routing, session_token) -> ServeResult`
+  - `triage.record_verdict(store, routing, session_token, number,
+    verdict, note) -> None`
   - `ServeResult` — a frozen dataclass carrying `packet: str | None` and
     `message: str | None`; exactly one is set.
+  - `TriageSessionError` in `exceptions.py`, subclassing `ValueError` —
+    bad input, the same reasoning that put `UnknownRoutingEventError`
+    there. Add it to the module docstring's inventory of bases.
 
 **Budget constants.** `BATCH_ITEMS = 12`, `BATCH_CHARS = 200_000`, both
 PROVISIONAL. Twelve comes from the spec's own reasoning: fixed spawn
@@ -263,12 +291,12 @@ do not stub a truncation that does nothing.
 **Packet format.** `session: <token>`, `packet-chars: <n>`, the item
 number, then `show.render`'s output.
 
-**Terminal messages**, both to stderr with empty stdout and exit 0:
+**Terminal messages** ride in `ServeResult.message`, verbatim:
 `batch complete: budget exhausted` and `triage complete: 0 pending`.
+Where they are written and what they exit with is Task 4's business.
 
-**`route <token> <number> <verdict> [note]`.** Records the verdict, then
-serves the next packet under the same token. Three rejections, each
-exit 1 on stderr via `TriageSessionError`:
+**`record_verdict`.** Writes the `route` event through
+`Store.record_routing_event`. It rejects, raising `TriageSessionError`:
   - a topic verdict with no note
   - `no-signal` with a note
   - a number not currently dispatched to this token
@@ -278,29 +306,30 @@ never handed, or reusing a token after a requeue. It is a consistency
 check against agent error, not authentication — the allowlist hook is
 what constrains agents.
 
-The CLI-facing id is the **item number**, matching `show <number>`; the
-CLI maps it to a `GraphQLId` for the ledger.
+It takes the **item number**, matching `show <number>`, and maps it to a
+`GraphQLId` for the ledger.
 
-**Known corner, accepted:** `triage` on an empty queue mints a token,
-prints `triage complete: 0 pending`, and serves nothing, so no
-`Dispatch` row ever carries that token and it is indistinguishable from
-one invented. Harmless — the agent has nothing to route. Adding a
-`session_opened` event purely to make an unusable token provably real is
-not worth a union member. State this in `mint_session`'s docstring.
+**Known corner, accepted:** `triage` on an empty queue mints a token and
+serves nothing, so no `Dispatch` row ever carries that token and it is
+indistinguishable from one invented. Harmless — the agent has nothing to
+route. Adding a `session_opened` event purely to make an unusable token
+provably real is not worth a union member. State this in
+`mint_session`'s docstring.
 
 - [ ] **Step 1: Write the failing tests**
 
   - a fresh session serves the hottest item, with both header lines and
     the `show` rendering
-  - `route` records the verdict and serves the *next* item, not a repeat
-  - the item cap ends the batch: `BATCH_ITEMS` reached → stderr message,
-    empty stdout, exit 0, and the next item still has no `Dispatch` row
+  - `record_verdict` then `serve_next` yields the *next* item, not a
+    repeat
+  - the item cap ends the batch: `BATCH_ITEMS` reached → a message and
+    no packet, and the next item still has no `Dispatch` row
   - the char cap ends the batch mid-run, with the gating item still
     queued
   - the first item of a session is served even when it alone exceeds
     `BATCH_CHARS`
   - a topic verdict with no note, `no-signal` with a note, and a number
-    dispatched to a different token each exit 1
+    dispatched to a different token each raise `TriageSessionError`
   - a candidate lost to a concurrent reservation is skipped and the next
     one served
 
@@ -309,7 +338,7 @@ not worth a union member. State this in `mint_session`'s docstring.
 
 - [ ] **Step 2: Run them and confirm each fails on its assertion**
 
-- [ ] **Step 3: Implement `budget.py`, then `triage.py`, then the CLI**
+- [ ] **Step 3: Implement `budget.py`, then `triage.py`**
 
 - [ ] **Step 4: Run `just green`**
 
@@ -323,11 +352,65 @@ test.
 
 ---
 
-### Task 4: `requeue`
+### Task 4: The `triage` and `route` commands
+
+**Files:**
+- Modify: `src/ghmem/cli.py`
+- Test: `tests/test_cli_triage.py`
+
+**Interfaces:**
+- Consumes: everything Task 3 produces.
+- Produces: `ghmem triage`,
+  `ghmem route <token> <number> <verdict> [note]`
+
+**Both commands print a packet or a terminal message.** `route` records
+the verdict and then serves the next packet under the same token, so the
+agent spends one command per item and sits in no deterministic step.
+
+**Terminal messages** go to stderr with empty stdout and **exit 0**:
+`batch complete: budget exhausted` and `triage complete: 0 pending`.
+Exit codes are reserved for actual errors — an expected outcome must not
+read as a failure. A `TriageSessionError` from Task 3 is an actual
+error: catch it, print its message to stderr, exit 1.
+
+- [ ] **Step 1: Write the failing tests**
+
+Use `CliRunner`, as `tests/test_cli_sync.py` does.
+
+  - `ghmem triage` on a fresh corpus prints a packet, exit 0
+  - `ghmem triage` on a fully-routed corpus prints `triage complete: 0
+    pending` to stderr, empty stdout, exit 0
+  - `ghmem route` with a valid verdict prints the next packet, exit 0
+  - each of the three rejections exits 1 with its message on stderr
+  - **the full lifecycle:** open a session, route items until the budget
+    ends the batch, then rebuild the mirror from the routing ledger the
+    run just wrote and assert every observable row is unchanged
+
+That last is this part's version of Part A's `test_routing_live.py` — it
+pins the architecture's central claim, that a live write and a cold
+replay cannot diverge, across a whole session rather than one event.
+
+- [ ] **Step 2: Run them and confirm each fails on its assertion**
+
+- [ ] **Step 3: Implement the exception and both commands**
+
+- [ ] **Step 4: Run `just green`**
+
+- [ ] **Step 5: Mutate to prove teeth**
+
+Make a terminal message exit 1, and make a rejection exit 0. Both must
+kill a test — the exit-code contract is the one an orchestration script
+reads, and nothing else checks it.
+
+- [ ] **Step 6: Commit**
+
+---
+
+### Task 5: `requeue`
 
 **Files:**
 - Modify: `src/ghmem/ledger.py`, `src/ghmem/ingest.py`,
-  `src/ghmem/store.py`, `src/ghmem/cli.py`
+  `src/ghmem/cli.py`
 - Test: `tests/test_requeue.py`
 
 **Interfaces:**
