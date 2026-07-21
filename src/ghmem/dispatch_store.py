@@ -172,6 +172,23 @@ def dispatched_unrouted(engine: Engine) -> list[Dispatch]:
         )
 
 
+def dispatch_for(engine: Engine, item_id: GraphQLId) -> Dispatch | None:
+    """Return `item_id`'s current `Dispatch` row, or None if not outstanding.
+
+    A single-row lookup by primary key, for callers — `record_verdict`
+    among them — that need one item's ownership rather than every
+    outstanding dispatch in the corpus.
+    """
+    with Session(engine) as session:
+        return session.get(Dispatch, item_id)
+
+
+def route_for(engine: Engine, item_id: GraphQLId) -> Route | None:
+    """Return `item_id`'s current `Route` row, or None if unrouted."""
+    with Session(engine) as session:
+        return session.get(Route, item_id)
+
+
 def topics(engine: Engine) -> list[Topic]:
     """Return every known topic, ordered by name."""
     with Session(engine) as session:

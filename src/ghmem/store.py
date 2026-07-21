@@ -29,9 +29,11 @@ from sqlalchemy.orm import Session
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 from ghmem.dispatch_store import (
     _BUSY_TIMEOUT_SECONDS,
+    dispatch_for,
     dispatched_unrouted,
     record_routing_event,
     reserve_dispatch,
+    route_for,
     routes,
     session_usage,
     topics,
@@ -41,7 +43,7 @@ from ghmem.exceptions import (
     IssueOrPRNotFoundError,
     PRDiffNotFoundError,
 )
-from ghmem.heat_query import heat_scores
+from ghmem.heat_query import heat_scores, untriaged_heat_scores
 from ghmem.ingest import rebuild_from_ledgers
 from ghmem.ledger import DispatchedEvent, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import (
@@ -144,6 +146,10 @@ class Store:
     def heat_scores(self, weights: Mapping[str, float]) -> list[HeatScore]:
         """Score and rank every item by heat, hottest first."""
         return heat_scores(self._engine, weights)
+
+    def untriaged_heat_scores(self, weights: Mapping[str, float]) -> list[HeatScore]:
+        """Score and rank every untriaged item by heat, hottest first."""
+        return untriaged_heat_scores(self._engine, weights)
 
     def comments_for(self, item_id: GraphQLId) -> list[Comment]:
         """Return the comments on `item_id`, oldest first."""
@@ -284,6 +290,14 @@ class Store:
     def dispatched_unrouted(self) -> list[Dispatch]:
         """Return corpus items dispatched but carrying no current Route."""
         return dispatched_unrouted(self._engine)
+
+    def dispatch_for(self, item_id: GraphQLId) -> Dispatch | None:
+        """Return `item_id`'s Dispatch row, or None if not outstanding."""
+        return dispatch_for(self._engine, item_id)
+
+    def route_for(self, item_id: GraphQLId) -> Route | None:
+        """Return `item_id`'s current Route row, or None if unrouted."""
+        return route_for(self._engine, item_id)
 
     def topics(self) -> list[Topic]:
         """Return every known topic, ordered by name."""
