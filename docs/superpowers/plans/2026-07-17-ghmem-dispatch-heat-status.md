@@ -19,6 +19,33 @@
 > only on subproject 1 (corpus, landed on main) and is fully testable
 > against hand-authored fixture ledgers (no network).
 
+> **As built — where the landed code diverges from this plan.** The
+> plan is left as written; these are the places where following it
+> would now mislead. Read the code, not this file, for the current
+> contract.
+>
+> - **`heat` is one aggregate SQL query, not a Python loop.** The
+>   "reuse the `Store` query methods in a loop over
+>   `all_issues_and_prs()`" design under Task 1 was replaced by a
+>   single correlated-subquery `select` in `heat_query.py`, with a
+>   test pinning it to exactly one statement.
+> - **`reactions` covers the whole thread, not just the body.** Task
+>   1's "item-level only in v1" limitation was closed before
+>   calibration, since widening it afterwards would have invalidated
+>   the weights. Reactions on comments, reviews and review comments
+>   are fetched and summed.
+> - **`HeatScore` carries `title`.** Added so ranked output can name
+>   each item without a second query.
+> - **`xref_degree` is called `related_items`, and counts distinct
+>   neighbours rather than `len(cross_refs_for(id))`.** A PR closing an
+>   issue is recorded twice — as `closes` and as `cross_referenced` —
+>   so the row count double-weights exactly the strongest links. Degree
+>   is an edge count and would have been the honest name for the buggy
+>   version; the fixed metric counts items, so it says so.
+> - **`ghmem heat` emits CSV, not a formatted line per item.** Its
+>   only consumer is analysis, which wants columns; the column
+>   contract is in `tools/ghmem/README.md`.
+
 **Goal:** Rank the corpus by heat, lay the routing-ledger→SQLite replay
 foundation the later dispatch commands write through, and report
 coverage with `status` — all reading only the local corpus.
