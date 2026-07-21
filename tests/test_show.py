@@ -8,10 +8,10 @@ from click.testing import CliRunner
 from ghmem.aliases import IssueOrPRNumber
 from ghmem.cli import main
 from ghmem.exceptions import IssueOrPRNotFoundError
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.show import DIFF_BODY_MAX_CHARS, render
 from ghmem.standing import StandingTable, build_standing
-from ghmem.store import RoutingEvent, Store
+from ghmem.store import Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "show_corpus.jsonl"
 

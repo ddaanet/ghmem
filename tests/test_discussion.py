@@ -10,10 +10,10 @@ from click.testing import CliRunner
 from ghmem.aliases import DiscussionNumber
 from ghmem.cli import main
 from ghmem.exceptions import DiscussionNotFoundError
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.show import OrphanReplyWarning, render_discussion
 from ghmem.standing import StandingTable, build_standing
-from ghmem.store import RoutingEvent, Store
+from ghmem.store import Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "discussion_corpus.jsonl"
 

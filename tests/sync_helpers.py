@@ -20,8 +20,7 @@ from pytest_mock import MockerFixture
 from ghmem.aliases import JsonObject
 from ghmem.exceptions import RateLimitError
 from ghmem.github import GitHubClient
-from ghmem.ingest import RoutingEvent
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.store import Store
 from ghmem.sync_commits import _CommitHistoryQueryResponse
 from ghmem.sync_core import _Sync

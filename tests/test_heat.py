@@ -10,9 +10,9 @@ from sqlalchemy import Engine, event
 
 from ghmem.aliases import IssueOrPRNumber
 from ghmem.heat import rank
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.models import HeatScore
-from ghmem.store import RoutingEvent, Store
+from ghmem.store import Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "heat_corpus.jsonl"
 

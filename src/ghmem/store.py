@@ -29,8 +29,8 @@ from ghmem.exceptions import (
     PRDiffNotFoundError,
 )
 from ghmem.heat_query import heat_scores
-from ghmem.ingest import RoutingEvent, rebuild_from_ledgers
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ingest import rebuild_from_ledgers
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.models import (
     Comment,
     Commit,
@@ -46,7 +46,7 @@ from ghmem.models import (
     ReviewComment,
 )
 
-__all__ = ["RoutingEvent", "Store"]
+__all__ = ["Store"]
 
 
 class Store:

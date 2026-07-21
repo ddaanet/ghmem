@@ -257,6 +257,50 @@ class FetchFailed(Base):
     reason: Mapped[str]
 
 
+class Route(Base):
+    """The current triage verdict for one item (latest-wins by item)."""
+
+    item_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
+    verdict: Mapped[str]
+    note: Mapped[str]
+    session: Mapped[str]
+
+
+class Dispatch(Base):
+    """The item's *current* outstanding dispatch — not a dispatch log.
+
+    Keyed on `item_id` alone, so re-dispatching an item after a
+    requeue overwrites the earlier row rather than accumulating one.
+    That is the intended shape: this table answers "who is this item
+    outstanding to right now", which is what `dispatched_unrouted` and
+    the queue's distinctness rule need. The full history of every
+    dispatch — the record subproject 4 calibrates batch budgets
+    against — lives in the append-only routing ledger, which loses
+    nothing; duplicating it here would make the mirror a second copy
+    of a log instead of a cache of current state.
+
+    Live per-session metering stays exact under this key: concurrent
+    sessions are handed distinct items, and requeue runs only at
+    orchestration-run start with no session live, so every item a
+    running session dispatched still carries that session here.
+
+    The contract holds only if a requeue DELETES the row. Part B's
+    `RequeueEvent` must; without it a requeued item stays outstanding
+    forever and is never served again.
+    """
+
+    item_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
+    session: Mapped[str]
+    packet_chars: Mapped[int]
+
+
+class Topic(Base):
+    """A routing destination and whether it needs re-synthesis."""
+
+    name: Mapped[str] = mapped_column(primary_key=True)
+    dirty: Mapped[bool]
+
+
 @dataclass(frozen=True, slots=True)
 class HeatScore:
     """One item's heat score, with the per-metric breakdown behind it.

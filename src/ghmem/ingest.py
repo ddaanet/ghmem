@@ -26,9 +26,10 @@ later with only a JSON line to work back from.
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from ghmem.aliases import JsonObject
-from ghmem.ledger import FetchEvent, Ledger
-from ghmem.models import Base, FetchFailed
+from ghmem.aliases import GraphQLId, JsonObject
+from ghmem.exceptions import UnknownRoutingEventError
+from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent
+from ghmem.models import Base, Dispatch, FetchFailed, Route, Topic
 from ghmem.raw_nodes import _RAW_BY_TYPE
 
 
@@ -41,26 +42,18 @@ def rebuild_from_ledgers(
 
     Replay is idempotent: the whole schema is dropped and recreated
     first, and every row is upserted by id, so rebuilding twice from
-    the same ledgers leaves identical query results.
-
-    `routing` is accepted for interface stability with subproject 2
-    but not yet replayed — no `RoutingEvent` schema exists. HOOK: once
-    routing events are defined, replay them here, after fetch.
+    the same ledgers leaves identical query results. Routing replays
+    after fetch, since a route references an item that must already
+    exist.
     """
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with Session(engine) as session:
         for event in fetch:
             _replay_fetch_event(session, event)
-        for _event in routing:
-            pass  # no-op stub — see docstring HOOK above.
+        for event in routing:
+            apply_routing_event(session, event)
         session.commit()
-
-
-# Placeholder until subproject 2 defines the real RoutingEvent schema. It
-# deliberately doesn't invent routing event kinds — just a JSON object,
-# so `rebuild_from_ledgers` has a concrete, mypy-strict-clean signature.
-type RoutingEvent = JsonObject
 
 
 def validate_raw_node(event_type: str, data: JsonObject) -> None:
@@ -97,3 +90,64 @@ def _replay_fetch_event(session: Session, event: FetchEvent) -> None:
         session.merge(FetchFailed(id=data["id"], reason=data["reason"]))
         return
     session.merge(_RAW_BY_TYPE[event["type"]].parse(event["data"]))
+
+
+def apply_routing_event(session: Session, event: RoutingEvent) -> None:
+    """Apply one routing event to the SQLite mirror.
+
+    Called both by `rebuild_from_ledgers`'s replay and, via
+    `Store.record_routing_event`, by each live command right after it
+    appends its event, so a live write and a cold rebuild can never
+    diverge. `"dispatched"` upserts a `Dispatch` row by item id.
+    `"route"` replaces the item's `Route` row (latest-wins) and
+    dirties whichever topics it touches: the
+    topic the item is leaving, if it had a real (non-`NO_SIGNAL`)
+    verdict before, and the topic it's joining, if the new verdict
+    isn't `NO_SIGNAL` — a re-route dirties both the topic it left and
+    the one it joins. Any other tag raises: the union grows a member
+    per dispatch part, and a tag with no branch here means the ledger
+    is ahead of the code, not that a verdict can be guessed.
+    """
+    # Captured before the checks below narrow `event` away: statically
+    # the union is exhausted by them, but a ledger line is untyped JSON
+    # at runtime and can carry anything.
+    event_type: str = event["type"]
+    if event["type"] == "dispatched":
+        data = event["data"]
+        session.merge(
+            Dispatch(
+                item_id=GraphQLId(data["item_id"]),
+                session=data["session"],
+                packet_chars=data["packet_chars"],
+            )
+        )
+        return
+
+    if event["type"] == "route":
+        data = event["data"]
+        item_id = GraphQLId(data["item_id"])
+        previous = session.get(Route, item_id)
+        if previous is not None and previous.verdict != NO_SIGNAL:
+            _mark_topic_dirty(session, previous.verdict)
+        session.merge(
+            Route(
+                item_id=item_id,
+                verdict=data["verdict"],
+                note=data["note"],
+                session=data["session"],
+            )
+        )
+        if data["verdict"] != NO_SIGNAL:
+            _mark_topic_dirty(session, data["verdict"])
+        return
+
+    raise UnknownRoutingEventError(event_type)
+
+
+def _mark_topic_dirty(session: Session, name: str) -> None:
+    """Get-or-create the `Topic` named `name`, then mark it dirty."""
+    topic = session.get(Topic, name)
+    if topic is None:
+        session.add(Topic(name=name, dirty=True))
+    else:
+        topic.dirty = True

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.standing import (
     ACCEPTED_PR_THRESHOLD,
     MERGE_THRESHOLD,
@@ -13,7 +13,7 @@ from ghmem.standing import (
     StandingTable,
     build_standing,
 )
-from ghmem.store import RoutingEvent, Store
+from ghmem.store import Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "standing_corpus.jsonl"
 

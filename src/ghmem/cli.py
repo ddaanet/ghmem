@@ -13,12 +13,12 @@ from ghmem.exceptions import (
 )
 from ghmem.github import GitHubClient
 from ghmem.heat import rank
-from ghmem.ledger import FetchEvent, Ledger
+from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.models import HeatScore
 from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
 from ghmem.show import render, render_discussion
 from ghmem.standing import build_standing
-from ghmem.store import RoutingEvent, Store
+from ghmem.store import Store
 from ghmem.sync import sync as run_sync
 
 

@@ -12,13 +12,14 @@ from ghmem.exceptions import (
     IssueOrPRNotFoundError,
     PRDiffNotFoundError,
 )
-from ghmem.ledger import FetchEvent, Ledger, RawNodeEvent
+from ghmem.ledger import FetchEvent, Ledger, RawNodeEvent, RoutingEvent
 from ghmem.models import CrossRef, FileStat
 from ghmem.raw_nodes import _RawIssueOrPR
-from ghmem.store import RoutingEvent, Store
+from ghmem.store import Store
 
 FIXTURE = Path(__file__).parent / "fixtures" / "fetch_small.jsonl"
 DISCUSSION_FIXTURE = Path(__file__).parent / "fixtures" / "fetch_discussion.jsonl"
+HEAT_FIXTURE = Path(__file__).parent / "fixtures" / "heat_corpus.jsonl"
 
 
 @pytest.fixture
@@ -260,6 +261,23 @@ def test_get_discussion_missing_raises(discussion_store: Store) -> None:
     """
     with pytest.raises(DiscussionNotFoundError):
         discussion_store.get_discussion(DiscussionNumber(999))
+
+
+def test_all_issues_and_prs_orders_by_number(tmp_path: Path) -> None:
+    """all_issues_and_prs returns every item ordered by number.
+
+    When: the fetch ledger appends items out of numeric order
+    Then: all_issues_and_prs returns them sorted ascending by number,
+      not in ledger insertion order
+    """
+    store = Store.open(tmp_path / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(HEAT_FIXTURE)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+    store.rebuild_from_ledgers(fetch, routing)
+
+    assert [item.number for item in store.all_issues_and_prs()] == [
+        IssueOrPRNumber(n) for n in range(1, 6)
+    ]
 
 
 def test_raw_node_rejects_unknown_key() -> None:

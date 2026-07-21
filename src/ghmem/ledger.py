@@ -4,7 +4,7 @@ import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Literal, TypedDict, cast
+from typing import Final, Literal, TypedDict, cast
 
 from ghmem.aliases import JsonObject
 
@@ -130,3 +130,51 @@ class FetchFailedEvent(TypedDict):
 
 
 type FetchEvent = RawNodeEvent | CursorEvent | FetchFailedEvent
+
+
+NO_SIGNAL: Final[str] = "no-signal"
+"""The reserved verdict meaning "reviewed, nothing worth routing".
+
+A real topic name may never equal this — it marks an item as triaged
+without creating or dirtying any `Topic` row.
+"""
+
+
+class DispatchedData(TypedDict):
+    """A corpus item served to a triage session."""
+
+    session: str
+    item_id: str
+    packet_chars: int
+
+
+class DispatchedEvent(TypedDict):
+    """A ghmem-constructed record that an item was dispatched."""
+
+    type: Literal["dispatched"]
+    data: DispatchedData
+
+
+class RouteData(TypedDict):
+    """A triage verdict for one item, to a topic or to `NO_SIGNAL`."""
+
+    session: str
+    item_id: str
+    verdict: str
+    note: str
+
+
+class RouteEvent(TypedDict):
+    """A ghmem-constructed record of a triage verdict."""
+
+    type: Literal["route"]
+    data: RouteData
+
+
+type RoutingEvent = DispatchedEvent | RouteEvent
+"""The routing-ledger event union.
+
+Grows in Parts B (`RequeueEvent`) and
+C (`SnapshotEvent`, `CloseEvent`); do not add members outside those
+parts.
+"""
