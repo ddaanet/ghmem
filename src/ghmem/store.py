@@ -5,7 +5,11 @@ the source of truth: `Store.rebuild_from_ledgers` always drops and
 recreates the schema, then replays every ledger event from scratch.
 The raw-node parsing and replay live in `ingest.py`; the schema and
 row identity live in `models.py`'s declarative entities. This module
-is the read half — `Store` and its ORM `select()` queries.
+is the corpus read half — `Store` and its ORM `select()` queries over
+the regenerable corpus tables. The triage-state tables (`Dispatch`,
+`Route`, `Topic`), authored by the dispatch commands and carrying
+their own concurrency story, live in `dispatch_store.py`; `Store`
+delegates to both.
 
 Query results are detached ORM instances: all columns are
 materialized before the session closes, so reading them afterwards is
@@ -18,20 +22,27 @@ itself, or a caller reading it after the session closes will hit
 from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
-from typing import cast
 
-from sqlalchemy import CursorResult, Engine, create_engine, exists, func, or_, select
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import Engine, create_engine, func, or_, select
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
+from ghmem.dispatch_store import (
+    _BUSY_TIMEOUT_SECONDS,
+    dispatched_unrouted,
+    record_routing_event,
+    reserve_dispatch,
+    routes,
+    session_usage,
+    topics,
+)
 from ghmem.exceptions import (
     DiscussionNotFoundError,
     IssueOrPRNotFoundError,
     PRDiffNotFoundError,
 )
 from ghmem.heat_query import heat_scores
-from ghmem.ingest import apply_routing_event, rebuild_from_ledgers
+from ghmem.ingest import rebuild_from_ledgers
 from ghmem.ledger import DispatchedEvent, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import (
     Comment,
@@ -52,15 +63,6 @@ from ghmem.models import (
 )
 
 __all__ = ["Store"]
-
-_BUSY_TIMEOUT_SECONDS = 30
-"""How long a writer waits on SQLite's lock before raising, not 5s.
-
-`reserve_dispatch`'s conditional insert leans on SQLite's one-writer
-lock to serialize concurrent reservations, so a busy-waiting writer is
-the expected case, not a bug — set explicitly rather than trusting
-pysqlite's 5-second default to still be right if it ever changes.
-"""
 
 
 class Store:
@@ -95,105 +97,18 @@ class Store:
     def record_routing_event(
         self, routing: Ledger[RoutingEvent], event: RoutingEvent
     ) -> None:
-        """Record one routing event in both the ledger and the mirror.
-
-        Every mutating dispatch command but `reserve_dispatch` goes
-        through here, applying the event through the same
-        `apply_routing_event` reducer that `rebuild_from_ledgers`
-        replays — why those live writes cannot drift from a cold
-        rebuild. `reserve_dispatch` is the exception; see its docstring.
-
-        The three steps interleave deliberately. The reducer runs first,
-        but inside an uncommitted transaction, so an event it rejects
-        never reaches `routing.jsonl` — the one file here that cannot be
-        regenerated, and the one replay is strict about. This is the
-        parse-before-append rule the fetch driver follows via
-        `validate_raw_node`, which the routing ledger needs more, not
-        less: a poison line there makes every future rebuild raise,
-        whereas a bad fetch line can simply be refetched.
-
-        The ledger is then appended *before* the mirror commits, because
-        it is the durable truth and the mirror is a regenerable cache. A
-        crash in between loses nothing: the next rebuild replays the
-        event that already landed. The reverse order could commit a
-        verdict that no ledger records, which no rebuild would restore.
-
-        Durability beyond the OS is the caller's checkpoint to take, via
-        `Ledger.sync()` — an fsync per routed item would tax a triage
-        session for a guarantee that only matters at run boundaries.
-        """
-        with Session(self._engine) as session:
-            apply_routing_event(session, event)
-            routing.append(event)
-            session.commit()
+        """Record one routing event in both the ledger and the mirror."""
+        record_routing_event(self._engine, routing, event)
 
     def session_usage(self, session_token: str) -> tuple[int, int]:
-        """Return (items, chars) dispatched to `session_token` so far.
-
-        Exact, not approximate, because of `Dispatch`'s item-id-only
-        key: concurrent sessions are handed distinct items, and
-        `requeue` only ever deletes a row with no session live, so
-        every item a running session was dispatched still carries that
-        session here for the whole session's lifetime.
-        """
-        with Session(self._engine) as session:
-            items, chars = session.execute(
-                select(
-                    func.count(Dispatch.item_id),
-                    func.coalesce(func.sum(Dispatch.packet_chars), 0),
-                ).where(Dispatch.session == session_token)
-            ).one()
-        return (items, chars)
+        """Return (items, chars) dispatched to `session_token` so far."""
+        return session_usage(self._engine, session_token)
 
     def reserve_dispatch(
         self, routing: Ledger[RoutingEvent], event: DispatchedEvent
     ) -> bool:
-        """Atomically reserve an item for a session; False if already taken.
-
-        The live dispatch path, and the one place two triage sessions
-        can race for the same item: `Dispatch` is keyed on `item_id`
-        alone, so whichever session's row lands first wins, and the
-        loser must learn that rather than silently overwrite the
-        winner. A read-then-write can't enforce that — the `sqlite3`
-        driver opens a transaction before a write but not before a
-        read, so two processes can both read "free" and both write.
-        This collapses the check and the write into one conditional
-        insert (`INSERT ... ON CONFLICT (item_id) DO NOTHING`), which
-        SQLite evaluates inside the single writer's transaction — there
-        is no window between "checked" and "written" for a second
-        writer to land in.
-
-        This is why the insert here is conditional while
-        `apply_routing_event`'s "dispatched" branch is an unconditional
-        `session.merge`: replay re-applies events that already
-        happened and must never decline one on a technicality, but the
-        live path is exactly the technicality — declining a second
-        reservation for the same item is the whole point.
-
-        The ledger append sits between the insert and the commit,
-        inside the same transaction, so SQLite's writer lock serializes
-        it as a side effect of the insert: a second reservation cannot
-        observe the ledger between another session's insert and its
-        append. Moving the append outside the transaction would give
-        that up.
-        """
-        data = event["data"]
-        stmt = (
-            sqlite_insert(Dispatch)
-            .values(
-                item_id=GraphQLId(data["item_id"]),
-                session=data["session"],
-                packet_chars=data["packet_chars"],
-            )
-            .on_conflict_do_nothing(index_elements=["item_id"])
-        )
-        with Session(self._engine) as session:
-            # No `.returning()`, so mypy sees the untyped `Result` overload.
-            reserved = cast("CursorResult[None]", session.execute(stmt)).rowcount == 1
-            if reserved:
-                routing.append(event)
-                session.commit()
-        return reserved
+        """Atomically reserve an item for a session; False if already taken."""
+        return reserve_dispatch(self._engine, routing, event)
 
     def get_issue_or_pr(self, number: IssueOrPRNumber) -> IssueOrPR:
         """Return the issue or pull request numbered `number`.
@@ -363,36 +278,13 @@ class Store:
             )
 
     def routes(self) -> list[Route]:
-        """Return the current triage verdict of every item in the corpus.
-
-        Constrained to fetched items, as `dispatched_unrouted` is: the
-        routing ledger outlives the regenerable fetch ledger, so a
-        verdict naming an absent item is a steady state, not corruption.
-
-        Counting one mixes two populations; `--requeue` cannot serve one.
-        """
-        with Session(self._engine) as session:
-            return list(
-                session.execute(
-                    select(Route)
-                    .where(Route.item_id.in_(select(IssueOrPR.id)))
-                    .order_by(Route.item_id)
-                ).scalars()
-            )
+        """Return the current triage verdict of every item in the corpus."""
+        return routes(self._engine)
 
     def dispatched_unrouted(self) -> list[Dispatch]:
         """Return corpus items dispatched but carrying no current Route."""
-        with Session(self._engine) as session:
-            return list(
-                session.execute(
-                    select(Dispatch)
-                    .where(Dispatch.item_id.in_(select(IssueOrPR.id)))
-                    .where(~exists().where(Route.item_id == Dispatch.item_id))
-                    .order_by(Dispatch.item_id)
-                ).scalars()
-            )
+        return dispatched_unrouted(self._engine)
 
     def topics(self) -> list[Topic]:
         """Return every known topic, ordered by name."""
-        with Session(self._engine) as session:
-            return list(session.execute(select(Topic).order_by(Topic.name)).scalars())
+        return topics(self._engine)

@@ -219,3 +219,23 @@ def test_reserve_dispatch_write_matches_a_cold_rebuild(tmp_path: Path) -> None:
 
     assert live is not None
     assert live == rebuilt
+
+
+def test_dispatched_unrouted_excludes_routed(tmp_path: Path) -> None:
+    """dispatched_unrouted excludes items that later got routed.
+
+    When: #1, #2, and #3 are all dispatched, but only #3 has no Route
+    Then: dispatched_unrouted returns only #3
+    """
+    store = Store.open(tmp_path / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(
+        Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
+    )
+    routing: Ledger[RoutingEvent] = Ledger(
+        Path(__file__).parent / "fixtures" / "routing_events.jsonl"
+    )
+    store.rebuild_from_ledgers(fetch, routing)
+
+    unrouted = store.dispatched_unrouted()
+
+    assert [d.item_id for d in unrouted] == [GraphQLId("I_3")]
