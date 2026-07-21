@@ -130,6 +130,11 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
     A re-route therefore dirties both the topic it left and the one it
     joins.
 
+    `"requeue"` deletes the item's `Dispatch` row, freeing it to be
+    served again. Deleting an already-absent row is a no-op, not an
+    error, so replay of a requeue stays idempotent — see `Dispatch`'s
+    docstring for why the delete is load-bearing.
+
     Any other tag raises: the union grows a member per dispatch part,
     and a tag with no branch here means the ledger is ahead of the code,
     not that a verdict can be guessed.
@@ -165,6 +170,13 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
         )
         if data["verdict"] != NO_SIGNAL:
             _mark_topic_dirty(session, data["verdict"])
+        return
+
+    if event["type"] == "requeue":
+        data = event["data"]
+        dispatch = session.get(Dispatch, GraphQLId(data["item_id"]))
+        if dispatch is not None:
+            session.delete(dispatch)
         return
 
     raise UnknownRoutingEventError(event_type)

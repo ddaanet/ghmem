@@ -46,6 +46,28 @@ def rebuild() -> None:
 
 
 @main.command()
+def requeue() -> None:
+    """Free every item a crashed session dispatched but never routed.
+
+    Meant to run before an orchestration run starts any triage session,
+    not mid-session: serving a stranded item here would hand out a
+    fresh packet with no session to route it, recreating the exact
+    stranded state this command exists to clear. It requeues, prints
+    the count, and serves nothing.
+    """
+    store = Store.open(sqlite_path())
+    routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
+    stranded = store.dispatched_unrouted()
+    for dispatch in stranded:
+        event: RoutingEvent = {
+            "type": "requeue",
+            "data": {"session": dispatch.session, "item_id": dispatch.item_id},
+        }
+        store.record_routing_event(routing, event)
+    click.echo(f"Requeued {len(stranded)} item(s)")
+
+
+@main.command()
 def sync() -> None:
     """Fetch issues, PRs, discussions, and commits into the fetch ledger.
 

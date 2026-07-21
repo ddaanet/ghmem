@@ -171,9 +171,28 @@ class RouteEvent(TypedDict):
     data: RouteData
 
 
-type RoutingEvent = DispatchedEvent | RouteEvent
+class RequeueData(TypedDict):
+    """A dispatch stranded by a crashed session, and who abandoned it."""
+
+    session: str
+    item_id: str
+
+
+class RequeueEvent(TypedDict):
+    """A ghmem-constructed record that a stranded dispatch was freed.
+
+    One event per stranded item, carrying the session that abandoned it —
+    subproject 4 reads that back to calibrate batch budgets: a session that
+    strands several items signals its budget was set too high.
+    """
+
+    type: Literal["requeue"]
+    data: RequeueData
+
+
+type RoutingEvent = DispatchedEvent | RouteEvent | RequeueEvent
 """The routing-ledger event union.
 
-Grows in Part B (`RequeueEvent`) and Part C (`SnapshotEvent`,
-`CloseEvent`). Do not add members outside those parts.
+Grows in Part C (`SnapshotEvent`, `CloseEvent`). Do not add members
+outside that part.
 """
