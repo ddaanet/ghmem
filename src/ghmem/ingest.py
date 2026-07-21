@@ -113,9 +113,10 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
     """Apply one routing event to the SQLite mirror.
 
     Called both by `rebuild_from_ledgers`'s replay and, via
-    `Store.record_routing_event`, by each live command right after it
-    appends its event, so a live write and a cold rebuild can never
-    diverge.
+    `Store.record_routing_event`, by every live command except
+    `reserve_dispatch`, so a live write through here and a cold rebuild
+    can never diverge. `reserve_dispatch` writes its `Dispatch` row
+    directly, outside this reducer; see its own docstring for why.
 
     `"dispatched"` upserts a `Dispatch` row by item id.
 
