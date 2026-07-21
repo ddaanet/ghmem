@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, func, or_, select
+from sqlalchemy import Engine, create_engine, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
@@ -37,6 +37,7 @@ from ghmem.models import (
     CrossRef,
     Discussion,
     DiscussionComment,
+    Dispatch,
     FetchFailed,
     HeatScore,
     IssueOrPR,
@@ -44,6 +45,8 @@ from ghmem.models import (
     Reaction,
     Review,
     ReviewComment,
+    Route,
+    Topic,
 )
 
 __all__ = ["Store"]
@@ -275,3 +278,37 @@ class Store:
             return list(
                 session.execute(select(FetchFailed).order_by(FetchFailed.id)).scalars()
             )
+
+    def routes(self) -> list[Route]:
+        """Return the current triage verdict of every item in the corpus.
+
+        Constrained to fetched items, as `dispatched_unrouted` is: the
+        routing ledger outlives the regenerable fetch ledger, so a
+        verdict naming an absent item is a steady state, not corruption.
+        Counting one mixes two populations; `--requeue` cannot serve one.
+        """
+        with Session(self._engine) as session:
+            return list(
+                session.execute(
+                    select(Route)
+                    .where(Route.item_id.in_(select(IssueOrPR.id)))
+                    .order_by(Route.item_id)
+                ).scalars()
+            )
+
+    def dispatched_unrouted(self) -> list[Dispatch]:
+        """Return corpus items dispatched but carrying no current Route."""
+        with Session(self._engine) as session:
+            return list(
+                session.execute(
+                    select(Dispatch)
+                    .where(Dispatch.item_id.in_(select(IssueOrPR.id)))
+                    .where(~exists().where(Route.item_id == Dispatch.item_id))
+                    .order_by(Dispatch.item_id)
+                ).scalars()
+            )
+
+    def topics(self) -> list[Topic]:
+        """Return every known topic, ordered by name."""
+        with Session(self._engine) as session:
+            return list(session.execute(select(Topic).order_by(Topic.name)).scalars())

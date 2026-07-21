@@ -18,6 +18,7 @@ from ghmem.models import HeatScore
 from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
 from ghmem.show import render, render_discussion
 from ghmem.standing import build_standing
+from ghmem.status import build_status, render_status
 from ghmem.store import Store
 from ghmem.sync import sync as run_sync
 
@@ -79,6 +80,14 @@ def heat() -> None:
     out = csv.writer(click.get_text_stream("stdout"), lineterminator="\n")
     out.writerow([field.name for field in fields(HeatScore)])
     out.writerows(astuple(score) for score in scores)
+
+
+@main.command()
+def status() -> None:
+    """Report corpus coverage: counts, topics, dirty set, sync cursor."""
+    store = Store.open(sqlite_path())
+    fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())
+    click.echo(render_status(build_status(store, fetch)))
 
 
 @main.command()
