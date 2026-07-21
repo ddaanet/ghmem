@@ -29,7 +29,7 @@ from ghmem.exceptions import (
     PRDiffNotFoundError,
 )
 from ghmem.heat_query import heat_scores
-from ghmem.ingest import rebuild_from_ledgers
+from ghmem.ingest import apply_routing_event, rebuild_from_ledgers
 from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.models import (
     Comment,
@@ -73,6 +73,41 @@ class Store:
         raw-node contract it depends on.
         """
         rebuild_from_ledgers(self._engine, fetch, routing)
+
+    def record_routing_event(
+        self, routing: Ledger[RoutingEvent], event: RoutingEvent
+    ) -> None:
+        """Record one routing event in both the ledger and the mirror.
+
+        The single entry point for every mutating dispatch command, and
+        the reason live writes cannot drift from a cold rebuild: this
+        applies the event through the same `apply_routing_event` reducer
+        that `rebuild_from_ledgers` replays, as an upsert rather than a
+        rebuild.
+
+        The three steps interleave deliberately. The reducer runs first,
+        but inside an uncommitted transaction, so an event it rejects
+        never reaches `routing.jsonl` — the one file here that cannot be
+        regenerated, and the one replay is strict about. This is the
+        parse-before-append rule the fetch driver follows via
+        `validate_raw_node`, which the routing ledger needs more, not
+        less: a poison line there makes every future rebuild raise,
+        whereas a bad fetch line can simply be refetched.
+
+        The ledger is then appended *before* the mirror commits, because
+        it is the durable truth and the mirror is a regenerable cache. A
+        crash in between loses nothing: the next rebuild replays the
+        event that already landed. The reverse order could commit a
+        verdict that no ledger records, which no rebuild would restore.
+
+        Durability beyond the OS is the caller's checkpoint to take, via
+        `Ledger.sync()` — an fsync per routed item would tax a triage
+        session for a guarantee that only matters at run boundaries.
+        """
+        with Session(self._engine) as session:
+            apply_routing_event(session, event)
+            routing.append(event)
+            session.commit()
 
     def get_issue_or_pr(self, number: IssueOrPRNumber) -> IssueOrPR:
         """Return the issue or pull request numbered `number`.
