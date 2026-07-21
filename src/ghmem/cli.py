@@ -10,6 +10,7 @@ from ghmem.exceptions import (
     DiscussionNotFoundError,
     IssueOrPRNotFoundError,
     RateLimitError,
+    TriageSessionError,
 )
 from ghmem.github import GitHubClient
 from ghmem.heat import rank
@@ -21,6 +22,7 @@ from ghmem.standing import build_standing
 from ghmem.status import build_status, render_status
 from ghmem.store import Store
 from ghmem.sync import sync as run_sync
+from ghmem.triage import ServeResult, mint_session, record_verdict, serve_next
 
 
 @click.group()
@@ -116,3 +118,57 @@ def discussion(number: int) -> None:
         click.echo(f"ghmem discussion: no discussion numbered #{number}", err=True)
         raise SystemExit(1) from exc
     click.echo(output, nl=False)
+
+
+@main.command()
+def triage() -> None:
+    """Mint a session token and serve its first packet.
+
+    Prints the packet to stdout on success. An empty or fully-routed
+    queue prints its terminal message to stderr instead, and still
+    exits 0 — this command has no verdict to reject, so it never
+    raises `TriageSessionError`.
+    """
+    store = Store.open(sqlite_path())
+    routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
+    token = mint_session()
+    _emit_served(serve_next(store, routing, token))
+
+
+@main.command()
+@click.argument("token")
+@click.argument("number", type=int)
+@click.argument("verdict")
+@click.argument("note", required=False, default="")
+def route(token: str, number: int, verdict: str, note: str) -> None:
+    """Record a verdict for NUMBER under TOKEN, then serve the next packet.
+
+    One command per triaged item, so an agent spends no step sitting
+    on a purely deterministic result. A rejected verdict — a bad note
+    pairing, or NUMBER not currently dispatched to TOKEN — is an
+    actual error: printed to stderr, exit 1, the ledger untouched.
+    Otherwise this behaves exactly like `triage`: a packet or a
+    terminal message, exit 0 either way.
+    """
+    store = Store.open(sqlite_path())
+    routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
+    try:
+        record_verdict(store, routing, token, IssueOrPRNumber(number), verdict, note)
+    except TriageSessionError as exc:
+        click.echo(f"ghmem route: {exc}", err=True)
+        raise SystemExit(1) from exc
+    _emit_served(serve_next(store, routing, token))
+
+
+def _emit_served(result: ServeResult) -> None:
+    """Print a ServeResult: a packet to stdout, or a message to stderr.
+
+    Both exit 0 (click's default for a command that returns normally).
+    A terminal message is an expected outcome — "budget exhausted",
+    "0 pending", or any string `serve_next` adds later — never a
+    failure an orchestration script should read as one.
+    """
+    if result.packet is not None:
+        click.echo(result.packet, nl=False)
+    else:
+        click.echo(result.message, err=True)
