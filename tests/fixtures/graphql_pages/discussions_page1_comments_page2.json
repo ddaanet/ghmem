@@ -11,6 +11,9 @@
           "updatedAt": "2026-05-03T09:00:00Z",
           "body": "Second top-level comment, from page 2.",
           "authorAssociation": "CONTRIBUTOR",
+          "reactionGroups": [
+            {"content": "HEART", "users": {"totalCount": 1}}
+          ],
           "replies": {
             "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": []

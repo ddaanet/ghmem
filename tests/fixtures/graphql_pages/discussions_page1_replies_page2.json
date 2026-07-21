@@ -10,7 +10,10 @@
           "createdAt": "2026-05-02T12:00:00Z",
           "updatedAt": "2026-05-02T12:00:00Z",
           "body": "Second reply, from the replies follow-up page.",
-          "authorAssociation": "MEMBER"
+          "authorAssociation": "MEMBER",
+          "reactionGroups": [
+            {"content": "LAUGH", "users": {"totalCount": 1}}
+          ]
         }
       ]
     }

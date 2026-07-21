@@ -135,6 +135,31 @@ def test_reactions_rendered(store: Store, standing_table: StandingTable) -> None
     assert "THUMBS_UP\N{MULTIPLICATION SIGN}4" in output
 
 
+def test_reply_reactions_render_where_they_landed(
+    store: Store, standing_table: StandingTable
+) -> None:
+    """A reply's reactions render on that reply, not in the item section.
+
+    The thumbs on "I'd take a PR for this" are the strongest signal in
+    a thread; folding them into the item's Reactions section would
+    detach them from the sentence they endorse, which is the whole of
+    their meaning to a triage agent.
+
+    When: PR #2's comment C_1, review RV_1 and review comment RVC_1
+      each carry reactions
+    Then: each renders on its own entry, above the item's Reactions
+      section, and the item section still shows only the body's own
+    """
+    output = render(store, standing_table, IssueOrPRNumber(2))
+
+    comment = output.index("reactions: THUMBS_UP\N{MULTIPLICATION SIGN}12")
+    review = output.index("reactions: ROCKET\N{MULTIPLICATION SIGN}3")
+    review_comment = output.index("reactions: EYES\N{MULTIPLICATION SIGN}2")
+    section = output.index("## Reactions")
+    assert max(comment, review, review_comment) < section
+    assert "THUMBS_UP\N{MULTIPLICATION SIGN}12" not in output[section:]
+
+
 def test_issue_without_diff_omits_diff_section(
     store: Store, standing_table: StandingTable
 ) -> None:

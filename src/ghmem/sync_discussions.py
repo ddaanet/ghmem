@@ -15,7 +15,9 @@ from ghmem.aliases import DiscussionNumber, GraphQLId
 from ghmem.sync_core import (
     _OWNER,
     _PAGE_SIZE,
+    _REACTION_GROUPS,
     _REPO,
+    _append_reactions,
     _append_validated,
     _Author,
     _drain_follow_up,
@@ -24,6 +26,7 @@ from ghmem.sync_core import (
     _PageInfo,
     _Query,
     _raw_data,
+    _ReactionGroupNode,
     _resume_cursor,
     _Sync,
     _Wire,
@@ -44,15 +47,17 @@ def _sync_discussions(ctx: _Sync) -> None:
             return
 
 
-_DISCUSSION_COMMENT_FIELDS = """
+_DISCUSSION_COMMENT_FIELDS = _Query("""
     id
     author { login }
     createdAt
     updatedAt
     body
     authorAssociation
-"""
-"""The `_DiscussionCommentFields` selection — a comment or a reply alike."""
+    %reaction_groups
+""").substitute(reaction_groups=_REACTION_GROUPS)
+"""The `_DiscussionCommentWithReactions` selection — a comment or a reply
+alike."""
 
 _DISCUSSION_COMMENTS_WITH_REPLIES = _Query("""
           %discussion_comment_fields
@@ -87,6 +92,7 @@ query($first: Int!, $after: String) {
         authorAssociation
         category { name }
         answer { id }
+        %reaction_groups
         comments(first: %page_size) {
           pageInfo { hasNextPage endCursor }
           nodes { %comments_with_replies }
@@ -99,6 +105,7 @@ query($first: Int!, $after: String) {
     owner=_OWNER,
     repo=_REPO,
     page_size=_PAGE_SIZE,
+    reaction_groups=_REACTION_GROUPS,
     comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES,
 )
 
@@ -116,6 +123,7 @@ def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
         _append_validated(
             ctx, {"type": "discussion", "data": _raw_data(node, _DiscussionFields)}
         )
+        _append_reactions(ctx, node.id, node.reaction_groups)
     for node in page.nodes:
         _append_discussion_comments(ctx, node)
     hwm = max((node.updated_at for node in page.nodes), default="")
@@ -153,6 +161,7 @@ def _append_discussion_comments(ctx: _Sync, node: _DiscussionNode) -> None:
                 ),
             },
         )
+        _append_reactions(ctx, comment.id, comment.reaction_groups)
     top_level.extend(_drain_discussion_comments_follow_up(ctx, node))
     for comment in top_level:
         _append_comment_replies(ctx, node.id, comment)
@@ -185,6 +194,7 @@ def _drain_discussion_comments_follow_up(
                 ),
             },
         )
+        _append_reactions(ctx, comment.id, comment.reaction_groups)
     return drained
 
 
@@ -220,8 +230,11 @@ def _append_comment_replies(
                 ),
             },
         )
+        _append_reactions(ctx, reply.id, reply.reaction_groups)
 
-    def fetch_page(cursor: str) -> tuple[list[_DiscussionCommentFields], _PageInfo]:
+    def fetch_page(
+        cursor: str,
+    ) -> tuple[list[_DiscussionCommentWithReactions], _PageInfo]:
         response = ctx.client.graphql(
             _DISCUSSION_REPLIES_FOLLOWUP_QUERY,
             {"id": comment.id, "first": _PAGE_SIZE, "after": cursor},
@@ -243,6 +256,7 @@ def _append_comment_replies(
                 ),
             },
         )
+        _append_reactions(ctx, reply.id, reply.reaction_groups)
 
 
 _DISCUSSION_REPLIES_FOLLOWUP_QUERY = _Query("""
@@ -261,13 +275,7 @@ query($id: ID!, $first: Int!, $after: String) {
 
 
 class _DiscussionCommentFields(_Wire):
-    """The contract fields of a DiscussionComment, top-level or reply.
-
-    GitHub discussions nest exactly one level (`show.render_discussion`
-    makes the same assumption on the read side), so a reply is exactly
-    these fields: it selects no `replies` connection of its own, and
-    needs no struct distinct from this one.
-    """
+    """The contract fields of a DiscussionComment, top-level or reply."""
 
     id: GraphQLId
     author: _Author | None
@@ -277,10 +285,22 @@ class _DiscussionCommentFields(_Wire):
     author_association: str
 
 
-type _RepliesFirstPage = _Page[_DiscussionCommentFields]
+class _DiscussionCommentWithReactions(_DiscussionCommentFields, kw_only=True):
+    """A wire DiscussionComment/reply node with its reaction groups.
+
+    GitHub discussions nest exactly one level (`show.render_discussion`
+    makes the same assumption on the read side), so a reply is exactly
+    these fields plus reactions: it selects no `replies` connection of
+    its own, and needs no struct distinct from this one.
+    """
+
+    reaction_groups: list[_ReactionGroupNode]
 
 
-class _DiscussionCommentNode(_DiscussionCommentFields, kw_only=True):
+type _RepliesFirstPage = _Page[_DiscussionCommentWithReactions]
+
+
+class _DiscussionCommentNode(_DiscussionCommentWithReactions, kw_only=True):
     """A wire top-level DiscussionComment node with its first replies page."""
 
     replies: _RepliesFirstPage
@@ -311,9 +331,10 @@ class _DiscussionFields(_Wire):
 
 
 class _DiscussionNode(_DiscussionFields, kw_only=True):
-    """A wire Discussion node: fields plus its first-page comments."""
+    """A wire Discussion node: fields, first-page comments, reactions."""
 
     comments: _DiscussionCommentsPage
+    reaction_groups: list[_ReactionGroupNode]
 
 
 type _DiscussionsPage = _Page[_DiscussionNode]

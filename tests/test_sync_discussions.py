@@ -63,6 +63,146 @@ def test_reply_carries_parent_id(mocker: MockerFixture, tmp_path: Path) -> None:
     assert "parentId" not in comments["DC_1"]
 
 
+def test_discussion_reactions_appended_with_injected_subject_id(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A discussion's `reactionGroups` become `reaction` events keyed to it.
+
+    `show.render_discussion` renders a Reactions section, so the
+    discussions connection has to select `reactionGroups` for it to
+    have anything to render. Zero-count groups are dropped, as on
+    issues and PRs: GitHub returns a group per reaction kind whether
+    anyone used it or not.
+
+    When: `_sync_discussions` drains a discussions page
+    Then: every non-empty reaction group is appended as a `reaction`
+      naming its discussion as subject, and empty ones are not
+
+    Comments and replies carry reactions too (see
+    `test_discussion_comment_reactions_appended_with_injected_subject_id`
+    and `test_discussion_reply_reactions_appended_with_injected_subject_id`)
+    — this test only pins the discussion-level ones.
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("D_1", "THUMBS_UP")] == 3
+    assert reactions[("D_3", "ROCKET")] == 1
+    assert ("D_1", "HEART") not in reactions
+
+
+def test_discussion_comment_reactions_appended_with_injected_subject_id(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A discussion comment's `reactionGroups` become a `reaction` event.
+
+    Comment and reply reactions were never fetched before — only the
+    discussion's own body reactions were. Zero-count groups are
+    dropped, as everywhere else.
+
+    When: `_sync_discussions` drains a discussion whose top-level
+      comment carries reactions, and a follow-up-page comment (`DC_2`,
+      fetched via `_drain_discussion_comments_follow_up`) whose
+      reactions are non-empty too
+    Then: a `reaction` event names each comment as subject, and a
+      comment with only zero-count groups (`DC_1`) gets none
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("DC_A", "THUMBS_UP")] == 1
+    assert reactions[("DC_2", "HEART")] == 1
+    assert ("DC_1", "HEART") not in reactions
+
+
+def test_discussion_reply_reactions_appended_with_injected_subject_id(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A reply's reactions are appended from both replies pages.
+
+    `DC_1_R1` arrives on the embedded first replies page; `DC_1_R2`
+    arrives via the replies follow-up query
+    (`_append_comment_replies`'s `_drain_follow_up` call) — a separate
+    GraphQL selection this proves also carries `reactionGroups`.
+
+    When: `_sync_discussions` drains a comment whose replies span two
+      pages and both carry reactions
+    Then: a `reaction` event names each reply as subject
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("DC_1_R1", "ROCKET")] == 1
+    assert reactions[("DC_1_R2", "LAUGH")] == 1
+
+
+def test_discussion_comment_raw_node_carries_no_reaction_groups(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A `discussion_comment` event's `data` never carries `reactionGroups`.
+
+    Reactions are emitted as their own `reaction` events keyed by
+    `subjectId` — this pins the projection for both a top-level comment
+    and a reply.
+
+    When: `_sync_discussions` drains a discussion with a reacted-to
+      comment and a reacted-to reply
+    Then: neither's `data` dict has a `reactionGroups` key
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+
+    comments = {
+        event["data"]["id"]: event["data"]
+        for event in fetch
+        if event["type"] == "discussion_comment"
+    }
+    assert "reactionGroups" not in comments["DC_A"]
+    assert "reactionGroups" not in comments["DC_1_R1"]
+
+
+def test_rendered_discussion_shows_its_reactions(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """Reactions synced from a discussion reach its rendered output.
+
+    The end the fetch gap was hiding: the renderer's Reactions section
+    could never populate from real data, only from hand-authored
+    fixtures.
+
+    When: the store is rebuilt from a full discussions sync and
+      discussion #100 is rendered
+    Then: the output carries a Reactions section with its counts
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+    store = _rebuild(fetch, tmp_path)
+
+    rendered = render_discussion(store, build_standing(store), DiscussionNumber(100))
+
+    assert "## Reactions" in rendered
+    assert "THUMBS_UP\N{MULTIPLICATION SIGN}3" in rendered
+
+
 def test_cross_page_reply_parent_appended_first(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:

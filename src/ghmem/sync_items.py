@@ -14,8 +14,6 @@ Where this departs from a literal GraphQL schema walk:
   and selected on both issues and PRs, supplies `"cross_referenced"`
   edges — the associative mentions `closingIssuesReferences` never
   carried. Neither source emits the other's edge kind.
-- **Reactions** come from `reactionGroups`, GitHub's own non-paginated
-  aggregate, rather than from counting individual `reactions`.
 - **Timestamps stay `str`** in every wire Struct, passing through to
   the raw `data` dict unmodified, so GitHub's own string can never
   drift through a reformat.
@@ -30,8 +28,10 @@ from ghmem.aliases import Json, JsonObject
 from ghmem.sync_core import (
     _OWNER,
     _PAGE_SIZE,
+    _REACTION_GROUPS,
     _REPO,
     _append_fetch_failed,
+    _append_reactions,
     _append_validated,
     _check_truncated,
     _drain_follow_up,
@@ -42,6 +42,7 @@ from ghmem.sync_core import (
     _Sync,
 )
 from ghmem.sync_wire import (
+    _CommentFields,
     _CommentNode,
     _IssuesQueryResponse,
     _ItemCommentsFollowUpResponse,
@@ -49,7 +50,7 @@ from ghmem.sync_wire import (
     _ItemNode,
     _ItemsPage,
     _PRsQueryResponse,
-    _ReviewCommentNode,
+    _ReviewCommentFields,
     _ReviewFields,
 )
 
@@ -70,7 +71,9 @@ def _sync_issues(ctx: _Sync) -> None:
             return
 
 
-_COMMENT_FIELDS = "id author { login } createdAt updatedAt body authorAssociation"
+_COMMENT_FIELDS = _Query(
+    "id author { login } createdAt updatedAt body authorAssociation %reaction_groups"
+).substitute(reaction_groups=_REACTION_GROUPS)
 """The `_CommentNode` selection, shared by the item queries and the follow-up.
 
 Selected in three places — an issue's comments, a PR's comments, and
@@ -93,7 +96,7 @@ _ITEM_FIELDS = _Query("""
       pageInfo { hasNextPage endCursor }
       nodes { %comment_fields }
     }
-    reactionGroups { content users { totalCount } }
+    %reaction_groups
     timelineItems(first: 10, itemTypes: [CROSS_REFERENCED_EVENT]) {
       pageInfo { hasNextPage endCursor }
       nodes {
@@ -102,7 +105,11 @@ _ITEM_FIELDS = _Query("""
         }
       }
     }
-""").substitute(page_size=_PAGE_SIZE, comment_fields=_COMMENT_FIELDS)
+""").substitute(
+    page_size=_PAGE_SIZE,
+    comment_fields=_COMMENT_FIELDS,
+    reaction_groups=_REACTION_GROUPS,
+)
 """The `_ItemNode` selection common to an issue and a pull request.
 
 Shared by `_ISSUES_PAGE_QUERY` and `_PRS_PAGE_QUERY`, which decode into
@@ -155,9 +162,13 @@ query($first: Int!, $after: String) {
           pageInfo { hasNextPage endCursor }
           nodes {
             id author { login } state submittedAt body
+            %reaction_groups
             comments(first: 20) {
               pageInfo { hasNextPage endCursor }
-              nodes { id author { login } createdAt updatedAt body path }
+              nodes {
+                id author { login } createdAt updatedAt body path
+                %reaction_groups
+              }
             }
           }
         }
@@ -173,7 +184,9 @@ query($first: Int!, $after: String) {
     }
   }
 }
-""").substitute(owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS)
+""").substitute(
+    owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS, reaction_groups=_REACTION_GROUPS
+)
 
 
 def _drain_items_page(
@@ -221,22 +234,11 @@ def _append_item_and_nested(ctx: _Sync, node: _ItemNode) -> None:
             ctx,
             {
                 "type": "comment",
-                "data": _raw_data(comment, _CommentNode, itemId=node.id),
+                "data": _raw_data(comment, _CommentFields, itemId=node.id),
             },
         )
-    for group in node.reaction_groups:
-        if group.users.total_count > 0:
-            _append_validated(
-                ctx,
-                {
-                    "type": "reaction",
-                    "data": {
-                        "subjectId": node.id,
-                        "content": group.content,
-                        "count": group.users.total_count,
-                    },
-                },
-            )
+        _append_reactions(ctx, comment.id, comment.reaction_groups)
+    _append_reactions(ctx, node.id, node.reaction_groups)
     _append_reviews(ctx, node)
     _append_cross_refs(ctx, node)
     if node.files is not None:
@@ -253,6 +255,7 @@ def _append_reviews(ctx: _Sync, node: _ItemNode) -> None:
             ctx,
             {"type": "review", "data": _raw_data(review, _ReviewFields, prId=node.id)},
         )
+        _append_reactions(ctx, review.id, review.reaction_groups)
         _check_truncated(ctx, review.id, "review comments", review.comments)
         for review_comment in review.comments.nodes:
             _append_validated(
@@ -260,10 +263,11 @@ def _append_reviews(ctx: _Sync, node: _ItemNode) -> None:
                 {
                     "type": "review_comment",
                     "data": _raw_data(
-                        review_comment, _ReviewCommentNode, reviewId=review.id
+                        review_comment, _ReviewCommentFields, reviewId=review.id
                     ),
                 },
             )
+            _append_reactions(ctx, review_comment.id, review_comment.reaction_groups)
 
 
 def _append_cross_refs(ctx: _Sync, node: _ItemNode) -> None:
@@ -310,9 +314,10 @@ def _drain_item_comments(ctx: _Sync, node: _ItemNode) -> None:
             ctx,
             {
                 "type": "comment",
-                "data": _raw_data(comment, _CommentNode, itemId=node.id),
+                "data": _raw_data(comment, _CommentFields, itemId=node.id),
             },
         )
+        _append_reactions(ctx, comment.id, comment.reaction_groups)
 
 
 _ITEM_COMMENTS_FOLLOWUP_QUERY = _Query("""

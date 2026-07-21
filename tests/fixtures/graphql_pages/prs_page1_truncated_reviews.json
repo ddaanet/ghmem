@@ -26,7 +26,10 @@
                 "createdAt": "2026-05-09T09:00:00Z",
                 "updatedAt": "2026-05-09T09:00:00Z",
                 "body": "Looks reasonable overall.",
-                "authorAssociation": "MEMBER"
+                "authorAssociation": "MEMBER",
+                "reactionGroups": [
+                  {"content": "EYES", "users": {"totalCount": 1}}
+                ]
               }
             ]
           },
@@ -46,6 +49,9 @@
                 "state": "APPROVED",
                 "submittedAt": "2026-05-09T08:00:00Z",
                 "body": "LGTM",
+                "reactionGroups": [
+                  {"content": "HEART", "users": {"totalCount": 1}}
+                ],
                 "comments": {
                   "pageInfo": {"hasNextPage": false, "endCursor": null},
                   "nodes": [
@@ -55,7 +61,10 @@
                       "createdAt": "2026-05-09T08:00:00Z",
                       "updatedAt": "2026-05-09T08:00:00Z",
                       "body": "nice",
-                      "path": "src/softwrap.go"
+                      "path": "src/softwrap.go",
+                      "reactionGroups": [
+                        {"content": "LAUGH", "users": {"totalCount": 1}}
+                      ]
                     }
                   ]
                 }

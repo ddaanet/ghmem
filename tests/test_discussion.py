@@ -99,6 +99,8 @@ def test_render_discussion_golden(store: Store, standing_table: StandingTable) -
 
         Second top-level comment, the accepted answer.
 
+        reactions: THUMBS_UP\N{MULTIPLICATION SIGN}9
+
         ## Reactions
 
         - THUMBS_UP\N{MULTIPLICATION SIGN}2

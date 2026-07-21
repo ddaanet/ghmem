@@ -72,6 +72,29 @@ class _NodeRef(_Wire):
     id: GraphQLId
 
 
+class _UserCount(_Wire):
+    """A reacting-users connection's `{totalCount}`."""
+
+    total_count: int
+
+
+class _ReactionGroupNode(_Wire):
+    """One aggregated `{content, users{totalCount}}` reaction group."""
+
+    content: str
+    users: _UserCount
+
+
+_REACTION_GROUPS = "reactionGroups { content users { totalCount } }"
+"""The reaction selection, shared by every connection that carries one.
+
+Reactions come from `reactionGroups`, GitHub's own non-paginated
+aggregate, rather than from counting the individual `reactions`
+connection — one selection, no pagination, and the counts arrive
+pre-grouped by content.
+"""
+
+
 # --- The GraphQL query template. ---
 
 
@@ -152,6 +175,32 @@ def _append_validated(ctx: _Sync, event: RawNodeEvent) -> None:
     validate_raw_node(event["type"], event["data"])
     ctx.fetch.append(event)
     ctx.counts[event["type"]] += 1
+
+
+def _append_reactions(
+    ctx: _Sync, subject_id: GraphQLId, groups: list[_ReactionGroupNode]
+) -> None:
+    """Append one `reaction` event per group that anyone actually used.
+
+    `subjectId` is injected from the node the connection was selected
+    on, since a reaction group carries no reference to what it hangs
+    off. Empty groups are dropped: GitHub returns a group per reaction
+    kind whether it has users or not, and storing the zeroes would be
+    a row per kind per subject saying nothing.
+    """
+    for group in groups:
+        if group.users.total_count > 0:
+            _append_validated(
+                ctx,
+                {
+                    "type": "reaction",
+                    "data": {
+                        "subjectId": subject_id,
+                        "content": group.content,
+                        "count": group.users.total_count,
+                    },
+                },
+            )
 
 
 def _append_fetch_failed(ctx: _Sync, node_id: str, reason: str) -> None:

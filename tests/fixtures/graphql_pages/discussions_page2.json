@@ -15,6 +15,9 @@
           "authorAssociation": "MEMBER",
           "category": {"name": "Help"},
           "answer": {"id": "DC_3"},
+          "reactionGroups": [
+            {"content": "ROCKET", "users": {"totalCount": 1}}
+          ],
           "comments": {
             "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": [
@@ -25,6 +28,9 @@
                 "updatedAt": "2026-05-06T10:00:00Z",
                 "body": "Use config.TryBindKey inside init().",
                 "authorAssociation": "MEMBER",
+                "reactionGroups": [
+                  {"content": "LAUGH", "users": {"totalCount": 0}}
+                ],
                 "replies": {
                   "pageInfo": {"hasNextPage": false, "endCursor": null},
                   "nodes": []

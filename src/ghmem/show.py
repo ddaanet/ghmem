@@ -9,6 +9,11 @@ the same for a discussion by number: header, body, comments nested by
 heading depth (each reply one level below its parent, accepted answer
 marked in place), and reactions. Offline and snapshot-testable: both
 only ever read from an already-populated `Store`, never the network.
+
+Reactions render at two levels. A `## Reactions` section carries the
+item's or discussion's own, and any reply that was reacted to carries
+an inline `reactions:` line of its own — see `_reaction_summary` for
+why they are not pooled into the section.
 """
 
 import warnings
@@ -87,17 +92,23 @@ def _render_timeline(
     lines = ["## Timeline", ""]
     for _timestamp, _id, entry in entries:
         if isinstance(entry, Comment):
-            lines.extend(_render_comment(entry, standing))
+            lines.extend(_render_comment(store, entry, standing))
         else:
             lines.extend(_render_review(store, entry, standing))
         lines.append("")
     return lines
 
 
-def _render_comment(comment: Comment, standing: StandingTable) -> list[str]:
+def _render_comment(
+    store: Store, comment: Comment, standing: StandingTable
+) -> list[str]:
     """Render one general comment entry."""
     who = standing.annotation(comment.author, comment.created_at.date())
-    return [f"### {comment.created_at.isoformat()} — {who}", "", comment.body]
+    lines = [f"### {comment.created_at.isoformat()} — {who}", "", comment.body]
+    reactions = _reaction_summary(store, comment.id)
+    if reactions is not None:
+        lines.extend(["", reactions])
+    return lines
 
 
 def _render_review(store: Store, review: Review, standing: StandingTable) -> list[str]:
@@ -108,12 +119,32 @@ def _render_review(store: Store, review: Review, standing: StandingTable) -> lis
         "",
         review.body,
     ]
+    reactions = _reaction_summary(store, review.id)
+    if reactions is not None:
+        lines.extend(["", reactions])
     for rc in store.review_comments_for(review.id):
         rc_who = standing.annotation(rc.author, rc.created_at.date())
         lines.append("")
         lines.append(f"- {rc.created_at.isoformat()} — {rc_who} [{rc.path}]")
         lines.append(f"  {rc.body}")
+        rc_reactions = _reaction_summary(store, rc.id)
+        if rc_reactions is not None:
+            lines.append(f"  {rc_reactions}")
     return lines
+
+
+def _reaction_summary(store: Store, subject_id: GraphQLId) -> str | None:
+    """Render one reply's reactions inline, or `None` if it has none.
+
+    Reactions on a reply stay ON that reply rather than folding into the item's
+    Reactions section: the thumbs on "I'd take a PR for this" mean nothing
+    detached from the sentence they endorse.
+    """
+    reactions = store.reactions_for(subject_id)
+    if not reactions:
+        return None
+    pairs = ", ".join(f"{r.content}\N{MULTIPLICATION SIGN}{r.count}" for r in reactions)
+    return f"reactions: {pairs}"
 
 
 def _render_cross_refs(store: Store, item_id: GraphQLId) -> list[str]:
@@ -218,14 +249,14 @@ def _render_discussion_comments(
     for comment in top_level:
         lines.extend(
             _render_discussion_comment(
-                comment, standing, discussion, level=_TOP_HEADING_LEVEL
+                store, comment, standing, discussion, level=_TOP_HEADING_LEVEL
             )
         )
         lines.append("")
         for reply in replies_by_parent[comment.id]:
             lines.extend(
                 _render_discussion_comment(
-                    reply, standing, discussion, level=_REPLY_HEADING_LEVEL
+                    store, reply, standing, discussion, level=_REPLY_HEADING_LEVEL
                 )
             )
             lines.append("")
@@ -233,6 +264,7 @@ def _render_discussion_comments(
 
 
 def _render_discussion_comment(
+    store: Store,
     comment: DiscussionComment,
     standing: StandingTable,
     discussion: Discussion,
@@ -255,6 +287,9 @@ def _render_discussion_comment(
     lines.append(f"{'#' * level} {comment.created_at.isoformat()} — {who}")
     lines.append("")
     lines.append(comment.body)
+    reactions = _reaction_summary(store, comment.id)
+    if reactions is not None:
+        lines.extend(["", reactions])
     return lines
 
 

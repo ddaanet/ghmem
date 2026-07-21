@@ -15,6 +15,10 @@
           "authorAssociation": "MEMBER",
           "category": {"name": "Q&A"},
           "answer": null,
+          "reactionGroups": [
+            {"content": "THUMBS_UP", "users": {"totalCount": 3}},
+            {"content": "HEART", "users": {"totalCount": 0}}
+          ],
           "comments": {
             "pageInfo": {"hasNextPage": false, "endCursor": null},
             "nodes": [
@@ -25,6 +29,9 @@
                 "updatedAt": "2026-05-01T10:00:00Z",
                 "body": "It only affects display, not the buffer.",
                 "authorAssociation": "MEMBER",
+                "reactionGroups": [
+                  {"content": "THUMBS_UP", "users": {"totalCount": 1}}
+                ],
                 "replies": {
                   "pageInfo": {"hasNextPage": false, "endCursor": null},
                   "nodes": []
@@ -44,6 +51,7 @@
           "authorAssociation": "CONTRIBUTOR",
           "category": {"name": "Ideas"},
           "answer": null,
+          "reactionGroups": [],
           "comments": {
             "pageInfo": {"hasNextPage": true, "endCursor": "d2-comments-cursor-1"},
             "nodes": [
@@ -54,6 +62,9 @@
                 "updatedAt": "2026-05-02T10:00:00Z",
                 "body": "First top-level comment.",
                 "authorAssociation": "MEMBER",
+                "reactionGroups": [
+                  {"content": "HEART", "users": {"totalCount": 0}}
+                ],
                 "replies": {
                   "pageInfo": {
                     "hasNextPage": true,
@@ -66,7 +77,10 @@
                       "createdAt": "2026-05-02T11:00:00Z",
                       "updatedAt": "2026-05-02T11:00:00Z",
                       "body": "First reply.",
-                      "authorAssociation": "CONTRIBUTOR"
+                      "authorAssociation": "CONTRIBUTOR",
+                      "reactionGroups": [
+                        {"content": "ROCKET", "users": {"totalCount": 1}}
+                      ]
                     }
                   ]
                 }

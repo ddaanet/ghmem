@@ -10,7 +10,11 @@
           "createdAt": "2026-05-01T12:00:00Z",
           "updatedAt": "2026-05-01T12:00:00Z",
           "body": "Sure, adding one now.",
-          "authorAssociation": "MEMBER"
+          "authorAssociation": "MEMBER",
+          "reactionGroups": [
+            {"content": "THUMBS_UP", "users": {"totalCount": 1}},
+            {"content": "HEART", "users": {"totalCount": 0}}
+          ]
         }
       ]
     }

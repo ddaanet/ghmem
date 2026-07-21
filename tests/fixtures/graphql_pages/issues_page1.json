@@ -24,7 +24,11 @@
                 "createdAt": "2026-05-01T11:00:00Z",
                 "updatedAt": "2026-05-01T11:00:00Z",
                 "body": "Can you add a test?",
-                "authorAssociation": "MEMBER"
+                "authorAssociation": "MEMBER",
+                "reactionGroups": [
+                  {"content": "THUMBS_UP", "users": {"totalCount": 2}},
+                  {"content": "HEART", "users": {"totalCount": 0}}
+                ]
               }
             ]
           },

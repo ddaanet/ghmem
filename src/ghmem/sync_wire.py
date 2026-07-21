@@ -12,11 +12,11 @@ build on (`_Wire`, `_Page`, `_Author`, `_NodeRef`) stay in `sync_core`.
 import msgspec
 
 from ghmem.aliases import GraphQLId, IssueOrPRNumber
-from ghmem.sync_core import _Author, _NodeRef, _Page, _Wire
+from ghmem.sync_core import _Author, _NodeRef, _Page, _ReactionGroupNode, _Wire
 
 
-class _CommentNode(_Wire):
-    """A wire IssueComment/PullRequestReviewComment-shaped comment."""
+class _CommentFields(_Wire):
+    """The contract fields of an IssueComment/PullRequestReviewComment."""
 
     id: GraphQLId
     author: _Author | None
@@ -26,11 +26,17 @@ class _CommentNode(_Wire):
     author_association: str
 
 
+class _CommentNode(_CommentFields, kw_only=True):
+    """A wire comment node with its reaction groups."""
+
+    reaction_groups: list[_ReactionGroupNode]
+
+
 type _CommentsPage = _Page[_CommentNode]
 
 
-class _ReviewCommentNode(_Wire):
-    """A wire PullRequestReviewComment node."""
+class _ReviewCommentFields(_Wire):
+    """The contract fields of a PullRequestReviewComment node."""
 
     id: GraphQLId
     author: _Author | None
@@ -38,6 +44,12 @@ class _ReviewCommentNode(_Wire):
     updated_at: str
     body: str
     path: str
+
+
+class _ReviewCommentNode(_ReviewCommentFields, kw_only=True):
+    """A wire PullRequestReviewComment node with its reaction groups."""
+
+    reaction_groups: list[_ReactionGroupNode]
 
 
 type _ReviewCommentsFirstPage = _Page[_ReviewCommentNode]
@@ -53,26 +65,14 @@ class _ReviewFields(_Wire):
     body: str
 
 
-class _ReviewNode(_ReviewFields):
-    """A wire PullRequestReview node with its first comments page."""
+class _ReviewNode(_ReviewFields, kw_only=True):
+    """A wire PullRequestReview node with its comments page and reactions."""
 
     comments: _ReviewCommentsFirstPage
+    reaction_groups: list[_ReactionGroupNode]
 
 
 type _ReviewsFirstPage = _Page[_ReviewNode]
-
-
-class _UserCount(_Wire):
-    """A reacting-users connection's `{totalCount}`."""
-
-    total_count: int
-
-
-class _ReactionGroupNode(_Wire):
-    """One aggregated `{content, users{totalCount}}` reaction group."""
-
-    content: str
-    users: _UserCount
 
 
 class _FileStatNode(_Wire):

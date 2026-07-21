@@ -141,6 +141,129 @@ def test_truncated_nested_connection_records_fetch_failed(
     assert len(items) == 1
 
 
+def test_comment_reactions_appended_with_injected_subject_id(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A comment's `reactionGroups` become `reaction` events keyed to it.
+
+    Comment reactions were never fetched before — only the item's own
+    body reactions were. Zero-count groups are dropped, as everywhere
+    else: GitHub returns a group per reaction kind whether anyone used
+    it or not.
+
+    When: `_sync_issues` drains an item whose first-page comment carries
+      reactions
+    Then: every non-empty group is appended as a `reaction` naming the
+      comment as subject, and empty ones are not
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("C_1", "THUMBS_UP")] == 2
+    assert ("C_1", "HEART") not in reactions
+
+
+def test_followup_comment_reactions_appended(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A follow-up-page comment's reactions are fetched too, not just page 1.
+
+    `C_2` lands via the comments follow-up query (`_drain_item_comments`),
+    a separate GraphQL selection from the embedded first page — this
+    proves that selection carries `reactionGroups` as well, and that
+    its zero-count groups are dropped the same way page 1's are.
+
+    When: `_sync_issues` drains a follow-up comments page whose comment
+      has both a used and an unused reaction group
+    Then: only the non-empty group is appended as a `reaction`
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("C_2", "THUMBS_UP")] == 1
+    assert ("C_2", "HEART") not in reactions
+
+
+def test_comment_raw_node_carries_no_reaction_groups(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A `comment` event's `data` never carries `reactionGroups`.
+
+    Reactions are emitted as their own `reaction` events keyed by
+    `subjectId`; leaking `reactionGroups` onto the comment's own raw
+    node would violate `_RawComment`'s `forbid_unknown_fields` contract
+    (which would already fail loudly via `_append_validated`) — this
+    pins the projection directly.
+
+    When: `_sync_issues` drains an item with a reacted-to comment
+    Then: the comment's `data` dict has no `reactionGroups` key
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_issues(_ctx(mocker, fetch, _ALL_PAGES))
+
+    comment = next(
+        event["data"]
+        for event in fetch
+        if event["type"] == "comment" and event["data"]["id"] == "C_1"
+    )
+    assert "reactionGroups" not in comment
+
+
+def test_review_reactions_appended_with_injected_subject_id(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A review's `reactionGroups` become a `reaction` event keyed to it.
+
+    When: `_sync_pull_requests` drains a PR whose review carries
+      reactions
+    Then: a `reaction` event names the review as subject
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_pull_requests(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("RV_1", "HEART")] == 1
+
+
+def test_review_comment_reactions_appended_with_injected_subject_id(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A review comment's `reactionGroups` become a `reaction` event.
+
+    When: `_sync_pull_requests` drains a PR whose review comment
+      carries reactions
+    Then: a `reaction` event names the review comment as subject
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_pull_requests(_ctx(mocker, fetch, _ALL_PAGES))
+
+    reactions = {
+        (event["data"]["subjectId"], event["data"]["content"]): event["data"]["count"]
+        for event in fetch
+        if event["type"] == "reaction"
+    }
+    assert reactions[("RVC_1", "LAUGH")] == 1
+
+
 def test_pr_diff_appended(mocker: MockerFixture, tmp_path: Path) -> None:
     """A PR's diff combines GraphQL file stats with REST diff text.
 
