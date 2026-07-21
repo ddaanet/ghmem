@@ -10,7 +10,18 @@ to earn its own file.
 
 from collections.abc import Mapping
 
-from sqlalchemy import Engine, Integer, cast, desc, func, select, union, union_all
+from sqlalchemy import (
+    Engine,
+    Integer,
+    Select,
+    cast,
+    desc,
+    exists,
+    func,
+    select,
+    union,
+    union_all,
+)
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import ScalarSelect
@@ -19,21 +30,14 @@ from ghmem.models import (
     Base,
     Comment,
     CrossRef,
+    Dispatch,
     HeatScore,
     IssueOrPR,
     Reaction,
     Review,
     ReviewComment,
+    Route,
 )
-
-_DAYS_PER_YEAR = 365.25
-
-
-def _count_where(
-    entity: type[Base], predicate: ColumnElement[bool]
-) -> ScalarSelect[int]:
-    """Return a correlated subquery counting `entity` rows matching."""
-    return select(func.count()).select_from(entity).where(predicate).scalar_subquery()
 
 
 def heat_scores(engine: Engine, weights: Mapping[str, float]) -> list[HeatScore]:
@@ -42,11 +46,47 @@ def heat_scores(engine: Engine, weights: Mapping[str, float]) -> list[HeatScore]
     This is one aggregate query: the per-metric counts are correlated
     subqueries, `weights` binds into the weighted sum that SQL sorts
     on, and ties break by number ascending.
+    """
+    query, item = _ranked_query(weights)
+    return _run(engine, query, item)
+
+
+def untriaged_heat_scores(
+    engine: Engine, weights: Mapping[str, float]
+) -> list[HeatScore]:
+    """Score and rank every item not yet triaged, hottest first.
+
+    "Not yet triaged" excludes an item carrying a `Route` (it already
+    has a verdict) or an outstanding `Dispatch` (some session is
+    holding it right now), as two `NOT EXISTS` clauses on the same
+    `item` alias `_ranked_query` builds its aggregate against.
+
+    Neither needs the explicit `.correlate(item)` the subqueries in
+    `_ranked_query` do: these are plain, non-compound `EXISTS`, which
+    auto-correlation resolves to `item` on its own.
+    """
+    query, item = _ranked_query(weights)
+    query = query.where(~exists().where(Route.item_id == item.id)).where(
+        ~exists().where(Dispatch.item_id == item.id)
+    )
+    return _run(engine, query, item)
+
+
+_DAYS_PER_YEAR = 365.25
+
+
+def _ranked_query(
+    weights: Mapping[str, float],
+) -> tuple[Select[tuple[object, ...]], type[IssueOrPR]]:
+    """Build the heat-ranking select and the `item` alias it's built on.
+
+    Unordered and unfiltered: `item` comes back alongside the `Select`
+    so a caller can add a `WHERE` correlated on the same alias before
+    ordering and executing it — `heat_scores` is the plain case,
+    `untriaged_heat_scores` adds two exclusions.
 
     Weights are parameters rather than constants so recalibrating them
-    never touches this SQL, and so a later caller can order-and-limit a
-    filtered ranking (the "next untriaged item in heat order") in one
-    go.
+    never touches this SQL.
     """
     # Every subquery below correlates on `item` explicitly:
     # auto-correlation does not reach inside a compound select or a
@@ -134,19 +174,27 @@ def heat_scores(engine: Engine, weights: Mapping[str, float]) -> list[HeatScore]
         + weights["span_years"] * span_years
     )
 
+    return (
+        select(
+            item.number,
+            item.title,
+            score.label("score"),
+            comments.label("comments"),
+            reactions.label("reactions"),
+            participants.label("participants"),
+            related_items.label("related_items"),
+            span_years.label("span_years"),
+        ),
+        item,
+    )
+
+
+def _run(
+    engine: Engine, query: Select[tuple[object, ...]], item: type[IssueOrPR]
+) -> list[HeatScore]:
+    """Order `query` by score, run it, and map its rows to `HeatScore`."""
     with Session(engine) as session:
-        rows = session.execute(
-            select(
-                item.number,
-                item.title,
-                score.label("score"),
-                comments.label("comments"),
-                reactions.label("reactions"),
-                participants.label("participants"),
-                related_items.label("related_items"),
-                span_years.label("span_years"),
-            ).order_by(desc("score"), item.number)
-        ).all()
+        rows = session.execute(query.order_by(desc("score"), item.number)).all()
     return [
         HeatScore(
             number=row.number,
@@ -160,3 +208,10 @@ def heat_scores(engine: Engine, weights: Mapping[str, float]) -> list[HeatScore]
         )
         for row in rows
     ]
+
+
+def _count_where(
+    entity: type[Base], predicate: ColumnElement[bool]
+) -> ScalarSelect[int]:
+    """Return a correlated subquery counting `entity` rows matching."""
+    return select(func.count()).select_from(entity).where(predicate).scalar_subquery()
