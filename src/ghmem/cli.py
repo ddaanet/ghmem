@@ -1,5 +1,8 @@
 """Command-line interface for ghmem."""
 
+import csv
+from dataclasses import astuple, fields
+
 import click
 
 from ghmem.aliases import DiscussionNumber, IssueOrPRNumber
@@ -9,7 +12,9 @@ from ghmem.exceptions import (
     RateLimitError,
 )
 from ghmem.github import GitHubClient
+from ghmem.heat import rank
 from ghmem.ledger import FetchEvent, Ledger
+from ghmem.models import HeatScore
 from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
 from ghmem.show import render, render_discussion
 from ghmem.standing import build_standing
@@ -56,6 +61,24 @@ def sync() -> None:
         )
         raise SystemExit(0) from exc
     click.echo(f"Synced: {dict(result.counts)}")
+
+
+@main.command()
+def heat() -> None:
+    """Rank the corpus by heat as CSV, hottest item first.
+
+    CSV because this command's only consumer is analysis — weight
+    calibration reads the whole distribution, per-metric columns and all
+    — and titles carrying commas need real quoting. (The ranking itself
+    has a second, in-process consumer: `triage` takes the hottest
+    untriaged item.) Ranking before the header keeps a failed run from
+    leaving a header-only file that parses as a valid empty corpus.
+    """
+    store = Store.open(sqlite_path())
+    scores = rank(store)
+    out = csv.writer(click.get_text_stream("stdout"), lineterminator="\n")
+    out.writerow([field.name for field in fields(HeatScore)])
+    out.writerows(astuple(score) for score in scores)
 
 
 @main.command()

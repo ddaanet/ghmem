@@ -15,6 +15,7 @@ itself, or a caller reading it after the session closes will hit
 `DetachedInstanceError`.
 """
 
+from collections.abc import Mapping
 from datetime import date
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from ghmem.exceptions import (
     IssueOrPRNotFoundError,
     PRDiffNotFoundError,
 )
+from ghmem.heat_query import heat_scores
 from ghmem.ingest import RoutingEvent, rebuild_from_ledgers
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.models import (
@@ -36,6 +38,7 @@ from ghmem.models import (
     Discussion,
     DiscussionComment,
     FetchFailed,
+    HeatScore,
     IssueOrPR,
     PRDiff,
     Reaction,
@@ -94,6 +97,17 @@ class Store:
             return session.execute(
                 select(IssueOrPR).where(IssueOrPR.id == item_id)
             ).scalar_one_or_none()
+
+    def all_issues_and_prs(self) -> list[IssueOrPR]:
+        """Return every issue and pull request, ordered by number."""
+        with Session(self._engine) as session:
+            return list(
+                session.execute(select(IssueOrPR).order_by(IssueOrPR.number)).scalars()
+            )
+
+    def heat_scores(self, weights: Mapping[str, float]) -> list[HeatScore]:
+        """Score and rank every item by heat, hottest first."""
+        return heat_scores(self._engine, weights)
 
     def comments_for(self, item_id: GraphQLId) -> list[Comment]:
         """Return the comments on `item_id`, oldest first."""

@@ -255,3 +255,22 @@ class FetchFailed(Base):
 
     id: Mapped[str] = mapped_column(primary_key=True)
     reason: Mapped[str]
+
+
+@dataclass(frozen=True, slots=True)
+class HeatScore:
+    """One item's heat score, with the per-metric breakdown behind it.
+
+    Not its own table — the result shape of `Store.heat_scores`, whose
+    aggregate query computes every field. `title` rides along so
+    ranked output can name each item without a second query.
+    """
+
+    number: IssueOrPRNumber
+    title: str
+    score: float
+    comments: int
+    reactions: int
+    participants: int
+    related_items: int
+    span_years: float

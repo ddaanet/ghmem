@@ -1,0 +1,23 @@
+{"type": "item", "data": {"id": "I_3", "__typename": "Issue", "number": 3, "title": "Xref target, no volume of its own", "state": "OPEN", "author": {"login": "xavier"}, "createdAt": "2026-02-01T00:00:00Z", "updatedAt": "2026-02-01T00:00:00Z", "mergedBy": null, "mergedAt": null, "authorAssociation": "NONE", "body": "closed by #1"}}
+{"type": "item", "data": {"id": "I_5", "__typename": "Issue", "number": 5, "title": "Cold item B", "state": "OPEN", "author": {"login": "cody"}, "createdAt": "2026-03-02T00:00:00Z", "updatedAt": "2026-03-02T00:00:00Z", "mergedBy": null, "mergedAt": null, "authorAssociation": "NONE", "body": "filed and never touched"}}
+{"type": "item", "data": {"id": "I_1", "__typename": "Issue", "number": 1, "title": "Hot item, years of back-and-forth", "state": "OPEN", "author": {"login": "octavia"}, "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z", "mergedBy": null, "mergedAt": null, "authorAssociation": "MEMBER", "body": "recurring pain point"}}
+{"type": "item", "data": {"id": "I_2", "__typename": "Issue", "number": 2, "title": "Mid item", "state": "OPEN", "author": {"login": "mia"}, "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-05T00:00:00Z", "mergedBy": null, "mergedAt": null, "authorAssociation": "NONE", "body": "some activity"}}
+{"type": "item", "data": {"id": "I_4", "__typename": "Issue", "number": 4, "title": "Cold item A", "state": "OPEN", "author": {"login": "cara"}, "createdAt": "2026-03-01T00:00:00Z", "updatedAt": "2026-03-01T00:00:00Z", "mergedBy": null, "mergedAt": null, "authorAssociation": "NONE", "body": "filed and never touched"}}
+{"type": "comment", "data": {"id": "C_1", "itemId": "I_1", "author": {"login": "bea"}, "createdAt": "2024-06-01T00:00:00Z", "updatedAt": "2024-06-01T00:00:00Z", "authorAssociation": "NONE", "body": "me too"}}
+{"type": "comment", "data": {"id": "C_2", "itemId": "I_1", "author": {"login": "ben"}, "createdAt": "2025-01-01T00:00:00Z", "updatedAt": "2025-01-01T00:00:00Z", "authorAssociation": "NONE", "body": "still happening"}}
+{"type": "review", "data": {"id": "RV_1", "prId": "I_1", "author": {"login": "rev1"}, "state": "APPROVED", "submittedAt": "2025-06-01T00:00:00Z", "body": "LGTM"}}
+{"type": "review_comment", "data": {"id": "RVC_1", "reviewId": "RV_1", "author": {"login": "rev1"}, "createdAt": "2025-06-01T00:00:00Z", "updatedAt": "2025-06-01T00:00:00Z", "body": "nit", "path": "a.go"}}
+{"type": "review_comment", "data": {"id": "RVC_2", "reviewId": "RV_1", "author": {"login": "helper"}, "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z", "body": "still relevant", "path": "a.go"}}
+{"type": "reaction", "data": {"subjectId": "I_1", "content": "THUMBS_UP", "count": 5}}
+{"type": "cross_ref", "data": {"srcId": "I_1", "dstId": "I_3", "kind": "closes"}}
+{"type": "comment", "data": {"id": "C_3", "itemId": "I_2", "author": {"login": "mo"}, "createdAt": "2026-01-05T00:00:00Z", "updatedAt": "2026-01-05T00:00:00Z", "authorAssociation": "NONE", "body": "some feedback"}}
+{"type": "reaction", "data": {"subjectId": "I_2", "content": "HEART", "count": 2}}
+{"type": "review", "data": {"id": "RV_2", "prId": "I_2", "author": {"login": "rev2"}, "state": "COMMENTED", "submittedAt": "2026-02-01T00:00:00Z", "body": "hm"}}
+{"type": "review_comment", "data": {"id": "RVC_3", "reviewId": "RV_2", "author": {"login": "rev2"}, "createdAt": "2026-02-01T00:00:00Z", "updatedAt": "2026-02-01T00:00:00Z", "body": "here", "path": "b.go"}}
+{"type": "reaction", "data": {"subjectId": "C_1", "content": "THUMBS_UP", "count": 3}}
+{"type": "reaction", "data": {"subjectId": "RV_1", "content": "ROCKET", "count": 7}}
+{"type": "reaction", "data": {"subjectId": "RVC_2", "content": "HEART", "count": 2}}
+{"type": "reaction", "data": {"subjectId": "C_3", "content": "THUMBS_UP", "count": 6}}
+{"type": "reaction", "data": {"subjectId": "RV_2", "content": "EYES", "count": 11}}
+{"type": "reaction", "data": {"subjectId": "RVC_3", "content": "LAUGH", "count": 13}}
+{"type": "cross_ref", "data": {"srcId": "I_1", "dstId": "I_3", "kind": "cross_referenced"}}
