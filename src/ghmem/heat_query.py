@@ -2,8 +2,10 @@
 
 Split out of `store.py` for size, not for a difference in role — this
 is still the read half of the store, just the one query large enough
-to earn its own file. `Store.heat_scores` delegates here, mirroring
-how `Store.rebuild_from_ledgers` delegates to `ingest.py`.
+to earn its own file.
+
+`Store.heat_scores` delegates here, mirroring how
+`Store.rebuild_from_ledgers` delegates to `ingest.py`.
 """
 
 from collections.abc import Mapping
@@ -37,12 +39,14 @@ def _count_where(
 def heat_scores(engine: Engine, weights: Mapping[str, float]) -> list[HeatScore]:
     """Score and rank every item by heat, hottest first.
 
-    One aggregate query: the per-metric counts are correlated
-    subqueries, `weights` binds into the weighted sum SQL sorts
-    on, and ties break by number ascending. Weights are parameters
-    rather than constants so recalibrating them never touches this
-    SQL, and so a later caller can order-and-limit a filtered
-    ranking (the "next untriaged item in heat order") in one go.
+    This is one aggregate query: the per-metric counts are correlated
+    subqueries, `weights` binds into the weighted sum that SQL sorts
+    on, and ties break by number ascending.
+
+    Weights are parameters rather than constants so recalibrating them
+    never touches this SQL, and so a later caller can order-and-limit a
+    filtered ranking (the "next untriaged item in heat order") in one
+    go.
     """
     # Every subquery below correlates on `item` explicitly:
     # auto-correlation does not reach inside a compound select or a
@@ -87,10 +91,12 @@ def heat_scores(engine: Engine, weights: Mapping[str, float]) -> list[HeatScore]
     # twice whenever a PR closes an issue — once as `closes` from
     # `closingIssuesReferences`, once as `cross_referenced` from the
     # issue's timeline. Counting rows would give every closing link
-    # twice the count of a bare mention. The metric is deliberately not
-    # named `xref_degree`: degree is an edge count, and edges equal
-    # neighbours only in a simple graph — `CrossRef` is keyed on
-    # `(src, dst, kind)`, so this one is a multigraph.
+    # twice the count of a bare mention.
+    #
+    # The metric is deliberately not named `xref_degree`: degree is an
+    # edge count, and edges equal neighbours only in a simple graph —
+    # `CrossRef` is keyed on `(src, dst, kind)`, so this one is a
+    # multigraph.
     neighbours = union(
         select(CrossRef.dst_id.label("id"))
         .where(CrossRef.src_id == item.id)

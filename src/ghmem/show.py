@@ -4,11 +4,14 @@
 header, body, timeline (comments merged with reviews and their nested
 review comments), cross-references, reactions, and (for pull requests)
 the diff — as deterministic markdown, annotating every author with
-their standing as of that entry's own date. `render_discussion` does
-the same for a discussion by number: header, body, comments nested by
-heading depth (each reply one level below its parent, accepted answer
-marked in place), and reactions. Offline and snapshot-testable: both
-only ever read from an already-populated `Store`, never the network.
+their standing as of that entry's own date.
+
+`render_discussion` does the same for a discussion by number: header,
+body, comments nested by heading depth (each reply one level below its
+parent, accepted answer marked in place), and reactions.
+
+Both are offline and snapshot-testable: they only ever read from an
+already-populated `Store`, never the network.
 
 Reactions render at two levels. A `## Reactions` section carries the
 item's or discussion's own, and any reply that was reacted to carries

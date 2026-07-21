@@ -2,9 +2,10 @@
 
 `_sync_issues` and `_sync_pull_requests` each drain their connection
 oldest-updated first, appending every node behind parse-before-append
-and persisting a `cursor` event after every fully drained page. The
-wire Structs these decode into live in `sync_wire`; the shared plumbing
-they lean on lives in `sync_core`.
+and persisting a `cursor` event after every fully drained page.
+
+The wire Structs these decode into live in `sync_wire`; the shared
+plumbing they lean on lives in `sync_core`.
 
 Where this departs from a literal GraphQL schema walk:
 
@@ -196,6 +197,7 @@ def _drain_items_page(
 
     A `null` list entry (an observed GraphQL gap, not a driver bug) is
     recorded as `fetch_failed` and skipped — it never aborts the page.
+
     Returns the page's `endCursor` to continue from, or `None` once
     `hasNextPage` is false.
     """

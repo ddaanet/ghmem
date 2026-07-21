@@ -174,7 +174,6 @@ class RouteEvent(TypedDict):
 type RoutingEvent = DispatchedEvent | RouteEvent
 """The routing-ledger event union.
 
-Grows in Parts B (`RequeueEvent`) and
-C (`SnapshotEvent`, `CloseEvent`); do not add members outside those
-parts.
+Grows in Part B (`RequeueEvent`) and Part C (`SnapshotEvent`,
+`CloseEvent`). Do not add members outside those parts.
 """

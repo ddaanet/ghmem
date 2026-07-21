@@ -1,12 +1,16 @@
 """GraphQL wire Structs for the issues and pull-requests connection.
 
 These live apart from the `sync_items` logic that drives them for one
-reason only: the item hierarchy plus its drivers and queries exceed the
-400-line file cap, and the item structs form a single msgspec cluster
-that cannot be cut mid-way. Every other connection (`sync_commits`,
-`sync_discussions`) is small enough to keep its structs beside its
-logic; issues/PRs is the one that had to be split. The bases these
-build on (`_Wire`, `_Page`, `_Author`, `_NodeRef`) stay in `sync_core`.
+reason only. The item hierarchy plus its drivers and queries exceed
+the 400-line file cap, and the item structs form a single msgspec
+cluster that cannot be cut mid-way.
+
+Every other connection (`sync_commits`, `sync_discussions`) is small
+enough to keep its structs beside its logic. Issues/PRs is the one
+that had to be split.
+
+The bases these build on (`_Wire`, `_Page`, `_Author`, `_NodeRef`)
+stay in `sync_core`.
 """
 
 import msgspec
@@ -101,7 +105,7 @@ class _ReferencedSubject(_Wire):
 class _CrossReferencedEventNode(_Wire):
     """A wire `CrossReferencedEvent` timelineItems node.
 
-    Only `source` (the referencing issue/PR) is selected — `target`
+    Only `source` (the referencing issue/PR) is selected. `target`
     (the item whose timeline this event appears on) is always the
     parent `_ItemNode` this connection was queried from, so
     `_append_item_and_nested` injects it as `dstId` the same way it
@@ -139,10 +143,11 @@ class _ItemNode(_ItemFields, kw_only=True):
     """A wire Issue/PullRequest node: fields plus first-page nested data.
 
     `reviews`, `files`, and `closing_issues_references` are `None` on
-    an Issue node (GraphQL selects them only inside a `... on
-    PullRequest` fragment). `timeline_items` is selected on both —
-    cross-references (an issue or PR mentioning another) occur on
-    either.
+    an Issue node, because GraphQL selects them only inside a `... on
+    PullRequest` fragment.
+
+    `timeline_items` is selected on both — cross-references (an issue
+    or PR mentioning another) occur on either.
     """
 
     comments: _CommentsPage

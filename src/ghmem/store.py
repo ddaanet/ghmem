@@ -71,8 +71,9 @@ class Store:
 
         Replay is idempotent: the whole schema is dropped and recreated
         first, and every row is upserted by id, so rebuilding twice from
-        the same ledgers leaves identical query results. See
-        `ingest.rebuild_from_ledgers` for the replay itself and the
+        the same ledgers leaves identical query results.
+
+        See `ingest.rebuild_from_ledgers` for the replay itself and the
         raw-node contract it depends on.
         """
         rebuild_from_ledgers(self._engine, fetch, routing)
@@ -285,6 +286,7 @@ class Store:
         Constrained to fetched items, as `dispatched_unrouted` is: the
         routing ledger outlives the regenerable fetch ledger, so a
         verdict naming an absent item is a steady state, not corruption.
+
         Counting one mixes two populations; `--requeue` cannot serve one.
         """
         with Session(self._engine) as session:

@@ -1,11 +1,12 @@
 """Time-varying contributor standing, derived purely from the corpus.
 
 Standing answers "how much authority did this user have as of this
-date" from evidence already in the `Store` — merged-PR credit and
-commit authorship — never from an agent's judgment or from
+date" from evidence already in the `Store`: merged-PR credit and commit
+authorship. It never comes from an agent's judgment, nor from
 `author_association` (a self-reported GitHub label, not derived here).
+
 `build_standing` pulls every merged PR and commit once into a
-`StandingTable`; `of`/`annotation` then filter that snapshot by date in
+`StandingTable`. `of`/`annotation` then filter that snapshot by date in
 Python, without re-querying the store.
 """
 
@@ -44,10 +45,14 @@ class StandingTable:
     """A snapshot of corpus evidence, queryable per-user and per-date.
 
     Each field maps a user login to the dates on which they earned one
-    kind of evidence, ascending: `merges_credited` (PRs they merged),
-    `accepted_prs` (PRs merged that they authored), `commit_dates`
-    (commits they authored). `of`/`annotation` filter these lists by
-    `<= when` in memory — the store is never re-queried after `build_standing`.
+    kind of evidence, ascending:
+
+    - `merges_credited` — PRs they merged.
+    - `accepted_prs` — PRs merged that they authored.
+    - `commit_dates` — commits they authored.
+
+    `of`/`annotation` filter these lists by `<= when` in memory — the
+    store is never re-queried after `build_standing`.
 
     **Known approximation**: `commit_dates` is keyed by `Commit.author`,
     a bare GitActor display name, not a GitHub login — it can miss a
@@ -75,13 +80,17 @@ class StandingTable:
     def annotation(self, user: str, when: date) -> str:
         """Render the inline annotation for `user` as of `when`.
 
-        Renders by standing class: `"{user} (owner)"`; `"{user}
-        (maintainer since ~{year}; {n} merges at time of comment)"`
-        where `year` is the calendar year of `user`'s MERGE_THRESHOLD-th
-        credited merge (a fixed fact, independent of `when`) and `n` is
-        the count of merges credited `<= when`; `"{user} (established
-        contributor; {n} accepted PRs at time of comment)"` where `n` is
-        the count of accepted PRs `<= when`; `"{user} (newcomer)"`.
+        Renders by standing class:
+
+        - OWNER: `"{user} (owner)"`.
+        - MAINTAINER: `"{user} (maintainer since ~{year}; {n} merges at
+          time of comment)"`. `year` is the calendar year of `user`'s
+          MERGE_THRESHOLD-th credited merge, a fixed fact independent of
+          `when`. `n` is the count of merges credited `<= when`.
+        - ESTABLISHED: `"{user} (established contributor; {n} accepted
+          PRs at time of comment)"`. `n` is the count of accepted PRs
+          `<= when`.
+        - NEWCOMER: `"{user} (newcomer)"`.
         """
         standing = self.of(user, when)
         if standing is Standing.OWNER:
@@ -110,10 +119,12 @@ def _count_upto(dates: list[date], when: date) -> int:
 def build_standing(store: Store) -> StandingTable:
     """Snapshot every merged PR and commit in `store` into a `StandingTable`.
 
-    Pulls all evidence once — `store.merges_before(date.max)` (every merged PR
-    ever) and `store.commits()` — and groups it into the table's three per-user
-    date lists. Both store calls return results ordered ascending by date, so
-    each per-user sublist stays sorted without a separate sort.
+    Pulls all evidence once, from `store.merges_before(date.max)` (every merged
+    PR ever) and `store.commits()`. The results are grouped into the table's
+    three per-user date lists.
+
+    Both store calls return results ordered ascending by date, so each per-user
+    sublist stays sorted without a separate sort.
     """
     merges_credited: dict[str, list[date]] = defaultdict(list)
     accepted_prs: dict[str, list[date]] = defaultdict(list)

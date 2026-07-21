@@ -1,11 +1,13 @@
 """Resumable GraphQL sync for the default branch's commit history.
 
 Commits are a special case among the connections. `Commit.history`
-takes no `orderBy` and GitHub always returns it newest-first, so its
-high-water mark is the first node on a page rather than the last, and
-it resumes by `since:` rather than by cursor — see `_sync_commits`.
-The wire Structs stay here beside the logic (the connection is small
-enough to keep them local); the plumbing comes from `sync_core`.
+takes no `orderBy`, and GitHub always returns it newest-first. Its
+high-water mark is therefore the first node on a page rather than the
+last, and it resumes by `since:` rather than by cursor. See
+`_sync_commits`.
+
+The wire Structs stay here beside the logic, because the connection is
+small enough to keep them local. The plumbing comes from `sync_core`.
 """
 
 from ghmem.aliases import JsonObject
@@ -34,20 +36,21 @@ def _sync_commits(ctx: _Sync) -> None:
     connection at its head with `since:` set past everything already
     fetched.
 
-    `since:` filters on **committedDate**, not `authoredDate` —
+    `since:` filters on **committedDate**, not `authoredDate`. That was
     verified against `micro-editor/micro` on 2026-07-17, where 633 of
     ~3530 commits carry the two dates apart, by up to 2.5 months. The
     high-water mark is therefore the newest `committedDate` seen, and
-    `_CommitNode` selects that field for no other reason. `since:` is
-    inclusive (also verified), so each catch-up refetches the boundary
-    commit; `rebuild_from_ledgers` dedups it on sha.
+    `_CommitNode` selects that field for no other reason.
+
+    `since:` is inclusive (also verified), so each catch-up refetches
+    the boundary commit. `rebuild_from_ledgers` dedups it on sha.
 
     The cursor is persisted only once the history is fully drained, so
     a `commits` cursor in the ledger always means "everything up to
     this hwm is present". A run interrupted mid-drain persists nothing
-    and is redone from the previous hwm — re-fetching a bounded amount
-    rather than stranding the undrained tail behind a hwm that claims
-    it was already seen.
+    and is redone from the previous hwm. That re-fetches a bounded
+    amount, rather than stranding the undrained tail behind a hwm that
+    claims it was already seen.
     """
     since = _last_hwm(ctx.fetch, "commits")
     hwm = since or ""
@@ -101,11 +104,15 @@ query($first: Int!, $after: String, $since: GitTimestamp) {
 def _commit_data(commit: _CommitNode) -> JsonObject:
     """Reshape a wire commit node into the `commit` raw-node contract.
 
-    Two transforms with no analogue elsewhere: `oid` becomes `sha`, and
-    the `GitActor` node collapses to a bare `author` string — a commit
-    author need not be a GitHub account, the one exception to the
-    `{"login": ...}` convention. `committedDate` is dropped; it drives
-    the `since:` high-water mark only and is not part of the contract.
+    Two transforms have no analogue elsewhere:
+
+    - `oid` becomes `sha`.
+    - The `GitActor` node collapses to a bare `author` string. A commit
+      author need not be a GitHub account, which makes this the one
+      exception to the `{"login": ...}` convention.
+
+    `committedDate` is dropped. It drives the `since:` high-water mark
+    only, and is not part of the contract.
     """
     return {
         "sha": commit.oid,

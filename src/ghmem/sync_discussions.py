@@ -2,12 +2,15 @@
 
 `_sync_discussions` drains `repository.discussions` oldest-updated
 first, appending every node behind parse-before-append and persisting a
-`cursor` event per fully drained page. Every top-level comment on a
-discussion is appended before any of that discussion's replies, so a
-reply's parent is always already in the ledger —
-`_append_discussion_comments` owns that ordering, and it is what keeps
-`show.OrphanReplyWarning` from firing on pagination order alone. The
-wire Structs stay here beside the logic; the plumbing comes from
+`cursor` event per fully drained page.
+
+Every top-level comment on a discussion is appended before any of that
+discussion's replies, so a reply's parent is always already in the
+ledger — `_append_discussion_comments` owns that ordering, and it is
+what keeps `show.OrphanReplyWarning` from firing on pagination order
+alone.
+
+The wire Structs stay here beside the logic; the plumbing comes from
 `sync_core`.
 """
 
@@ -116,8 +119,10 @@ def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
     Every discussion's comments (first page plus any follow-up pages)
     are appended before any of that discussion's replies — see
     `_append_discussion_comments` — so a reply's parent is always
-    already in the ledger. Returns the page's `endCursor` to continue
-    from, or `None` once `hasNextPage` is false.
+    already in the ledger.
+
+    Returns the page's `endCursor` to continue from, or `None` once
+    `hasNextPage` is false.
     """
     for node in page.nodes:
         _append_validated(

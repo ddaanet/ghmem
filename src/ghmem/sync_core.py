@@ -2,12 +2,16 @@
 
 The four connection modules (`sync_items`, `sync_commits`,
 `sync_discussions`, tied together by `sync`) all lean on the same
-pieces gathered here: the wire-Struct bases they build their responses
-from, the `_Query` template their GraphQL strings interpolate, the
-`_Sync` context threaded through every helper, the `_raw_data`
-projection that turns a wire node into ingest's raw `data` contract,
-the parse-before-append / fetch-failed / truncation plumbing, and the
-cursor bookkeeping that lets each connection resume independently.
+pieces, gathered here:
+
+- the wire-Struct bases they build their responses from;
+- the `_Query` template their GraphQL strings interpolate;
+- the `_Sync` context threaded through every helper;
+- the `_raw_data` projection that turns a wire node into ingest's raw
+  `data` contract;
+- the parse-before-append / fetch-failed / truncation plumbing;
+- the cursor bookkeeping that lets each connection resume
+  independently.
 
 The `_Wire` hierarchy types what GraphQL sends back, never what gets
 appended — that is ingest.py's `_Raw*` family. Every node is projected
@@ -184,9 +188,11 @@ def _append_reactions(
 
     `subjectId` is injected from the node the connection was selected
     on, since a reaction group carries no reference to what it hangs
-    off. Empty groups are dropped: GitHub returns a group per reaction
-    kind whether it has users or not, and storing the zeroes would be
-    a row per kind per subject saying nothing.
+    off.
+
+    Empty groups are dropped: GitHub returns a group per reaction kind
+    whether it has users or not, and storing the zeroes would be a row
+    per kind per subject saying nothing.
     """
     for group in groups:
         if group.users.total_count > 0:
@@ -220,11 +226,12 @@ def _check_truncated[T](
     timelineItems are all taken as first-page-only by design (never
     drained past `pageInfo`) — this makes an oversized connection's
     truncation visible via `store.fetch_failures()` instead of
-    silently losing data, without aborting the sync. `item_id` is the
-    connection's owner — the PR for most, but the review for review
-    comments. Keyed by `f"{item_id}:{name}"` so two truncated
-    connections on one owner stay distinct rows instead of colliding
-    on replay.
+    silently losing data, without aborting the sync.
+
+    `item_id` is the connection's owner — the PR for most, but the
+    review for review comments. Keyed by `f"{item_id}:{name}"` so two
+    truncated connections on one owner stay distinct rows instead of
+    colliding on replay.
     """
     if page.page_info.has_next_page:
         count = len(page.nodes)

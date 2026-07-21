@@ -1,16 +1,20 @@
 """Thin githubkit wrapper: GraphQL metering, REST diff fetch, auth.
 
 Not a pagination driver — that is `sync.py`'s job. This module owns
-exactly three things: turning a raw GraphQL response into a caller's
-`msgspec.Struct` while metering the point budget, fetching one PR's
-diff text over REST, and resolving a token. Every retry/backoff
-decision beyond that is githubkit's own.
+exactly three things:
+
+- Turning a raw GraphQL response into a caller's `msgspec.Struct`,
+  while metering the point budget.
+- Fetching one PR's diff text over REST.
+- Resolving a token.
+
+Every retry/backoff decision beyond that is githubkit's own.
 
 `GitHub(..., auto_retry=RETRY_SERVER_ERROR)` deliberately narrows
 githubkit's default retry chain (`RETRY_DEFAULT = RETRY_RATE_LIMIT +
 RETRY_SERVER_ERROR`) to the 5xx leg only. `RETRY_RATE_LIMIT` reacts to
-a rate limit by blocking in `time.sleep(x-ratelimit-reset - now)` — up
-to an hour on a primary limit — which would silently swallow the
+a rate limit by blocking in `time.sleep(x-ratelimit-reset - now)`, up
+to an hour on a primary limit. That would silently swallow the
 persist-cursor-and-exit sync design and hang instead. Declining it
 here means a rate limit surfaces as `RateLimitError` (see `graphql`
 below), not a stall.
@@ -37,9 +41,9 @@ _DIFF_ACCEPT = "application/vnd.github.v3.diff"
 _RATE_LIMIT_SAFETY_MARGIN = 100
 """Points reserved below which `graphql` refuses another call.
 
-GitHub's GraphQL primary limit is 5,000 points/hour; a single well-formed page
-query rarely costs more than this margin, so falling under it means the *next*
-call would likely overdraw the budget outright rather than complete.
+GitHub's GraphQL primary limit is 5,000 points/hour. A single well-formed page
+query rarely costs more than this margin. Falling under it therefore means the
+*next* call would likely overdraw the budget outright rather than complete.
 """
 
 
@@ -76,11 +80,12 @@ class GitHubClient:
 
         `query` must select `rateLimit { cost remaining resetAt }` —
         githubkit does no cost accounting of its own, and this is the
-        only way to see the point budget. That budget is metered
-        after every call: if `remaining` has fallen below the safety
-        margin, this raises `RateLimitError(reset_at)` instead of
-        returning, so a caller stops before a later call runs the
-        budget dry mid-page.
+        only way to see the point budget.
+
+        That budget is metered after every call. If `remaining` has
+        fallen below the safety margin, this raises
+        `RateLimitError(reset_at)` instead of returning, so a caller
+        stops before a later call runs the budget dry mid-page.
         """
         data = self._gh.graphql(query, variables)
         rate_limit = msgspec.convert(data["rateLimit"], _RateLimit, strict=True)
@@ -92,13 +97,17 @@ class GitHubClient:
         """Fetch the unified diff text for PR `number` over REST.
 
         Returns `(diff_text, truncated)`. `truncated` is `True` when
-        GitHub refuses to generate an oversized diff — verified live
-        against `micro-editor/micro#1392` (228,016 additions) on
-        2026-07-16: HTTP 406 with a JSON body whose `errors[].code` is
-        `"too_large"`. `diff_text` is `""` in that case; GitHub sends
-        no diff body with the refusal. Per-file stats are not fetched
-        here — they come from the GraphQL `pullRequest.files`
-        connection, keeping this call to ~1 REST request per PR.
+        GitHub refuses to generate an oversized diff. That refusal was
+        verified live against `micro-editor/micro#1392` (228,016
+        additions) on 2026-07-16: HTTP 406 with a JSON body whose
+        `errors[].code` is `"too_large"`.
+
+        `diff_text` is `""` in that case, because GitHub sends no diff
+        body with the refusal.
+
+        Per-file stats are not fetched here. They come from the GraphQL
+        `pullRequest.files` connection, which keeps this call to ~1 REST
+        request per PR.
         """
         try:
             resp = self._gh.request(

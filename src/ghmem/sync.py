@@ -1,11 +1,13 @@
 """Resumable GraphQL sync entry point: issues, PRs, commits, discussions.
 
 `sync()` fills the fetch ledger that `store.rebuild_from_ledgers`
-replays, draining the four connections in turn and delegating each to
-its own module — `sync_items` (issues and pull requests), `sync_commits`
-(commit history), and `sync_discussions`. The shared machinery those
-drivers lean on lives in `sync_core`; the issues/PRs wire Structs, split
-out to keep `sync_items` under the file cap, live in `sync_wire`.
+replays. It drains the four connections in turn and delegates each to
+its own module: `sync_items` (issues and pull requests),
+`sync_commits` (commit history), and `sync_discussions`.
+
+The shared machinery those drivers lean on lives in `sync_core`. The
+issues/PRs wire Structs live in `sync_wire`, split out there to keep
+`sync_items` under the file cap.
 
 Each connection persists a `cursor` event after every fully drained
 page, so each resumes independently from its own last checkpoint.
@@ -33,19 +35,21 @@ def sync(client: GitHubClient, fetch: Ledger[FetchEvent]) -> SyncResult:
     """Fetch issues, pull requests, discussions, and commit history.
 
     Drains the "issues", "pull_requests", "commits", and "discussions"
-    connections in turn (issues/PRs bring their reviews, reactions, and
-    diffs), appending every node behind parse-before-append and
-    persisting a `cursor` event per connection after each page is fully
-    drained.
+    connections in turn. Issues and PRs bring their reviews, reactions,
+    and diffs with them. Every node is appended behind
+    parse-before-append, and a `cursor` event is persisted per
+    connection after each page is fully drained.
 
     Every connection always resumes from its own last-persisted
     checkpoint, and one with no checkpoint starts from the beginning.
-    Resuming is therefore not a mode: on a first run there is nothing
-    to resume from and this drains everything, while on a later run
+    Resuming is therefore not a mode. On a first run there is nothing
+    to resume from, so this drains everything. On a later run,
     re-fetching from the beginning would only re-append nodes that
-    `rebuild_from_ledgers` dedups away. Raises `RateLimitError` if the
-    budget runs out mid-page; nothing from that in-flight page is
-    appended, so the last persisted checkpoint stays the resume point.
+    `rebuild_from_ledgers` dedups away.
+
+    Raises `RateLimitError` if the budget runs out mid-page. Nothing
+    from that in-flight page is appended, so the last persisted
+    checkpoint stays the resume point.
     """
     ctx = _Sync(client, fetch, Counter())
     _sync_issues(ctx)

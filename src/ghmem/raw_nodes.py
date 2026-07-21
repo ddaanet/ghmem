@@ -1,16 +1,13 @@
-"""The raw-node JSON contract: one `_Raw*` struct per stored node kind.
+"""The raw-node JSON contract: the ten concrete `_Raw*` structs.
 
-These structs *are* the contract `sync.py`'s fetch driver must produce;
-`ingest.validate_raw_node` checks every node against them before append.
-Each decodes one `FetchEvent["data"]` object in GraphQL camelCase
-(`rename="camel"` unless noted) and lists its keys in its own docstring.
-Two conventions recur, flagged only on departure: a `null` author
-narrows to the login `"ghost"`, and an **injected** field has no GraphQL
-analogue and is attached by the driver. A key is optional only where
-GitHub can omit it (`mergedBy`/`mergedAt`); `authorAssociation` stays
-required because GraphQL types it non-null, so dropping it fails loudly
-instead of emptying the column. `forbid_unknown_fields=True` makes the
-contract exact.
+Each decodes one `FetchEvent["data"]` object in GraphQL camelCase and
+lists its keys in its own docstring. The shared base (`_RawNode`),
+its registry (`_RAW_BY_TYPE`), and the small nested-node helper
+structs live in `raw_nodes_core.py`, along with the conventions that
+apply across every struct here: the `rename="camel"` default, the
+`null` author -> `"ghost"` rule, the **injected** field convention,
+the optional-key rule (and why `authorAssociation` stays required),
+and `forbid_unknown_fields=True`.
 """
 
 from datetime import datetime
@@ -18,10 +15,9 @@ from typing import ClassVar
 
 import msgspec
 
-from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber, JsonObject
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 from ghmem.ledger import RawNodeType
 from ghmem.models import (
-    Base,
     Comment,
     Commit,
     CrossRef,
@@ -34,90 +30,40 @@ from ghmem.models import (
     Review,
     ReviewComment,
 )
+from ghmem.raw_nodes_core import (
+    _RAW_BY_TYPE,
+    _id_of,
+    _login_of,
+    _RawCategory,
+    _RawFileStat,
+    _RawIdRef,
+    _RawLogin,
+    _RawNode,
+)
 
-# Populated by `_RawNode.__init_subclass__`: each raw node registers
-# itself here under its `FetchEvent["type"]`, so replay dispatches by
-# type without a central lookup to keep in sync with the class list.
-_RAW_BY_TYPE: dict[str, type[_RawNode]] = {}
-
-
-class _RawNode(
-    msgspec.Struct, rename="camel", kw_only=True, forbid_unknown_fields=True
-):
-    """Base for raw-node structs that each map to one declarative entity.
-
-    A subclass sets `_event_type` (its `FetchEvent["type"]`) and
-    implements `to_entity`; `parse` decodes the raw JSON once, here, and
-    hands the typed struct to `to_entity`. Registration and the shared
-    `msgspec.convert` live on the base so a new node kind is a single
-    self-contained class.
-    """
-
-    _event_type: ClassVar[RawNodeType]
-
-    def __init_subclass__(cls) -> None:
-        # msgspec's metaclass consumes every struct-config class kwarg
-        # (`rename`, `kw_only`, ...) before this runs, so no kwargs reach
-        # here to forward.
-        super().__init_subclass__()
-        event_type = cls.__dict__.get("_event_type")
-        if event_type is not None:
-            _RAW_BY_TYPE[event_type] = cls
-
-    @classmethod
-    def parse(cls, data: JsonObject) -> Base:
-        """Decode one raw `data` object into its declarative entity."""
-        return msgspec.convert(data, cls).to_entity()
-
-    def to_entity(self) -> Base:
-        """Build the declarative entity from this decoded raw node."""
-        raise NotImplementedError
-
-
-class _RawLogin(msgspec.Struct):
-    """A raw `{"login": ...}` GitHub user node."""
-
-    login: str
-
-
-def _login_of(node: _RawLogin | None) -> str:
-    """Resolve a raw author node to a login, mapping a null to "ghost"."""
-    return "ghost" if node is None else node.login
-
-
-class _RawFileStat(msgspec.Struct):
-    """One `{"path", "additions", "deletions"}` diffstat entry."""
-
-    path: str
-    additions: int
-    deletions: int
-
-
-class _RawCategory(msgspec.Struct):
-    """A raw `{"name": ...}` discussion-category node."""
-
-    name: str
-
-
-class _RawIdRef(msgspec.Struct):
-    """A raw `{"id": ...}` reference to another node, by id."""
-
-    id: GraphQLId
-
-
-def _id_of(ref: _RawIdRef | None) -> GraphQLId | None:
-    """Resolve a raw id-reference node to its id, mapping null to None."""
-    return None if ref is None else ref.id
+# Re-exported: `ingest.py` imports the registry from here, and it is
+# only populated once the concrete structs below have registered
+# themselves against the `_RawNode` base imported from `raw_nodes_core`.
+__all__ = ["_RAW_BY_TYPE"]
 
 
 class _RawIssueOrPR(_RawNode):
     """A raw Issue/PullRequest node — the `"item"` event's `data`.
 
-    Keys: `id`; `__typename` (`"Issue"` or `"PullRequest"`, the
-    issue/PR discriminant); `number`; `title`; `state`; `author`;
-    `createdAt`; `updatedAt`; `body`; `authorAssociation`. Optional:
-    `mergedBy` (`{"login": ...}` or `null`; omitted entirely for a
-    non-PR/unmerged node), `mergedAt`.
+    Keys:
+
+    - `id`
+    - `__typename`: `"Issue"` or `"PullRequest"`, the issue/PR
+      discriminant
+    - `number`, `title`, `state`, `author`
+    - `createdAt`, `updatedAt`
+    - `body`, `authorAssociation`
+
+    Optional keys:
+
+    - `mergedBy`: `{"login": ...}` or `null`; omitted entirely for a
+      non-PR/unmerged node
+    - `mergedAt`
     """
 
     _event_type: ClassVar[RawNodeType] = "item"
@@ -155,9 +101,14 @@ class _RawIssueOrPR(_RawNode):
 class _RawComment(_RawNode):
     """A raw IssueComment node — the `"comment"` event's `data`.
 
-    Keys: `id`; `itemId` (**injected**: the fetch driver attaches the
-    parent issue/PR id); `author`; `createdAt`; `updatedAt`; `body`;
-    `authorAssociation`.
+    Keys:
+
+    - `id`
+    - `itemId`: **injected**, the fetch driver attaches the parent
+      issue/PR id
+    - `author`
+    - `createdAt`, `updatedAt`
+    - `body`, `authorAssociation`
     """
 
     _event_type: ClassVar[RawNodeType] = "comment"
@@ -185,8 +136,13 @@ class _RawComment(_RawNode):
 class _RawReview(_RawNode):
     """A raw PullRequestReview node — the `"review"` event's `data`.
 
-    Keys: `id`; `prId` (**injected**, like `itemId` on a comment);
-    `author`; `state`; `submittedAt`; `body`.
+    Keys:
+
+    - `id`
+    - `prId`: **injected**, like `itemId` on a comment
+    - `author`, `state`
+    - `submittedAt`
+    - `body`
     """
 
     _event_type: ClassVar[RawNodeType] = "review"
@@ -212,8 +168,13 @@ class _RawReview(_RawNode):
 class _RawReviewComment(_RawNode):
     """A raw PullRequestReviewComment node — the `"review_comment"` data.
 
-    Keys: `id`; `reviewId` (**injected**); `author`; `createdAt`;
-    `updatedAt`; `body`; `path`.
+    Keys:
+
+    - `id`
+    - `reviewId`: **injected**
+    - `author`
+    - `createdAt`, `updatedAt`
+    - `body`, `path`
     """
 
     _event_type: ClassVar[RawNodeType] = "review_comment"
@@ -241,8 +202,11 @@ class _RawReviewComment(_RawNode):
 class _RawReaction(_RawNode):
     """A raw aggregated reaction-group node — the `"reaction"` data.
 
-    Keys: `subjectId` (**injected**: the id of the item/comment/review
-    the group hangs off), `content`, `count`.
+    Keys:
+
+    - `subjectId`: **injected**, the id of the item/comment/review the
+      group hangs off
+    - `content`, `count`
     """
 
     _event_type: ClassVar[RawNodeType] = "reaction"
@@ -262,8 +226,12 @@ class _RawReaction(_RawNode):
 class _RawCrossRef(_RawNode):
     """A cross-reference node — the `"cross_ref"` event's `data`.
 
-    **Wholly synthesized**: no direct GraphQL analogue. Keys: `srcId`,
-    `dstId`, `kind` (e.g. `"closes"`).
+    **Wholly synthesized**: no direct GraphQL analogue.
+
+    Keys:
+
+    - `srcId`, `dstId`
+    - `kind`: e.g. `"closes"`
     """
 
     _event_type: ClassVar[RawNodeType] = "cross_ref"
@@ -281,8 +249,13 @@ class _RawCommit(_RawNode):
 
     `author` is **the one exception** to the `{"login": ...}`
     convention: a bare GitActor display-name string, because a commit
-    author need not be a GitHub account. Keys: `sha`, `author`,
-    `authoredDate`, `message`.
+    author need not be a GitHub account.
+
+    Keys:
+
+    - `sha`, `author`
+    - `authoredDate`
+    - `message`
     """
 
     _event_type: ClassVar[RawNodeType] = "commit"
@@ -305,8 +278,13 @@ class _RawPRDiff(_RawNode):
     """A PR-diff node — the `"pr_diff"` event's `data`.
 
     **Wholly synthesized** from the REST diff endpoint, not a GraphQL
-    node. Keys: `prNumber`; `files` (a list of `_RawFileStat`);
-    `diffText`; `truncated`.
+    node.
+
+    Keys:
+
+    - `prNumber`
+    - `files`: a list of `_RawFileStat`
+    - `diffText`, `truncated`
     """
 
     _event_type: ClassVar[RawNodeType] = "pr_diff"
@@ -331,9 +309,13 @@ class _RawPRDiff(_RawNode):
 class _RawDiscussion(_RawNode):
     """A raw Discussion node — the `"discussion"` event's `data`.
 
-    Keys: `id`; `number`; `title`; `body`; `author`; `createdAt`;
-    `updatedAt`; `category` (a `{"name": ...}` node); `answer` (a
-    `{"id": ...}` node, or `null` if unanswered); `authorAssociation`.
+    Keys:
+
+    - `id`, `number`, `title`, `body`, `author`
+    - `createdAt`, `updatedAt`
+    - `category`: a `{"name": ...}` node
+    - `answer`: a `{"id": ...}` node, or `null` if unanswered
+    - `authorAssociation`
     """
 
     _event_type: ClassVar[RawNodeType] = "discussion"
@@ -367,11 +349,19 @@ class _RawDiscussion(_RawNode):
 class _RawDiscussionComment(_RawNode):
     """A raw DiscussionComment node — the `"discussion_comment"` data.
 
-    Keys: `id`; `discussionId` (**injected**: the fetch driver attaches
-    the parent discussion id); `author`; `createdAt`; `updatedAt`;
-    `body`; `authorAssociation`. Optional: `parentId` (**injected**:
-    omitted/null on a top-level comment, the parent comment's id on a
-    reply).
+    Keys:
+
+    - `id`
+    - `discussionId`: **injected**, the fetch driver attaches the
+      parent discussion id
+    - `author`
+    - `createdAt`, `updatedAt`
+    - `body`, `authorAssociation`
+
+    Optional keys:
+
+    - `parentId`: **injected**; omitted/null on a top-level comment,
+      the parent comment's id on a reply
     """
 
     _event_type: ClassVar[RawNodeType] = "discussion_comment"

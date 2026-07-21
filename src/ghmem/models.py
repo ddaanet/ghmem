@@ -4,9 +4,10 @@ Each class below is both the SQLite table definition (via `Mapped`
 column annotations) and the object `Store` query methods return —
 `MappedAsDataclass` gives every entity a generated `__init__` and
 value `__eq__`/`__repr__`, so callers compare results the same way
-they would a plain dataclass. `ingest.py` owns turning raw GraphQL
-JSON into these entities and replaying them into SQLite; this module
-only owns what they *are*.
+they would a plain dataclass.
+
+`ingest.py` owns turning raw GraphQL JSON into these entities and
+replaying them into SQLite; this module only owns what they *are*.
 """
 
 import json
@@ -47,9 +48,11 @@ class _ISODateTime(TypeDecorator[datetime]):
 
     SQLite has no native timezone-aware datetime type, and
     SQLAlchemy's built-in `DateTime` type silently drops tzinfo on the
-    sqlite dialect. Every fetched timestamp is UTC (an ISO-8601 "Z"
-    string per the raw-node contract below), and round-tripping
-    through `isoformat()`/`fromisoformat()` preserves that exactly.
+    sqlite dialect.
+
+    Every fetched timestamp is UTC (an ISO-8601 "Z" string per the
+    raw-node contract below), and round-tripping through
+    `isoformat()`/`fromisoformat()` preserves that exactly.
     """
 
     impl = Text
@@ -273,11 +276,13 @@ class Dispatch(Base):
     requeue overwrites the earlier row rather than accumulating one.
     That is the intended shape: this table answers "who is this item
     outstanding to right now", which is what `dispatched_unrouted` and
-    the queue's distinctness rule need. The full history of every
-    dispatch — the record subproject 4 calibrates batch budgets
-    against — lives in the append-only routing ledger, which loses
-    nothing; duplicating it here would make the mirror a second copy
-    of a log instead of a cache of current state.
+    the queue's distinctness rule need.
+
+    The full history of every dispatch — the record subproject 4
+    calibrates batch budgets against — lives in the append-only
+    routing ledger, which loses nothing; duplicating it here would make
+    the mirror a second copy of a log instead of a cache of current
+    state.
 
     Live per-session metering stays exact under this key: concurrent
     sessions are handed distinct items, and requeue runs only at
@@ -306,8 +311,8 @@ class HeatScore:
     """One item's heat score, with the per-metric breakdown behind it.
 
     Not its own table — the result shape of `Store.heat_scores`, whose
-    aggregate query computes every field. `title` rides along so
-    ranked output can name each item without a second query.
+    aggregate query computes every field. `title` rides along so ranked
+    output can name each item without a second query.
     """
 
     number: IssueOrPRNumber
