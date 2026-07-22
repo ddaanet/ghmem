@@ -564,9 +564,11 @@ mutations and record whether each kills a test, restoring after each:
 1. Add one to the allowance. Expect `packet_chars <= budget` to fail
    in the `diff_cut` test — that test's budget is derived to land on a
    line boundary precisely so a one-character overshoot pulls in a
-   whole extra line. If it survives, the boundary is not pinned: tune
-   `diff_lines` and the budget until it bites, and record what you
-   did.
+   whole extra line. If it survives, stop and report it: a surviving
+   mutation here means the budget is not landing on a boundary, or the
+   `floor + len(body)` identity this task rests on does not hold as
+   stated. Both are findings about the plan. Do not iterate on the
+   fixture hunting for a value that bites.
 2. Weaken the non-positive-allowance branch to fire only on a strictly
    negative allowance. Expect the oversized test to fail.
 3. Hardcode `"fit"` on both of `_fit_first_item`'s returns. Expect
