@@ -36,7 +36,14 @@ from ghmem.models import (
 from ghmem.standing import StandingTable
 from ghmem.store import Store
 
-DIFF_BODY_MAX_CHARS = 300  # PROVISIONAL — calibrated in subproject 4
+DIFF_BODY_MAX_CHARS = 25_000  # PROVISIONAL — calibrated in subproject 4
+"""A safety valve on one rendered diff body, not a display budget.
+
+The median PR in this corpus touches 16 lines and only 10 of 1,299 exceed 2,000,
+so at this size an ordinary diff renders whole and only the vendor-dump tail is
+cut — a tail whose body carries no decision signal beyond its file list. Roughly
+6,000 tokens, about an eighth of one triage batch.
+"""
 
 _TOP_HEADING_LEVEL = 3  # `###`, under the `## Comments` section
 _REPLY_HEADING_LEVEL = 4  # `####`, one below its parent comment
@@ -53,18 +60,29 @@ class OrphanReplyWarning(UserWarning):
     """A discussion reply names a parent comment absent from the corpus."""
 
 
-def render(store: Store, standing: StandingTable, number: IssueOrPRNumber) -> str:
+def render(
+    store: Store,
+    standing: StandingTable,
+    number: IssueOrPRNumber,
+    *,
+    diff_max_chars: int = DIFF_BODY_MAX_CHARS,
+) -> str:
     """Render issue/PR `number`'s full thread as deterministic markdown.
 
     Resolves the item via `store.get_issue_or_pr`, so an unknown
     `number` propagates `IssueOrPRNotFoundError` uncaught.
+
+    `diff_max_chars` caps the rendered diff body. Its default is the
+    safety valve `DIFF_BODY_MAX_CHARS`, which is what `ghmem show`
+    uses; `triage` is the only caller that ever narrows it, passing a
+    budget derived from what a batch has left.
     """
     item = store.get_issue_or_pr(number)
     lines: list[str] = [*_render_header(item, standing), "", item.body, ""]
     lines.extend(_render_timeline(store, standing, item.id))
     lines.extend(_render_cross_refs(store, item.id))
     lines.extend(_render_reactions(store, item.id))
-    lines.extend(_render_diff(store, number))
+    lines.extend(_render_diff(store, number, diff_max_chars))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -296,25 +314,56 @@ def _render_discussion_comment(
     return lines
 
 
-def _render_diff(store: Store, number: IssueOrPRNumber) -> list[str]:
-    """Render the diffstat and (possibly truncated) diff body for a PR.
+def _render_diff(
+    store: Store, number: IssueOrPRNumber, diff_max_chars: int
+) -> list[str]:
+    """Render the diffstat and (possibly cut) diff body for a PR.
 
     Issues have no diff — `PRDiffNotFoundError` means the section is
-    omitted entirely.
+    omitted entirely. The diffstat file list always renders in full,
+    whatever the cap: it is the part of a diff that keeps its signal
+    when the body is gone. The truncation marker follows the body when
+    the cut fired here, or when the fetched diff was already
+    `truncated`.
+
+    The (possibly empty) body is appended to `lines` unconditionally,
+    even when it is `""`, rather than only `if body:`. That keeps the
+    rendered packet's length exactly `floor + len(body)` for every cap,
+    where `floor` is this same render at `diff_max_chars=0` — so a
+    caller can size a packet against a budget by measuring the floor
+    once and growing it by precisely the cut body's length.
     """
     try:
         diff = store.pr_diff_for(number)
     except PRDiffNotFoundError:
         return []
     lines = ["## Diff", "", *[_format_file_stat(f) for f in diff.diffstat], ""]
-    cut = diff.diff_text.find("\n", DIFF_BODY_MAX_CHARS)
+    body, cut = _cut_diff_body(diff.diff_text, diff_max_chars)
     lines.append("```diff")
-    lines.append(diff.diff_text[: cut if cut != -1 else None])
-    if cut != -1 or diff.truncated:
+    lines.append(body)
+    if cut or diff.truncated:
         lines.append("… [diff truncated] …")
     lines.append("```")
     lines.append("")
     return lines
+
+
+def _cut_diff_body(diff_text: str, diff_max_chars: int) -> tuple[str, bool]:
+    """Cut `diff_text` to at most `diff_max_chars`, on a whole-line boundary.
+
+    Returns the cut text and whether a cut happened. `diff_max_chars`
+    is a real ceiling: the returned text never exceeds it. The cut
+    lands at the last newline at or before the cap, not the first one
+    past it, so a caller sizing a packet against a budget can trust
+    the bound. A cap of zero, and a first line longer than the cap,
+    both keep nothing — the diffstat above still renders regardless.
+    """
+    if len(diff_text) <= diff_max_chars:
+        return diff_text, False
+    if diff_max_chars <= 0:
+        return "", True
+    cut = diff_text.rfind("\n", 0, diff_max_chars + 1)
+    return (diff_text[:cut] if cut != -1 else ""), True
 
 
 def _format_file_stat(f: FileStat) -> str:
