@@ -32,7 +32,7 @@ from ghmem.ledger import (
     RouteEvent,
     RoutingEvent,
 )
-from ghmem.show import render
+from ghmem.show import DIFF_BODY_MAX_CHARS, render
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import Store
 
@@ -97,8 +97,11 @@ def serve_next(
 
     The session's first item is exempt from the char gate: whatever
     its size, it is always served, so no single oversized item can
-    deadlock the queue. B1 serves it oversized; **B2's hook** is to
-    truncate its diff to fit `BATCH_CHARS` instead. The item gate
+    deadlock the queue. When its packet at the default valve exceeds
+    `BATCH_CHARS`, `_fit_first_item` truncates its diff to whatever
+    the budget has left, or serves it oversized when even the
+    uncuttable parts alone don't fit — either way the item is served
+    and the outcome is tagged in the `dispatched` event. The item gate
     cannot fire on the first item regardless — it fires at
     `items_used >= BATCH_ITEMS`, and the first item's `items_used` is
     always 0 — so it needs no matching exemption.
@@ -117,10 +120,14 @@ def serve_next(
         packet, packet_chars = _render_packet(
             store, standing, session_token, candidate.number
         )
-        if not first_of_session and chars_used + packet_chars > BATCH_CHARS:
+        fit: DispatchFit = "fit"
+        if first_of_session and packet_chars > BATCH_CHARS:
+            packet, packet_chars, fit = _fit_first_item(
+                store, standing, session_token, candidate.number
+            )
+        elif not first_of_session and chars_used + packet_chars > BATCH_CHARS:
             return ServeResult(packet=None, message="batch complete: budget exhausted")
         item_id = store.get_issue_or_pr(candidate.number).id
-        fit: DispatchFit = "fit"
         event: DispatchedEvent = {
             "type": "dispatched",
             "data": {
@@ -150,8 +157,14 @@ def serve_next(
     return ServeResult(packet=None, message="batch complete: all candidates taken")
 
 
-def _render_packet(
-    store: Store, standing: StandingTable, session_token: str, number: IssueOrPRNumber
+def _render_packet(  # noqa: PLR0913 — one argument per rendering input
+    store: Store,
+    standing: StandingTable,
+    session_token: str,
+    number: IssueOrPRNumber,
+    *,
+    diff_max_chars: int = DIFF_BODY_MAX_CHARS,
+    note: str | None = None,
 ) -> tuple[str, int]:
     """Render one packet and the char count that counts against the budget.
 
@@ -159,12 +172,65 @@ def _render_packet(
     only — the two-line header above them is fixed overhead the
     budget doesn't need to track, and folding it in would make the
     reported size depend on the session token's own length for no
-    reason a caller cares about.
+    reason a caller cares about. `note`, when set, joins the header as
+    a `packet-note: ` line beside `packet-chars`, so recording a
+    truncation never changes what the truncation was measured against.
     """
-    body = f"item: {number}\n{render(store, standing, number)}"
+    rendered = render(store, standing, number, diff_max_chars=diff_max_chars)
+    body = f"item: {number}\n{rendered}"
     packet_chars = len(body)
-    packet = f"session: {session_token}\npacket-chars: {packet_chars}\n{body}"
-    return packet, packet_chars
+    header = f"session: {session_token}\npacket-chars: {packet_chars}\n"
+    if note is not None:
+        header += f"packet-note: {note}\n"
+    return header + body, packet_chars
+
+
+_DIFF_CUT_NOTE = "diff truncated to fit the batch budget"
+_OVERSIZED_NOTE = "served oversized; packet exceeds the batch budget"
+
+
+def _fit_first_item(
+    store: Store, standing: StandingTable, session_token: str, number: IssueOrPRNumber
+) -> tuple[str, int, DispatchFit]:
+    """Fit a session's oversized first item to BATCH_CHARS by cutting its diff.
+
+    Called only when `number` is a session's first item and its
+    packet at the default valve already exceeds `BATCH_CHARS`. Renders
+    the floor — the same packet at `diff_max_chars=0` — to measure
+    thread text and the diffstat file list, neither of which may be
+    cut; the diff body's allowance is exactly what `BATCH_CHARS` has
+    left over that floor, with nothing subtracted for the newline
+    joining the body to the marker, since `_render_diff` emits the
+    body element even when empty and that separator is already inside
+    the floor.
+
+    A positive allowance re-renders at that cap: the result fits by
+    construction, because the cut is a real ceiling. Outcome:
+    `diff_cut`. A non-positive allowance means the uncuttable parts
+    alone exceed the budget, so the floor is served as-is. Outcome:
+    `oversized`. Either way the item is served: the first-item
+    exemption exists so no single item can deadlock the queue, and the
+    guarantee it delivers is that the queue advances, not that every
+    packet fits.
+    """
+    _floor_packet, floor_chars = _render_packet(
+        store, standing, session_token, number, diff_max_chars=0
+    )
+    allowance = BATCH_CHARS - floor_chars
+    if allowance > 0:
+        packet, packet_chars = _render_packet(
+            store,
+            standing,
+            session_token,
+            number,
+            diff_max_chars=allowance,
+            note=_DIFF_CUT_NOTE,
+        )
+        return packet, packet_chars, "diff_cut"
+    packet, packet_chars = _render_packet(
+        store, standing, session_token, number, diff_max_chars=0, note=_OVERSIZED_NOTE
+    )
+    return packet, packet_chars, "oversized"
 
 
 def record_verdict(  # noqa: PLR0913 — one argument per field of a route event

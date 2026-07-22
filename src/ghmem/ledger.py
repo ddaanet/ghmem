@@ -146,8 +146,9 @@ type DispatchFit = Literal["fit", "diff_cut", "oversized"]
 `fit` — the packet was within budget as rendered. `diff_cut` — it was
 a session's first item and its diff body was truncated to bring it
 within budget. `oversized` — it was a session's first item and its
-thread text and file list alone exceed the budget, so it was served
-whole, neither of those being cuttable.
+thread text and file list alone exceed the budget; the packet was
+served with its diff body dropped entirely and only its thread text
+and file list intact, neither of those being cuttable.
 
 Subproject 4 calibrates `BATCH_CHARS` against this: a corpus producing
 many `oversized` serves has a budget set too low. Like
