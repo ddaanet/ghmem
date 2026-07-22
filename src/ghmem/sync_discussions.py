@@ -27,10 +27,11 @@ from ghmem.sync_core import (
     _NodeRef,
     _Page,
     _PageInfo,
+    _paginate,
+    _persist_cursor,
     _Query,
     _raw_data,
     _ReactionGroupNode,
-    _resume_cursor,
     _Sync,
     _Wire,
 )
@@ -38,16 +39,15 @@ from ghmem.sync_core import (
 
 def _sync_discussions(ctx: _Sync) -> None:
     """Drain `repository.discussions`, oldest-updated first."""
-    after = _resume_cursor(ctx.fetch, "discussions")
-    while True:
-        response = ctx.client.graphql(
-            _DISCUSSIONS_PAGE_QUERY,
-            {"first": _PAGE_SIZE, "after": after},
-            response=_DiscussionsQueryResponse,
-        )
-        after = _drain_discussions_page(ctx, response.repository.discussions)
-        if after is None:
-            return
+    pages = _paginate(
+        ctx,
+        "discussions",
+        _DISCUSSIONS_PAGE_QUERY,
+        _DiscussionsQueryResponse,
+        lambda response: response.repository.discussions,
+    )
+    for page in pages:
+        _drain_discussions_page(ctx, page)
 
 
 _DISCUSSION_COMMENT_FIELDS = _Query("""
@@ -113,16 +113,13 @@ query($first: Int!, $after: String) {
 )
 
 
-def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
+def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> None:
     """Append one discussions page, drain comments/replies, persist cursor.
 
     Every discussion's comments (first page plus any follow-up pages)
     are appended before any of that discussion's replies — see
     `_append_discussion_comments` — so a reply's parent is always
     already in the ledger.
-
-    Returns the page's `endCursor` to continue from, or `None` once
-    `hasNextPage` is false.
     """
     for node in page.nodes:
         _append_validated(
@@ -132,18 +129,7 @@ def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> str | None:
     for node in page.nodes:
         _append_discussion_comments(ctx, node)
     hwm = max((node.updated_at for node in page.nodes), default="")
-    if page.page_info.end_cursor is not None:
-        ctx.fetch.append(
-            {
-                "type": "cursor",
-                "data": {
-                    "connection": "discussions",
-                    "top_level_cursor": page.page_info.end_cursor,
-                    "updated_at_hwm": hwm,
-                },
-            }
-        )
-    return page.page_info.end_cursor if page.page_info.has_next_page else None
+    _persist_cursor(ctx, "discussions", page, hwm)
 
 
 def _append_discussion_comments(ctx: _Sync, node: _DiscussionNode) -> None:

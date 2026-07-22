@@ -38,9 +38,10 @@ from ghmem.sync_core import (
     _check_truncated,
     _drain_follow_up,
     _PageInfo,
+    _paginate,
+    _persist_cursor,
     _Query,
     _raw_data,
-    _resume_cursor,
     _Sync,
 )
 from ghmem.sync_wire import (
@@ -59,18 +60,15 @@ from ghmem.sync_wire import (
 
 def _sync_issues(ctx: _Sync) -> None:
     """Drain `repository.issues`, oldest-updated first."""
-    after = _resume_cursor(ctx.fetch, "issues")
-    while True:
-        response = ctx.client.graphql(
-            _ISSUES_PAGE_QUERY,
-            {"first": _PAGE_SIZE, "after": after},
-            response=_IssuesQueryResponse,
-        )
-        after = _drain_items_page(
-            ctx, "issues", response.repository.issues, is_pr=False
-        )
-        if after is None:
-            return
+    pages = _paginate(
+        ctx,
+        "issues",
+        _ISSUES_PAGE_QUERY,
+        _IssuesQueryResponse,
+        lambda response: response.repository.issues,
+    )
+    for page in pages:
+        _drain_items_page(ctx, "issues", page, is_pr=False)
 
 
 _COMMENT_FIELDS = _Query(
@@ -135,18 +133,15 @@ query($first: Int!, $after: String) {
 
 def _sync_pull_requests(ctx: _Sync) -> None:
     """Drain `repository.pullRequests`, oldest-updated first."""
-    after = _resume_cursor(ctx.fetch, "pull_requests")
-    while True:
-        response = ctx.client.graphql(
-            _PRS_PAGE_QUERY,
-            {"first": _PAGE_SIZE, "after": after},
-            response=_PRsQueryResponse,
-        )
-        after = _drain_items_page(
-            ctx, "pull_requests", response.repository.pull_requests, is_pr=True
-        )
-        if after is None:
-            return
+    pages = _paginate(
+        ctx,
+        "pull_requests",
+        _PRS_PAGE_QUERY,
+        _PRsQueryResponse,
+        lambda response: response.repository.pull_requests,
+    )
+    for page in pages:
+        _drain_items_page(ctx, "pull_requests", page, is_pr=True)
 
 
 _PRS_PAGE_QUERY = _Query("""
@@ -193,14 +188,20 @@ query($first: Int!, $after: String) {
 
 def _drain_items_page(
     ctx: _Sync, connection: str, page: _ItemsPage, *, is_pr: bool
-) -> str | None:
+) -> None:
     """Append one items page, drain per-item follow-ups, persist its cursor.
 
     A `null` list entry (an observed GraphQL gap, not a driver bug) is
     recorded as `fetch_failed` and skipped — it never aborts the page.
 
-    Returns the page's `endCursor` to continue from, or `None` once
-    `hasNextPage` is false.
+    A page whose entries are *all* null still persists its cursor, so
+    the connection advances past it rather than re-fetching it forever.
+    That is the deliberate trade: the lost nodes are recorded as
+    `fetch_failed` and visible through `store.fetch_failures()`, and
+    the alternative — stalling the connection on a page GitHub keeps
+    answering with nulls — would block every later page behind it.
+    Re-fetching those ids is a repair job for whoever reads the
+    failures, not something this loop can retry its way out of.
     """
     for index, node in enumerate(page.nodes):
         if node is None:
@@ -215,18 +216,7 @@ def _drain_items_page(
         for node in items:
             _append_pr_diff(ctx, node)
     hwm = max((node.updated_at for node in items), default="")
-    if page.page_info.end_cursor is not None:
-        ctx.fetch.append(
-            {
-                "type": "cursor",
-                "data": {
-                    "connection": connection,
-                    "top_level_cursor": page.page_info.end_cursor,
-                    "updated_at_hwm": hwm,
-                },
-            }
-        )
-    return page.page_info.end_cursor if page.page_info.has_next_page else None
+    _persist_cursor(ctx, connection, page, hwm)
 
 
 def _append_item_and_nested(ctx: _Sync, node: _ItemNode) -> None:

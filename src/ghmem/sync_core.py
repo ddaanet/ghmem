@@ -257,6 +257,73 @@ def _drain_follow_up[T](
         yield from nodes
 
 
+def _paginate[T, R: msgspec.Struct](
+    ctx: _Sync,
+    connection: str,
+    query: str,
+    response: type[R],
+    page_of: Callable[[R], _Page[T]],
+) -> Iterator[_Page[T]]:
+    """Yield `connection`'s top-level pages, resuming where it left off.
+
+    Owns the whole cursor-driven loop: where to start (`_resume_cursor`
+    on the persisted ledger), when to stop (`hasNextPage`), and what to
+    ask for next. `page_of` picks the connection out of the decoded
+    response, which is the only part that differs between issues, pull
+    requests and discussions.
+
+    The caller drains each page as it arrives and appends its `cursor`
+    event, because only the caller knows the `updated_at` high-water
+    mark that event carries. Persisting it there also keeps the
+    ordering that makes a resume safe: a page's cursor is written after
+    that page is fully drained, never before.
+
+    `_sync_commits` deliberately does not use this. Its connection is
+    newest-first and bounded by a `since:` argument derived from the
+    high-water mark, so it neither starts from a stored cursor nor
+    stops on the same condition — folding both shapes into one helper
+    would cost more in branches than the loop it saves.
+    """
+    after = _resume_cursor(ctx.fetch, connection)
+    while True:
+        page = page_of(
+            ctx.client.graphql(
+                query, {"first": _PAGE_SIZE, "after": after}, response=response
+            )
+        )
+        yield page
+        if not page.page_info.has_next_page:
+            return
+        after = page.page_info.end_cursor
+        assert after is not None, "hasNextPage true without endCursor"
+
+
+def _persist_cursor[T](ctx: _Sync, connection: str, page: _Page[T], hwm: str) -> None:
+    """Record `connection`'s resume point after a page is fully drained.
+
+    Called by each drain function once its page is completely
+    appended — the ordering `_paginate` relies on, since a cursor
+    written before its page finished would resume past nodes that were
+    never recorded.
+
+    A page with no `endCursor` writes nothing: there is no position to
+    resume from, and a `cursor` event carrying `None` would be
+    indistinguishable from starting over.
+    """
+    if page.page_info.end_cursor is None:
+        return
+    ctx.fetch.append(
+        {
+            "type": "cursor",
+            "data": {
+                "connection": connection,
+                "top_level_cursor": page.page_info.end_cursor,
+                "updated_at_hwm": hwm,
+            },
+        }
+    )
+
+
 def _last_cursor(fetch: Ledger[FetchEvent], connection: str) -> CursorData | None:
     """Return the most recently persisted cursor for `connection`, if any."""
     last: CursorData | None = None
