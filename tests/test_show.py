@@ -44,9 +44,11 @@ def standing_table(store: Store) -> StandingTable:
 def diff_store(tmp_path: Path) -> Store:
     """Return a Store rebuilt from a generated 200-line diff corpus.
 
-    Sized independently of `show_corpus.jsonl`'s hand-written 13-line
-    diff, so the cut tests can drive `diff_max_chars` well below a
-    realistic diff's length without touching the raised production cap.
+    `show_corpus.jsonl` carries a seven-line sketch of a diff, far too
+    short to cut on a whole-line boundary at any interesting cap.
+    Generating a long one here lets the cut tests drive
+    `diff_max_chars` across real line boundaries without touching the
+    production valve.
     """
     corpus = tmp_path / "diff_fetch.jsonl"
     write_diff_corpus(corpus, diff_lines=_DIFF_STORE_LINES)

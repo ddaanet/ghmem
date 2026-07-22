@@ -20,7 +20,7 @@
 {"type": "cross_ref", "data": {"srcId": "I_2", "dstId": "I_1", "kind": "closes"}}
 {"type": "cross_ref", "data": {"srcId": "I_2", "dstId": "I_10", "kind": "references"}}
 {"type": "cross_ref", "data": {"srcId": "I_2", "dstId": "I_9", "kind": "references"}}
-{"type": "pr_diff", "data": {"prNumber": 2, "files": [{"path": "src/foo.go", "additions": 10, "deletions": 2}], "diffText": "diff --git a/src/foo.go b/src/foo.go\nindex 1111111..2222222 100644\n--- a/src/foo.go\n+++ b/src/foo.go\n@@ -1,3 +1,3 @@\n-old line\n+new line\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+padding line to exceed the display cap\n+ZZZ_TAIL_UNIQUE_MARKER_ZZZ\n", "truncated": false}}
+{"type": "pr_diff", "data": {"prNumber": 2, "files": [{"path": "src/foo.go", "additions": 10, "deletions": 2}], "diffText": "diff --git a/src/foo.go b/src/foo.go\nindex 1111111..2222222 100644\n--- a/src/foo.go\n+++ b/src/foo.go\n@@ -1,3 +1,3 @@\n-old line\n+new line\n", "truncated": false}}
 {"type": "reaction", "data": {"subjectId": "C_1", "content": "THUMBS_UP", "count": 12}}
 {"type": "reaction", "data": {"subjectId": "RV_1", "content": "ROCKET", "count": 3}}
 {"type": "reaction", "data": {"subjectId": "RVC_1", "content": "EYES", "count": 2}}
