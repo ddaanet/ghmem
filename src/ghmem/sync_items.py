@@ -26,6 +26,7 @@ Where this departs from a literal GraphQL schema walk:
 """
 
 from ghmem.aliases import Json, JsonObject
+from ghmem.exceptions import DiffFetchError
 from ghmem.sync_core import (
     _OWNER,
     _PAGE_SIZE,
@@ -344,8 +345,22 @@ query($id: ID!, $first: Int!, $after: String) {
 
 
 def _append_pr_diff(ctx: _Sync, node: _ItemNode) -> None:
-    """Fetch diff text over REST and append the `pr_diff` node."""
-    diff_text, truncated = ctx.client.pr_diff_text(node.number)
+    """Fetch diff text over REST and append the `pr_diff` node.
+
+    A failed fetch is recorded as `fetch_failed` against the PR and
+    skipped, never raised: this is the one REST call in the driver, and
+    letting a single 404 or exhausted-retry 5xx out of it would abort
+    the whole pull-requests leg mid-page over one PR's diff.
+
+    An *oversized* diff is not a failure — `pr_diff_text` reports that
+    as `truncated`, and the `pr_diff` node is still appended with the
+    file list and an empty body.
+    """
+    try:
+        diff_text, truncated = ctx.client.pr_diff_text(node.number)
+    except DiffFetchError as error:
+        _append_fetch_failed(ctx, node.id, str(error))
+        return
     files: list[Json] = (
         []
         if node.files is None

@@ -2,8 +2,8 @@
 
 `IssueOrPRNotFoundError`, `PRDiffNotFoundError`, and
 `DiscussionNotFoundError` are the SQLite-mirror lookup misses.
-`RateLimitError` and `AuthError` belong to the GitHub sync client
-(`github.py`) — neither is a lookup miss, so neither subclasses
+`RateLimitError`, `AuthError` and `DiffFetchError` belong to the GitHub
+sync client (`github.py`) — none is a lookup miss, so none subclasses
 `LookupError`. `UnknownRoutingEventError` belongs to ledger replay
 (`ingest.py`): a bad event tag is bad input, hence `ValueError`.
 `TriageSessionError` belongs to the triage session loop
@@ -40,6 +40,28 @@ class RateLimitError(Exception):
 
 class AuthError(Exception):
     """Raised when no GitHub token is found in `$GITHUB_TOKEN` or `gh`."""
+
+
+class DiffFetchError(Exception):
+    """Raised when the REST diff fetch for one PR fails outright.
+
+    Distinct from the oversized-diff refusal, which `pr_diff_text`
+    absorbs into its `truncated` flag and is not an error at all. This
+    is every other way that call can fail — a 404 on a PR GraphQL
+    listed, a 5xx that outlived githubkit's retry chain.
+
+    It exists so `sync_items` can record a `fetch_failed` for the one
+    PR and carry on, instead of one bad diff aborting a whole
+    connection leg. Catching githubkit's own `RequestFailed` there
+    would work equally well and is exactly what this avoids:
+    `github.py` is where the githubkit dependency stops.
+    """
+
+    def __init__(self, number: IssueOrPRNumber, status_code: int) -> None:
+        """Name the PR and the status its diff fetch failed with."""
+        super().__init__(f"diff fetch for #{number} failed with HTTP {status_code}")
+        self.number = number
+        self.status_code = status_code
 
 
 class UnknownRoutingEventError(ValueError):

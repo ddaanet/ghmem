@@ -31,7 +31,7 @@ from githubkit.response import Response
 from githubkit.retry import RETRY_SERVER_ERROR
 
 from ghmem.aliases import IssueOrPRNumber, JsonObject
-from ghmem.exceptions import AuthError, RateLimitError
+from ghmem.exceptions import AuthError, DiffFetchError, RateLimitError
 
 _OWNER = "micro-editor"
 _REPO = "micro"
@@ -86,8 +86,17 @@ class GitHubClient:
         fallen below the safety margin, this raises
         `RateLimitError(reset_at)` instead of returning, so a caller
         stops before a later call runs the budget dry mid-page.
+
+        A query that forgot the selection raises `ValueError` naming
+        that requirement. Reaching for `data["rateLimit"]` directly
+        would report the same bug as a bare `KeyError('rateLimit')`,
+        which reads like a GitHub response gap rather than what it is:
+        a query in this repo missing a block every query must carry.
         """
         data = self._gh.graphql(query, variables)
+        if "rateLimit" not in data:
+            msg = "query must select `rateLimit { cost remaining resetAt }`"
+            raise ValueError(msg)
         rate_limit = msgspec.convert(data["rateLimit"], _RateLimit, strict=True)
         if rate_limit.remaining < _RATE_LIMIT_SAFETY_MARGIN:
             raise RateLimitError(rate_limit.reset_at)
@@ -105,6 +114,10 @@ class GitHubClient:
         `diff_text` is `""` in that case, because GitHub sends no diff
         body with the refusal.
 
+        Any other request failure raises `DiffFetchError`, so a caller
+        can skip the one PR without importing githubkit to name what
+        went wrong — this module is where that dependency stops.
+
         Per-file stats are not fetched here. They come from the GraphQL
         `pullRequest.files` connection, which keeps this call to ~1 REST
         request per PR.
@@ -118,15 +131,29 @@ class GitHubClient:
         except RequestFailed as exc:
             if _is_diff_too_large(exc.response):
                 return "", True
-            raise
+            raise DiffFetchError(number, exc.response.status_code) from exc
         return resp.text, False
 
 
 def _is_diff_too_large(response: Response) -> bool:
-    """Match GitHub's refusal signal for an oversized PR diff."""
+    """Match GitHub's refusal signal for an oversized PR diff.
+
+    A 406 whose body will not parse as JSON is not that signal, and
+    must not raise on the way to saying so. This runs inside
+    `pr_diff_text`'s `except RequestFailed` block, where an exception
+    escaping here replaces the real transport failure with a decode
+    error from the handler meant to classify it — the original status
+    and URL lost. An unparseable body is reported as "not the
+    too-large refusal", which lets that original exception propagate
+    intact.
+    """
     if response.status_code != 406:
         return False
-    errors = response.json().get("errors") or []
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    errors = body.get("errors") or []
     return any(error.get("code") == "too_large" for error in errors)
 
 

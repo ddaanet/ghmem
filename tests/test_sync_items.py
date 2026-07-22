@@ -8,10 +8,10 @@ import pytest
 from pytest_mock import MockerFixture
 
 from ghmem.aliases import GraphQLId, IssueOrPRNumber
-from ghmem.exceptions import RateLimitError
+from ghmem.exceptions import DiffFetchError, RateLimitError
 from ghmem.github import GitHubClient
 from ghmem.ledger import FetchEvent, Ledger
-from ghmem.sync_core import _append_validated, _Sync
+from ghmem.sync_core import _append_validated, _last_cursor, _Sync
 from ghmem.sync_items import _sync_issues, _sync_pull_requests
 from ghmem.sync_wire import _IssuesQueryResponse, _PRsQueryResponse
 from tests.sync_helpers import _ALL_PAGES, _ctx, _rebuild, _stub_graphql
@@ -107,6 +107,40 @@ def test_null_node_recorded_fetch_failed(mocker: MockerFixture, tmp_path: Path) 
     assert "null node" in failures[0]["reason"]
     store = _rebuild(fetch, tmp_path)
     assert store.get_issue_or_pr(IssueOrPRNumber(5)).id == "I_2"
+
+
+def test_failed_diff_fetch_records_fetch_failed(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """One PR's failed diff fetch is recorded, and the leg carries on.
+
+    The diff is the driver's only REST call, and it happens per PR
+    after the whole GraphQL page has been appended. A failure escaping
+    it would abort the pull-requests leg before that page's cursor was
+    persisted, throwing away every item already appended on the next
+    resume — over one PR's diff.
+
+    When: `pr_diff_text` raises `DiffFetchError` for a PR on the page
+    Then: sync records a `fetch_failed` against that PR's id, appends
+      no `pr_diff` for it, and still persists the page's cursor
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+    ctx = _ctx(mocker, fetch, _ALL_PAGES)
+    mocker.patch.object(
+        ctx.client,
+        "pr_diff_text",
+        side_effect=DiffFetchError(IssueOrPRNumber(10), 404),
+    )
+
+    _sync_pull_requests(ctx)
+
+    failures = [event["data"] for event in fetch if event["type"] == "fetch_failed"]
+    assert [failure["id"] for failure in failures] == ["I_3"]
+    assert "HTTP 404" in failures[0]["reason"]
+    assert not [event for event in fetch if event["type"] == "pr_diff"]
+    assert _last_cursor(fetch, "pull_requests") is not None
+    store = _rebuild(fetch, tmp_path)
+    assert store.get_issue_or_pr(IssueOrPRNumber(10)).id == "I_3"
 
 
 def test_truncated_nested_connection_records_fetch_failed(
