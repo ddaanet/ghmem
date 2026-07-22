@@ -186,7 +186,9 @@ def _render_packet(  # noqa: PLR0913 — one argument per rendering input
 
 
 _DIFF_CUT_NOTE = "diff truncated to fit the batch budget"
-_OVERSIZED_NOTE = "served oversized; packet exceeds the batch budget"
+_OVERSIZED_NOTE = (
+    "served without its diff body; thread text and file list leave no budget for it"
+)
 
 
 def _fit_first_item(

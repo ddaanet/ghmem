@@ -19,13 +19,14 @@ from ghmem.store import Store
 from tests.diff_fixtures import (
     DIFF_HEADER_LINE,
     LINE_WIDTH,
+    PR_BODY_MARKER,
     diff_body_line,
     write_diff_corpus,
+    write_two_pr_diff_corpus,
 )
 from tests.triage_helpers import _content_only, _ranked_numbers, _store
 
 _DIFF_LINES = 500
-_PR_BODY_MARKER = "distinctive sentence for the fit tests to find"
 
 
 def _diff_session(
@@ -58,9 +59,6 @@ def _dispatched(routing: Ledger[RoutingEvent]) -> list[DispatchedData]:
     dispatched: list[DispatchedData] = []
     for event in routing:
         if event["type"] == "dispatched":
-            # A comprehension here leaves the element type unnarrowed
-            # under mypy strict, since the union isn't narrowed by an
-            # `in`/filter expression the way an explicit loop is.
             dispatched.append(event["data"])  # noqa: PERF401
     return dispatched
 
@@ -207,12 +205,14 @@ def test_uncuttable_first_item_is_served_oversized_and_says_so(
     When: BATCH_CHARS is patched below even the floor render
     Then: the item is still served — the queue must advance —
       result.message is None, the dispatched event is tagged
-      oversized, the packet carries the oversized note, the file list
+      oversized with its packet_chars pinned to the floor (and over
+      budget), the packet carries the oversized note, the file list
       survives, and no generated body line appears
     """
     store, routing = _diff_session(tmp_path, diff_lines=_DIFF_LINES)
     floor = _floor_chars(store, IssueOrPRNumber(1))
-    monkeypatch.setattr(triage, "BATCH_CHARS", floor - 1)
+    budget = floor - 1
+    monkeypatch.setattr(triage, "BATCH_CHARS", budget)
     token = triage.mint_session()
 
     result = triage.serve_next(store, routing, token)
@@ -221,9 +221,11 @@ def test_uncuttable_first_item_is_served_oversized_and_says_so(
     assert result.message is None
     dispatched = _dispatched(routing)
     assert dispatched[-1]["fit"] == "oversized"
+    assert dispatched[-1]["packet_chars"] == floor
+    assert dispatched[-1]["packet_chars"] > budget
     assert (
-        "packet-note: served oversized; packet exceeds the batch budget"
-        in result.packet
+        "packet-note: served without its diff body; thread text and file "
+        "list leave no budget for it" in result.packet
     )
     assert "src/big.go" in result.packet
     assert diff_body_line(0) not in result.packet
@@ -268,7 +270,7 @@ def test_thread_text_is_never_cut_on_the_oversized_path(
     result = triage.serve_next(store, routing, token)
 
     assert result.packet is not None
-    assert _PR_BODY_MARKER in result.packet
+    assert PR_BODY_MARKER in result.packet
 
 
 def test_a_later_item_never_enters_the_fit_path(
@@ -298,3 +300,39 @@ def test_a_later_item_never_enters_the_fit_path(
     assert result.packet is None
     assert result.message == "batch complete: budget exhausted"
     assert all(data["fit"] == "fit" for data in _dispatched(routing))
+
+
+def test_a_later_item_too_big_for_its_own_packet_stays_queued(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A later item whose own packet exceeds budget is excluded, not fit.
+
+    When: a two-PR corpus has PR #1 small and PR #2 large enough that
+      PR #2's own packet at the default valve exceeds BATCH_CHARS, and
+      the first item is served before BATCH_CHARS is patched to one
+      character short of PR #2's own packet size
+    Then: the second serve ends the batch with packet None and
+      message == "batch complete: budget exhausted", and only one
+      dispatched event exists — PR #2 is discarded by the ordinary char
+      gate rather than entering the fit path and being served with its
+      diff cut, which is a first-item-only privilege
+    """
+    corpus = tmp_path / "diff_fetch.jsonl"
+    write_two_pr_diff_corpus(corpus, small_diff_lines=1, large_diff_lines=_DIFF_LINES)
+    store = Store.open(tmp_path / "diff_cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(corpus)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+    store.rebuild_from_ledgers(fetch, routing)
+    second = IssueOrPRNumber(2)
+    budget = _full_chars(store, second) - 1
+    monkeypatch.setattr(triage, "BATCH_CHARS", budget)
+    token = triage.mint_session()
+
+    first_result = triage.serve_next(store, routing, token)
+    assert first_result.packet is not None
+
+    result = triage.serve_next(store, routing, token)
+
+    assert result.packet is None
+    assert result.message == "batch complete: budget exhausted"
+    assert len(_dispatched(routing)) == 1

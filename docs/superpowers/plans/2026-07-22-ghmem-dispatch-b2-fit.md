@@ -385,7 +385,7 @@ what an agent reads off stdout:
 
 ```
 packet-note: diff truncated to fit the batch budget
-packet-note: served oversized; packet exceeds the batch budget
+packet-note: served without its diff body; thread text and file list leave no budget for it
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -443,9 +443,9 @@ something to bite on.
 > **When:** `BATCH_CHARS` is monkeypatched below even the floor render.
 > **Then:** the item is still served — the queue must advance —
 > `result.message` is `None`, the dispatched event is tagged
-> `oversized`, the packet carries `packet-note: served oversized;
-> packet exceeds the batch budget`, the file list survives, and no
-> generated body line appears.
+> `oversized`, the packet carries `packet-note: served without its diff
+> body; thread text and file list leave no budget for it`, the file
+> list survives, and no generated body line appears.
 
 `test_thread_text_is_never_cut_on_the_oversized_path`
 

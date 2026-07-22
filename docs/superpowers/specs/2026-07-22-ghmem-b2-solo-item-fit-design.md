@@ -129,7 +129,7 @@ beside `packet-chars`:
 
 ```
 packet-note: diff truncated to fit the batch budget
-packet-note: served oversized; packet exceeds the batch budget
+packet-note: served without its diff body; thread text and file list leave no budget for it
 ```
 
 `packet_chars` continues to measure the item line and the rendered

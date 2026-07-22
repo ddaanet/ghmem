@@ -20,7 +20,10 @@ LINE_WIDTH = 40
 DIFF_HEADER_LINE = "diff --git a/src/big.go b/src/big.go"
 """The single `diff --git` line every generated diff opens with."""
 
-_PR_BODY = "This PR carries a distinctive sentence for the fit tests to find."
+PR_BODY_MARKER = "distinctive sentence for the fit tests to find"
+"""Substring of `_PR_BODY`, exported so a test can assert it survives."""
+
+_PR_BODY = f"This PR carries a {PR_BODY_MARKER}."
 
 
 def diff_body_line(index: int) -> str:
@@ -46,20 +49,12 @@ def big_diff_text(lines: int) -> str:
     return f"{DIFF_HEADER_LINE}\n{body}"
 
 
-def write_diff_corpus(path: Path, *, diff_lines: int) -> None:
-    """Write a fetch ledger holding one PR, sized by `diff_lines`.
-
-    One `item` event (PullRequest #1) and one `pr_diff` event for it,
-    whose diff text is `big_diff_text(diff_lines)` and whose sole
-    changed file is `src/big.go` with `diff_lines` additions. One item,
-    so heat order is unambiguous and PR 1 is always a session's first
-    served item — the only item the fit path touches.
-    """
-    fetch: Ledger[FetchEvent] = Ledger(path)
+def _item_event(number: int) -> RawNodeEvent:
+    """Return one PullRequest `item` event for `number`."""
     item: JsonObject = {
-        "id": "I_1",
+        "id": f"I_{number}",
         "__typename": "PullRequest",
-        "number": 1,
+        "number": number,
         "title": "Big PR",
         "state": "OPEN",
         "author": {"login": "estab1"},
@@ -70,13 +65,50 @@ def write_diff_corpus(path: Path, *, diff_lines: int) -> None:
         "authorAssociation": "CONTRIBUTOR",
         "body": _PR_BODY,
     }
-    item_event: RawNodeEvent = {"type": "item", "data": item}
-    fetch.append(item_event)
+    return {"type": "item", "data": item}
+
+
+def _diff_event(number: int, diff_lines: int) -> RawNodeEvent:
+    """Return one `pr_diff` event for `number`, sized by `diff_lines`."""
     diff: JsonObject = {
-        "prNumber": 1,
+        "prNumber": number,
         "files": [{"path": "src/big.go", "additions": diff_lines, "deletions": 0}],
         "diffText": big_diff_text(diff_lines),
         "truncated": False,
     }
-    diff_event: RawNodeEvent = {"type": "pr_diff", "data": diff}
-    fetch.append(diff_event)
+    return {"type": "pr_diff", "data": diff}
+
+
+def write_diff_corpus(path: Path, *, diff_lines: int) -> None:
+    """Write a fetch ledger holding one PR, sized by `diff_lines`.
+
+    One `item` event (PullRequest #1) and one `pr_diff` event for it,
+    whose diff text is `big_diff_text(diff_lines)` and whose sole
+    changed file is `src/big.go` with `diff_lines` additions. One item,
+    so heat order is unambiguous and PR 1 is always a session's first
+    served item — the only item the fit path touches.
+    """
+    fetch: Ledger[FetchEvent] = Ledger(path)
+    fetch.append(_item_event(1))
+    fetch.append(_diff_event(1, diff_lines))
+
+
+def write_two_pr_diff_corpus(
+    path: Path, *, small_diff_lines: int, large_diff_lines: int
+) -> None:
+    """Write a fetch ledger holding two PRs, #1 small and #2 large.
+
+    Both PRs carry identical heat inputs — no comments, no reactions,
+    no participants — so heat order ties and falls back to ascending
+    number (`heat_query.py`'s `order_by(desc("score"), item.number)`):
+    PR #1 is always ranked, and served, first. That is what the
+    later-item fit-path guard needs: a session's first served item
+    stays small enough to fit on its own, while its second item, sized
+    by `large_diff_lines`, is big enough that its own packet would trip
+    the fit path if the guard didn't exclude non-first items from it.
+    """
+    fetch: Ledger[FetchEvent] = Ledger(path)
+    fetch.append(_item_event(1))
+    fetch.append(_diff_event(1, small_diff_lines))
+    fetch.append(_item_event(2))
+    fetch.append(_diff_event(2, large_diff_lines))
