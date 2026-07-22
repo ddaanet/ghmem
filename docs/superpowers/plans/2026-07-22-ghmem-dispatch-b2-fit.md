@@ -147,6 +147,39 @@ the body by slicing between the fence and the marker.
 > diffstat file list still renders — the floor the fit computation
 > measures against.
 
+Three more tests defend branches the two above pass straight through.
+Each exists because the mutation named beside it would otherwise leave
+the suite green:
+
+`test_negative_diff_max_chars_keeps_no_body`
+
+> **When:** the body is cut at caps of `-1`, `-5` and `-4000`.
+> **Then:** nothing survives in every case.
+
+Kills: deleting the explicit non-positive branch. Without that branch
+a cap of `-5` returns nearly the whole diff.
+
+`test_a_cap_on_a_line_boundary_keeps_exactly_that_many_chars`
+
+> **When:** the cap is `len(DIFF_HEADER_LINE) + 5 * LINE_WIDTH` — a
+> real newline index, unlike the round `5 * LINE_WIDTH` above.
+> **Then:** the body is exactly that long.
+
+Kills: narrowing the search bound so a newline exactly at the cap is
+missed, which silently drops a whole line. Task 3 derives its budgets
+to land on line boundaries, so this is where it would bite.
+
+`test_a_packet_grows_by_exactly_the_body_it_keeps`
+
+> **When:** the item is rendered at several caps, including `0` and at
+> least one landing mid-line.
+> **Then:** each render's length equals the `diff_max_chars=0` render's
+> length plus the length of the body that cap keeps.
+
+Kills: emitting the body element only when non-empty. This is the
+identity Task 3's allowance arithmetic rests on; pin it here, where it
+is a property of the renderer.
+
 Replace `test_diff_body_max_chars_is_modest` (`:205-213`, asserting
 `< 1000`) with `test_diff_body_max_chars_is_a_safety_valve`:
 
@@ -192,14 +225,28 @@ the part of a diff that keeps its signal when the body is gone. The
 when the body was cut **or** when the fetched diff was already
 `truncated`.
 
+One invariant here is load-bearing for Task 3 and must be deliberate:
+**the body element is emitted even when empty**, so the newline that
+separates it from the marker is already inside the floor render.
+Substituting a body of length L then grows the packet by exactly L,
+which is what lets a caller measure the floor once and size a diff
+against a budget by subtraction.
+
 **A new `_cut_diff_body(diff_text, diff_max_chars) -> tuple[str, bool]`**
 below it, returning the cut body and whether a cut happened.
 
 - Precondition: none; any cap including `0` and negatives is legal.
-- Postcondition: `len(returned_body) <= diff_max_chars` always, and
-  the body is a whole number of complete lines, and it is a prefix of
-  `diff_text`. A body within the cap is returned untouched with
-  `False`.
+- Postcondition: `len(returned_body) <= max(diff_max_chars, 0)`
+  always, and the body is a whole number of complete lines, and it is
+  a prefix of `diff_text`. A body within the cap is returned untouched
+  with `False`.
+- The cut is **maximal**, not merely safe: a newline sitting exactly
+  at the cap index is kept, so a cap landing on a line boundary yields
+  a body of exactly that length. Anything less wastes budget a caller
+  paid to compute.
+- Negative caps must be handled by an explicit branch. `str.rfind`'s
+  `end` follows slice semantics, so a negative bound searches from the
+  far end of the string and returns a body far *over* the cap.
 - Invariant that carries the whole task: **the cap is a real
   ceiling.** The old rule cut at the first line boundary *past* the
   cap — harmless for a display cap, wrong for a caller sizing a packet
@@ -469,11 +516,14 @@ defined below `_render_packet` with the two note strings beside it.
   — and measure it. That is thread text plus the diffstat file list,
   neither of which may be cut, and it already includes the fence and
   the truncation marker, so everything left over is body space.
-- Step two: the diff body's allowance is what the budget has left over
-  that floor, **less one character** for the newline that joins the
-  body to the marker below it. Without that subtraction a packet cut
-  to the allowance lands one character past the budget in the boundary
-  case.
+- Step two: the diff body's allowance is exactly what the budget has
+  left over that floor. Nothing is subtracted for the newline joining
+  the body to the marker — that separator is already inside the floor,
+  because `_render_diff` emits the body element even when empty. Task
+  1 pins that identity: a packet is `floor + len(body)` for every cap.
+  Subtracting a character "for the separator" would be double-counting
+  it, and costs a whole kept line whenever the allowance lands just
+  under a boundary.
 - Postcondition, allowance positive: re-render at that allowance, with
   the diff-cut note. The packet is at or under `BATCH_CHARS` by
   construction, because Task 1 made the cut a real ceiling. Return
@@ -511,13 +561,12 @@ Expected: PASS.
 Write `.superpowers/sdd/b2-task-3-report.md`. Run these three
 mutations and record whether each kills a test, restoring after each:
 
-1. Drop the `- 1` from the allowance. Expect
-   `packet_chars <= budget` to fail in the `diff_cut` test at the
-   boundary. This one only bites when the allowance lands exactly on a
-   line boundary, so if it survives, tune `diff_lines` and the budget
-   in that test until it does — an unkillable mutation here means the
-   boundary is not pinned, not that it cannot be. Record what you did
-   either way.
+1. Add one to the allowance. Expect `packet_chars <= budget` to fail
+   in the `diff_cut` test — that test's budget is derived to land on a
+   line boundary precisely so a one-character overshoot pulls in a
+   whole extra line. If it survives, the boundary is not pinned: tune
+   `diff_lines` and the budget until it bites, and record what you
+   did.
 2. Weaken the non-positive-allowance branch to fire only on a strictly
    negative allowance. Expect the oversized test to fail.
 3. Hardcode `"fit"` on both of `_fit_first_item`'s returns. Expect

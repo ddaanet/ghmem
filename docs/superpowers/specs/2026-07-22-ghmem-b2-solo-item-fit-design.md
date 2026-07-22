@@ -102,14 +102,14 @@ packet larger than `BATCH_CHARS`.
    result fits by construction, because the cut is now a real ceiling.
    Outcome: `diff_cut`.
 
-   The allowance is body space exactly, but the body is joined into
-   the surrounding lines, so it costs its own length plus the newline
-   that separates it from the marker. The implementation subtracts
-   that separator rather than leaving the packet one character over
-   the budget in the boundary case. The marker itself is never at
-   risk of being dropped: reaching this path at all means the
-   valve-truncated body already overran the budget, so the allowance
-   is always smaller than the body and the cut always fires.
+   The allowance is body space exactly, with nothing held back for
+   the newline joining the body to the marker: the render emits the
+   body element even when empty, so that separator is already counted
+   in the floor. A packet is the floor plus the length of the body it
+   keeps, exactly, at every cap. The marker itself is never at risk of
+   being dropped: reaching this path at all means the valve-truncated
+   body already overran the budget, so the allowance is always smaller
+   than the body and the cut always fires.
 4. When `allowance <= 0`, serve the floor packet. Thread text and file
    list alone exceed the budget and neither may be cut. Outcome:
    `oversized`.
