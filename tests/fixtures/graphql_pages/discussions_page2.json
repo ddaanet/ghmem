@@ -4,6 +4,7 @@
     "discussions": {
       "pageInfo": {"hasNextPage": false, "endCursor": "discussions-cursor-2"},
       "nodes": [
+        null,
         {
           "id": "D_3",
           "number": 102,

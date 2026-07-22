@@ -20,6 +20,7 @@ from ghmem.sync_core import (
     _PAGE_SIZE,
     _REACTION_GROUPS,
     _REPO,
+    _append_fetch_failed,
     _append_reactions,
     _append_validated,
     _Author,
@@ -120,15 +121,26 @@ def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> None:
     are appended before any of that discussion's replies — see
     `_append_discussion_comments` — so a reply's parent is always
     already in the ledger.
+
+    A `null` list entry is recorded as `fetch_failed` and skipped,
+    exactly as `_drain_items_page` handles the same observed GraphQL
+    gap. Letting the `None` through instead would raise mid-page,
+    before this page's cursor was persisted — so the next run would
+    re-fetch the same page, hit the same null, and abort again. The
+    connection would never advance past a single bad node.
     """
-    for node in page.nodes:
+    for index, node in enumerate(page.nodes):
+        if node is None:
+            _append_fetch_failed(ctx, f"discussions[{index}]", "null node in page")
+    discussions = [node for node in page.nodes if node is not None]
+    for node in discussions:
         _append_validated(
             ctx, {"type": "discussion", "data": _raw_data(node, _DiscussionFields)}
         )
         _append_reactions(ctx, node.id, node.reaction_groups)
-    for node in page.nodes:
+    for node in discussions:
         _append_discussion_comments(ctx, node)
-    hwm = max((node.updated_at for node in page.nodes), default="")
+    hwm = max((node.updated_at for node in discussions), default="")
     _persist_cursor(ctx, "discussions", page, hwm)
 
 
@@ -328,7 +340,12 @@ class _DiscussionNode(_DiscussionFields, kw_only=True):
     reaction_groups: list[_ReactionGroupNode]
 
 
-type _DiscussionsPage = _Page[_DiscussionNode]
+type _DiscussionsPage = _Page[_DiscussionNode | None]
+"""A discussions page, whose entries GitHub may return as `null`.
+
+Same observed gap as the items connections — see `_ItemsPage` — and
+handled the same way by `_drain_discussions_page`.
+"""
 
 
 class _DiscussionsRepo(_Wire):

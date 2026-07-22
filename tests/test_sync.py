@@ -22,12 +22,14 @@ def test_full_sync_appends_expected_nodes(
       page, a `timelineItems` cross-referenced mention, and one null
       node), a PR page (a review, files, and a closing issue
       reference), a commit-history page, and a 2-page discussions
-      connection, with reactions on items, comments, reviews, review
-      comments, discussion comments and discussion replies alike
+      connection (whose second page also carries a null node), with
+      reactions on items, comments, reviews, review comments,
+      discussion comments and discussion replies alike
     Then: the returned counts match the fixtures' node census — one
       `cross_ref` from the closing reference and one from the
-      `timelineItems` mention, and one `reaction` per non-empty
-      reaction group across every subject kind
+      `timelineItems` mention, one `fetch_failed` per null node, and
+      one `reaction` per non-empty reaction group across every subject
+      kind
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     client = _client(mocker, _ALL_PAGES)
@@ -43,7 +45,7 @@ def test_full_sync_appends_expected_nodes(
         cross_ref=2,
         commit=2,
         pr_diff=1,
-        fetch_failed=1,
+        fetch_failed=2,
         discussion=3,
         discussion_comment=6,
     )

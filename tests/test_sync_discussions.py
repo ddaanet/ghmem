@@ -13,7 +13,7 @@ from ghmem.github import GitHubClient
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.show import OrphanReplyWarning, render_discussion
 from ghmem.standing import build_standing
-from ghmem.sync_core import _Sync
+from ghmem.sync_core import _last_cursor, _Sync
 from ghmem.sync_discussions import _DiscussionsQueryResponse, _sync_discussions
 from tests.sync_helpers import _ALL_PAGES, _ctx, _rebuild, _stub_graphql
 
@@ -223,12 +223,23 @@ def test_cross_page_reply_parent_appended_first(
     pagination order alone is therefore impossible by construction
     here; this test proves it holds anyway.
 
-    When: the store is rebuilt from a full discussions sync and
-      discussion #101 is rendered
-    Then: rendering raises no `OrphanReplyWarning`
+    The ledger-order assertions are what make the name true. The
+    absence of an `OrphanReplyWarning` is a weaker, downstream signal:
+    `render_discussion` resolves parents from the rebuilt store, where
+    append order no longer shows, so it would stay quiet even if the
+    driver appended every reply first.
+
+    When: a full discussions sync is drained, then discussion #101 is
+      rendered from the rebuilt store
+    Then: `DC_2` — a comment reached only through the comments
+      follow-up page — is appended before any reply on the page before
+      it, and rendering raises no `OrphanReplyWarning`
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
     _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+    appended = [
+        event["data"]["id"] for event in fetch if event["type"] == "discussion_comment"
+    ]
     store = _rebuild(fetch, tmp_path)
     standing = build_standing(store)
 
@@ -236,7 +247,41 @@ def test_cross_page_reply_parent_appended_first(
         warnings.simplefilter("always")
         render_discussion(store, standing, DiscussionNumber(101))
 
+    assert appended.index("DC_1") < appended.index("DC_1_R1")
+    assert appended.index("DC_2") < appended.index("DC_1_R1")
+    assert appended.index("DC_2") < appended.index("DC_1_R2")
     assert not any(issubclass(w.category, OrphanReplyWarning) for w in caught)
+
+
+def test_null_discussion_recorded_and_page_still_advances(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A `null` discussion is recorded and skipped, and the cursor still lands.
+
+    The same observed GraphQL gap the items connections already absorb.
+    Letting the `None` through would raise before this page's `cursor`
+    event was appended, so the next run would resume from the previous
+    page, refetch this one, and abort on the same null — the connection
+    stuck behind one bad node forever.
+
+    When: the discussions connection's second page carries a `null`
+      entry alongside a real discussion
+    Then: sync records a `fetch_failed` for it, the real discussion
+      still lands, and the page's cursor is persisted so a resume
+      starts past it
+    """
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
+
+    _sync_discussions(_ctx(mocker, fetch, _ALL_PAGES))
+
+    failures = [event["data"] for event in fetch if event["type"] == "fetch_failed"]
+    assert [failure["id"] for failure in failures] == ["discussions[0]"]
+    assert "null node" in failures[0]["reason"]
+    cursor = _last_cursor(fetch, "discussions")
+    assert cursor is not None
+    assert cursor["top_level_cursor"] == "discussions-cursor-2"
+    store = _rebuild(fetch, tmp_path)
+    assert store.get_discussion(DiscussionNumber(102)).id == "D_3"
 
 
 def test_answered_discussion_records_answer_id(
