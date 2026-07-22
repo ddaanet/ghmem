@@ -18,7 +18,13 @@ FETCH_FIXTURE = Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
 
 DISPATCH_1: RoutingEvent = {
     "type": "dispatched",
-    "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100, "fit": "fit"},
+    "data": {
+        "session": "s1",
+        "item_id": "I_1",
+        "packet_chars": 100,
+        "fit": "fit",
+        "diff_valve_dropped": 0,
+    },
 }
 ROUTE_SOFTWRAP: RouteEvent = {
     "type": "route",

@@ -78,7 +78,8 @@ def test_routing_events_for_unfetched_items_do_not_count(
         + '{"type": "route", "data": {"session": "s1", "item_id": "I_ghost", '
         + '"verdict": "topic-a", "note": "routed after a corpus refetch"}}\n'
         + '{"type": "dispatched", "data": {"session": "s1", '
-        + '"item_id": "I_missing", "packet_chars": 90, "fit": "fit"}}\n',
+        + '"item_id": "I_missing", "packet_chars": 90, "fit": "fit", '
+        + '"diff_valve_dropped": 0}}\n',
         encoding="utf-8",
     )
 

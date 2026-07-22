@@ -160,12 +160,28 @@ a pair would admit a fourth combination that cannot occur.
 
 
 class DispatchedData(TypedDict):
-    """A corpus item served to a triage session."""
+    """A corpus item served to a triage session.
+
+    `packet_chars` and `fit` place the packet against `BATCH_CHARS`.
+    `diff_valve_dropped` places it against the *other* provisional
+    constant: the diff-body characters `show.DIFF_BODY_MAX_CHARS`
+    removed from this item, and zero when the valve never fired.
+
+    The two are independent axes. A packet can sit comfortably inside
+    the batch budget with a 60k diff cut to 25k, which `fit` alone
+    reports as an unremarkable `fit`. `show.py` says both constants
+    are calibrated in subproject 4, so both need a signal recorded
+    against the items actually served.
+
+    `diff_valve_dropped` is write-only for the same reason `fit` is:
+    the reducer never reads it back, so it gets no `Dispatch` column.
+    """
 
     session: str
     item_id: str
     packet_chars: int
     fit: DispatchFit
+    diff_valve_dropped: int
 
 
 class DispatchedEvent(TypedDict):

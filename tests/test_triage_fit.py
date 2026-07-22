@@ -13,13 +13,14 @@ import pytest
 from ghmem import triage
 from ghmem.aliases import IssueOrPRNumber
 from ghmem.ledger import DispatchedData, FetchEvent, Ledger, RoutingEvent
-from ghmem.show import render
+from ghmem.show import DIFF_BODY_MAX_CHARS, _cut_diff_body, render
 from ghmem.standing import build_standing
 from ghmem.store import Store
 from tests.diff_fixtures import (
     DIFF_HEADER_LINE,
     LINE_WIDTH,
     PR_BODY_MARKER,
+    big_diff_text,
     diff_body_line,
     write_diff_corpus,
     write_two_pr_diff_corpus,
@@ -27,6 +28,13 @@ from tests.diff_fixtures import (
 from tests.triage_helpers import _content_only, _ranked_numbers, _store
 
 _DIFF_LINES = 500
+
+_VALVE_DIFF_LINES = DIFF_BODY_MAX_CHARS // LINE_WIDTH + 100
+"""Diff lines that overrun `DIFF_BODY_MAX_CHARS` by a comfortable margin.
+
+Derived from the valve rather than hardcoded, so raising the valve cannot leave
+this fixture sitting under it and the valve test passing vacuously.
+"""
 
 
 def _diff_session(
@@ -106,6 +114,39 @@ def test_packet_within_budget_records_fit_and_carries_no_note(tmp_path: Path) ->
     assert "packet-note:" not in result.packet
     dispatched = _dispatched(routing)
     assert dispatched[-1]["fit"] == "fit"
+    assert dispatched[-1]["diff_valve_dropped"] == 0
+
+
+def test_dispatch_records_what_the_diff_valve_dropped(tmp_path: Path) -> None:
+    """The valve firing is recorded even on a packet well inside budget.
+
+    This is the case `fit` alone cannot report: the packet is nowhere
+    near `BATCH_CHARS`, so it is tagged an unremarkable "fit", while
+    `DIFF_BODY_MAX_CHARS` quietly removed several thousand characters
+    of diff body. Both constants are calibrated in subproject 4, so
+    the valve needs its own signal against the items actually served.
+
+    When: a session's first item carries a diff longer than the valve,
+      and its whole packet still fits the batch budget
+    Then: the dispatched event is tagged fit, and its
+      diff_valve_dropped equals the drop computed independently from
+      the fixture generator and `show._cut_diff_body`
+    """
+    store, routing = _diff_session(tmp_path, diff_lines=_VALVE_DIFF_LINES)
+    full = big_diff_text(_VALVE_DIFF_LINES)
+    kept, _cut = _cut_diff_body(full, DIFF_BODY_MAX_CHARS)
+    expected = len(full) - len(kept)
+    token = triage.mint_session()
+
+    result = triage.serve_next(store, routing, token)
+
+    # Without this the fixture could sit under the valve and the
+    # assertion below would pass on a hardcoded zero.
+    assert expected > 0
+    assert result.packet is not None
+    dispatched = _dispatched(routing)
+    assert dispatched[-1]["fit"] == "fit"
+    assert dispatched[-1]["diff_valve_dropped"] == expected
 
 
 def test_packet_exactly_at_budget_is_fit_not_diff_cut(

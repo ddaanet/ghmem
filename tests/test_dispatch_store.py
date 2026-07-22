@@ -71,6 +71,7 @@ def test_session_usage_sums_chars_and_counts_items_for_one_token(
                 "item_id": "I_1",
                 "packet_chars": 100,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         },
     )
@@ -83,6 +84,7 @@ def test_session_usage_sums_chars_and_counts_items_for_one_token(
                 "item_id": "I_2",
                 "packet_chars": 250,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         },
     )
@@ -95,6 +97,7 @@ def test_session_usage_sums_chars_and_counts_items_for_one_token(
                 "item_id": "I_3",
                 "packet_chars": 999,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         },
     )
@@ -131,6 +134,7 @@ def test_reserve_dispatch_on_free_item_succeeds(tmp_path: Path) -> None:
             "item_id": "I_1",
             "packet_chars": 100,
             "fit": "fit",
+            "diff_valve_dropped": 0,
         },
     }
 
@@ -165,6 +169,7 @@ def test_reserve_dispatch_emits_a_single_conditional_insert(tmp_path: Path) -> N
             "item_id": "I_1",
             "packet_chars": 100,
             "fit": "fit",
+            "diff_valve_dropped": 0,
         },
     }
 
@@ -201,6 +206,7 @@ def test_reserve_dispatch_declines_an_already_taken_item(tmp_path: Path) -> None
             "item_id": "I_1",
             "packet_chars": 100,
             "fit": "fit",
+            "diff_valve_dropped": 0,
         },
     }
     second: DispatchedEvent = {
@@ -210,6 +216,7 @@ def test_reserve_dispatch_declines_an_already_taken_item(tmp_path: Path) -> None
             "item_id": "I_1",
             "packet_chars": 999,
             "fit": "fit",
+            "diff_valve_dropped": 0,
         },
     }
 
@@ -244,6 +251,7 @@ def test_reserve_dispatch_write_matches_a_cold_rebuild(tmp_path: Path) -> None:
             "item_id": "I_1",
             "packet_chars": 100,
             "fit": "fit",
+            "diff_valve_dropped": 0,
         },
     }
     store.reserve_dispatch(routing, event)

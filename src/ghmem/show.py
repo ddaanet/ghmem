@@ -51,6 +51,7 @@ _REPLY_HEADING_LEVEL = 4  # `####`, one below its parent comment
 __all__ = [
     "DIFF_BODY_MAX_CHARS",
     "OrphanReplyWarning",
+    "diff_body_dropped",
     "render",
     "render_discussion",
 ]
@@ -312,6 +313,30 @@ def _render_discussion_comment(
     if reactions is not None:
         lines.extend(["", reactions])
     return lines
+
+
+def diff_body_dropped(
+    store: Store, number: IssueOrPRNumber, diff_max_chars: int
+) -> int:
+    """Return the diff-body characters `diff_max_chars` drops for `number`.
+
+    Zero when the body fits the cap whole, and zero for an item that
+    has no diff at all. The cut is the very one `render` performs, so
+    the two can never disagree about where the ceiling falls.
+
+    A rendered packet reports only the text that survived, which
+    cannot answer how much was left out — and how much a given cap
+    drops is exactly what calibrating that cap needs. `triage` records
+    this against `DIFF_BODY_MAX_CHARS` for every item it dispatches,
+    so the valve can be sized from the diffs actually served rather
+    than from the corpus-wide length distribution.
+    """
+    try:
+        diff = store.pr_diff_for(number)
+    except PRDiffNotFoundError:
+        return 0
+    body, _cut = _cut_diff_body(diff.diff_text, diff_max_chars)
+    return len(diff.diff_text) - len(body)
 
 
 def _render_diff(

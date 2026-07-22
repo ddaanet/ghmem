@@ -119,6 +119,7 @@ def test_dispatched_unrouted_item_is_absent(tmp_path: Path) -> None:
                 "item_id": "I_1",
                 "packet_chars": 100,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         ),
         DispatchedEvent(
@@ -128,6 +129,7 @@ def test_dispatched_unrouted_item_is_absent(tmp_path: Path) -> None:
                 "item_id": "I_2",
                 "packet_chars": 100,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         ),
     )
@@ -155,6 +157,7 @@ def test_requeued_item_is_present_again(tmp_path: Path) -> None:
                 "item_id": "I_1",
                 "packet_chars": 100,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         ),
         DispatchedEvent(
@@ -164,6 +167,7 @@ def test_requeued_item_is_present_again(tmp_path: Path) -> None:
                 "item_id": "I_2",
                 "packet_chars": 100,
                 "fit": "fit",
+                "diff_valve_dropped": 0,
             },
         ),
     )

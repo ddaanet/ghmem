@@ -32,7 +32,7 @@ from ghmem.ledger import (
     RouteEvent,
     RoutingEvent,
 )
-from ghmem.show import DIFF_BODY_MAX_CHARS, render
+from ghmem.show import DIFF_BODY_MAX_CHARS, diff_body_dropped, render
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import Store
 
@@ -101,7 +101,12 @@ def serve_next(
     `BATCH_CHARS`, `_fit_first_item` truncates its diff to whatever
     the budget has left, or serves it oversized when even the
     uncuttable parts alone don't fit — either way the item is served
-    and the outcome is tagged in the `dispatched` event. The item gate
+    and the outcome is tagged in the `dispatched` event.
+
+    That event also records `diff_valve_dropped`, always measured at
+    `DIFF_BODY_MAX_CHARS` regardless of the cap this packet was
+    finally rendered at, so the valve and the batch budget stay
+    separately calibratable. The item gate
     cannot fire on the first item regardless — it fires at
     `items_used >= BATCH_ITEMS`, and the first item's `items_used` is
     always 0 — so it needs no matching exemption.
@@ -135,6 +140,9 @@ def serve_next(
                 "item_id": item_id,
                 "packet_chars": packet_chars,
                 "fit": fit,
+                "diff_valve_dropped": diff_body_dropped(
+                    store, candidate.number, DIFF_BODY_MAX_CHARS
+                ),
             },
         }
         if store.reserve_dispatch(routing, event):
