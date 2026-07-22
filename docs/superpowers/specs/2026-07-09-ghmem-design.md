@@ -74,11 +74,15 @@ unretrievable; GitHub Projects data needs a `read:project` token scope
   the accompanying discussion — it shows what was actually accepted or
   rejected, not just argued. `sync` fetches each PR's diff alongside
   its threads; `show` renders it after the discussion, and diff text
-  counts toward the triage packet budget like any other content. No
-  independent truncation threshold: an item's diff is cut (never its
-  thread text; the file list always survives) only when the item alone
-  exceeds a whole batch budget — see the serve gate under
-  `ghmem triage`. Measured (2026-07-10, live API): the median PR
+  counts toward the triage packet budget like any other content. A diff
+  body is the only cuttable part of a packet — thread text is never cut
+  and the file list always survives — and it is cut on two independent
+  grounds. `DIFF_BODY_MAX_CHARS` is a safety valve on `show` itself, so
+  a single vendor dump cannot swamp a terminal or a context window; it
+  applies whether or not any batch is in progress. The batch budget cuts
+  further, and only for a session's first item, when that item alone
+  exceeds a whole batch — see the serve gate under `ghmem triage`.
+  Measured (2026-07-10, live API): the median PR
   touches 16 lines, p99 ≈ 1.6k, and only 10 of 1,299 PRs exceed 2k
   changed lines — a tail of vendor/generated-file churn (#1392 "Go
   modules" is +228k lines) whose diff bodies carry no decision signal
@@ -240,10 +244,15 @@ emit from the local corpus.
   remaining budget, the batch ends with that item still queued — empty
   stdout, `batch complete: budget exhausted` on stderr, exit 0.
   Exception: a session's first item is always served, whatever its
-  size (progress guarantee — no single item can deadlock the queue);
-  if that solo packet exceeds a whole batch budget, its diff is
-  truncated to fit — thread text is never cut, the file list always
-  survives — and the truncation is noted in the packet and the ledger.
+  size. The guarantee that buys is that the queue advances — no single
+  item can deadlock it — not that every packet fits. If that solo
+  packet exceeds a whole batch budget, its diff body is cut to whatever
+  the budget has left over the parts that cannot be cut, the thread
+  text and the file list. Where even those exceed the budget on their
+  own, the item is served anyway with no diff body at all. Every
+  dispatch is tagged with which of the three happened — `fit`,
+  `diff_cut`, `oversized` — in the packet and in the ledger, and
+  subproject 4 calibrates the budget against that tag.
   Triage-complete has the same shape (`triage complete: 0
   pending`) — exit codes are reserved for actual errors; an expected
   outcome must not read as a failure. Yielding records a `dispatched`
