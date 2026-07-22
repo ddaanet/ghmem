@@ -1,6 +1,6 @@
-{"type": "dispatched", "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100}}
+{"type": "dispatched", "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100, "fit": "fit"}}
 {"type": "route", "data": {"session": "s1", "item_id": "I_1", "verdict": "softwrap", "note": "relates to softwrap"}}
-{"type": "dispatched", "data": {"session": "s1", "item_id": "I_2", "packet_chars": 80}}
+{"type": "dispatched", "data": {"session": "s1", "item_id": "I_2", "packet_chars": 80, "fit": "fit"}}
 {"type": "route", "data": {"session": "s1", "item_id": "I_2", "verdict": "no-signal", "note": ""}}
-{"type": "dispatched", "data": {"session": "s1", "item_id": "I_3", "packet_chars": 120}}
+{"type": "dispatched", "data": {"session": "s1", "item_id": "I_3", "packet_chars": 120, "fit": "fit"}}
 {"type": "route", "data": {"session": "s2", "item_id": "I_1", "verdict": "wrapping", "note": "actually about wrapping"}}

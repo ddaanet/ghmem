@@ -140,12 +140,31 @@ without creating or dirtying any `Topic` row.
 """
 
 
+type DispatchFit = Literal["fit", "diff_cut", "oversized"]
+"""How a dispatched packet related to the batch budget it was served under.
+
+`fit` — the packet was within budget as rendered. `diff_cut` — it was
+a session's first item and its diff body was truncated to bring it
+within budget. `oversized` — it was a session's first item and its
+thread text and file list alone exceed the budget, so it was served
+whole, neither of those being cuttable.
+
+Subproject 4 calibrates `BATCH_CHARS` against this: a corpus producing
+many `oversized` serves has a budget set too low. Like
+`RequeueData.session`, it is a write-only signal; the reducer never
+reads it back, so it gets no `Dispatch` column. One tag rather than a
+pair of booleans, because the three states are mutually exclusive and
+a pair would admit a fourth combination that cannot occur.
+"""
+
+
 class DispatchedData(TypedDict):
     """A corpus item served to a triage session."""
 
     session: str
     item_id: str
     packet_chars: int
+    fit: DispatchFit
 
 
 class DispatchedEvent(TypedDict):

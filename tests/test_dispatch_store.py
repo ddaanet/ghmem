@@ -66,21 +66,36 @@ def test_session_usage_sums_chars_and_counts_items_for_one_token(
         routing,
         {
             "type": "dispatched",
-            "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100},
+            "data": {
+                "session": "s1",
+                "item_id": "I_1",
+                "packet_chars": 100,
+                "fit": "fit",
+            },
         },
     )
     store.record_routing_event(
         routing,
         {
             "type": "dispatched",
-            "data": {"session": "s1", "item_id": "I_2", "packet_chars": 250},
+            "data": {
+                "session": "s1",
+                "item_id": "I_2",
+                "packet_chars": 250,
+                "fit": "fit",
+            },
         },
     )
     store.record_routing_event(
         routing,
         {
             "type": "dispatched",
-            "data": {"session": "s2", "item_id": "I_3", "packet_chars": 999},
+            "data": {
+                "session": "s2",
+                "item_id": "I_3",
+                "packet_chars": 999,
+                "fit": "fit",
+            },
         },
     )
 
@@ -111,7 +126,12 @@ def test_reserve_dispatch_on_free_item_succeeds(tmp_path: Path) -> None:
     store, routing = _empty_store(tmp_path)
     event: DispatchedEvent = {
         "type": "dispatched",
-        "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100},
+        "data": {
+            "session": "s1",
+            "item_id": "I_1",
+            "packet_chars": 100,
+            "fit": "fit",
+        },
     }
 
     assert store.reserve_dispatch(routing, event) is True
@@ -140,7 +160,12 @@ def test_reserve_dispatch_emits_a_single_conditional_insert(tmp_path: Path) -> N
     store, routing = _empty_store(tmp_path)
     event: DispatchedEvent = {
         "type": "dispatched",
-        "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100},
+        "data": {
+            "session": "s1",
+            "item_id": "I_1",
+            "packet_chars": 100,
+            "fit": "fit",
+        },
     }
 
     with _recorded_statements() as statements:
@@ -171,11 +196,21 @@ def test_reserve_dispatch_declines_an_already_taken_item(tmp_path: Path) -> None
     store, routing = _empty_store(tmp_path)
     first: DispatchedEvent = {
         "type": "dispatched",
-        "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100},
+        "data": {
+            "session": "s1",
+            "item_id": "I_1",
+            "packet_chars": 100,
+            "fit": "fit",
+        },
     }
     second: DispatchedEvent = {
         "type": "dispatched",
-        "data": {"session": "s2", "item_id": "I_1", "packet_chars": 999},
+        "data": {
+            "session": "s2",
+            "item_id": "I_1",
+            "packet_chars": 999,
+            "fit": "fit",
+        },
     }
 
     assert store.reserve_dispatch(routing, first) is True
@@ -204,7 +239,12 @@ def test_reserve_dispatch_write_matches_a_cold_rebuild(tmp_path: Path) -> None:
     store, routing = _empty_store(tmp_path)
     event: DispatchedEvent = {
         "type": "dispatched",
-        "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100},
+        "data": {
+            "session": "s1",
+            "item_id": "I_1",
+            "packet_chars": 100,
+            "fit": "fit",
+        },
     }
     store.reserve_dispatch(routing, event)
     engine = create_engine(f"sqlite:///{tmp_path / 'cache.sqlite'}")

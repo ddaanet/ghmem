@@ -19,11 +19,11 @@ ROUTING_FIXTURE = Path(__file__).parent / "fixtures" / "routing_events.jsonl"
 
 DISPATCH_1: RoutingEvent = {
     "type": "dispatched",
-    "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100},
+    "data": {"session": "s1", "item_id": "I_1", "packet_chars": 100, "fit": "fit"},
 }
 DISPATCH_2: RoutingEvent = {
     "type": "dispatched",
-    "data": {"session": "s2", "item_id": "I_2", "packet_chars": 100},
+    "data": {"session": "s2", "item_id": "I_2", "packet_chars": 100, "fit": "fit"},
 }
 ROUTE_1: RoutingEvent = {
     "type": "route",

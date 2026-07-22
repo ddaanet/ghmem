@@ -114,11 +114,21 @@ def test_dispatched_unrouted_item_is_absent(tmp_path: Path) -> None:
         tmp_path,
         DispatchedEvent(
             type="dispatched",
-            data={"session": "s1", "item_id": "I_1", "packet_chars": 100},
+            data={
+                "session": "s1",
+                "item_id": "I_1",
+                "packet_chars": 100,
+                "fit": "fit",
+            },
         ),
         DispatchedEvent(
             type="dispatched",
-            data={"session": "s1", "item_id": "I_2", "packet_chars": 100},
+            data={
+                "session": "s1",
+                "item_id": "I_2",
+                "packet_chars": 100,
+                "fit": "fit",
+            },
         ),
     )
 
@@ -140,11 +150,21 @@ def test_requeued_item_is_present_again(tmp_path: Path) -> None:
         tmp_path,
         DispatchedEvent(
             type="dispatched",
-            data={"session": "s1", "item_id": "I_1", "packet_chars": 100},
+            data={
+                "session": "s1",
+                "item_id": "I_1",
+                "packet_chars": 100,
+                "fit": "fit",
+            },
         ),
         DispatchedEvent(
             type="dispatched",
-            data={"session": "s1", "item_id": "I_2", "packet_chars": 100},
+            data={
+                "session": "s1",
+                "item_id": "I_2",
+                "packet_chars": 100,
+                "fit": "fit",
+            },
         ),
     )
     with Session(_engine(tmp_path)) as session:

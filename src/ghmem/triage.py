@@ -24,7 +24,14 @@ from ghmem.aliases import IssueOrPRNumber
 from ghmem.budget import BATCH_CHARS, BATCH_ITEMS
 from ghmem.exceptions import IssueOrPRNotFoundError, TriageSessionError
 from ghmem.heat import HEAT_WEIGHTS
-from ghmem.ledger import NO_SIGNAL, DispatchedEvent, Ledger, RouteEvent, RoutingEvent
+from ghmem.ledger import (
+    NO_SIGNAL,
+    DispatchedEvent,
+    DispatchFit,
+    Ledger,
+    RouteEvent,
+    RoutingEvent,
+)
 from ghmem.show import render
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import Store
@@ -113,12 +120,14 @@ def serve_next(
         if not first_of_session and chars_used + packet_chars > BATCH_CHARS:
             return ServeResult(packet=None, message="batch complete: budget exhausted")
         item_id = store.get_issue_or_pr(candidate.number).id
+        fit: DispatchFit = "fit"
         event: DispatchedEvent = {
             "type": "dispatched",
             "data": {
                 "session": session_token,
                 "item_id": item_id,
                 "packet_chars": packet_chars,
+                "fit": fit,
             },
         }
         if store.reserve_dispatch(routing, event):
