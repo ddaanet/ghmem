@@ -34,12 +34,23 @@ produced the bad node, instead of one `rebuild_from_ledgers` raises
 later with only a JSON line to work back from.
 """
 
+from typing import Final
+
+import msgspec
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId, JsonObject
 from ghmem.exceptions import UnknownRoutingEventError
-from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent
+from ghmem.ledger import (
+    NO_SIGNAL,
+    DispatchedEvent,
+    FetchEvent,
+    Ledger,
+    RequeueEvent,
+    RouteEvent,
+    RoutingEvent,
+)
 from ghmem.models import Base, Dispatch, FetchFailed, Route, Topic
 from ghmem.raw_nodes import _RAW_BY_TYPE
 
@@ -85,6 +96,52 @@ def validate_raw_node(event_type: str, data: JsonObject) -> None:
     validation it performs as a side effect is wanted here.
     """
     _RAW_BY_TYPE[event_type].parse(data)
+
+
+def validate_routing_event(event: RoutingEvent) -> None:
+    """Validate `event` against the shape its `RoutingEvent` member declares.
+
+    The routing counterpart of `validate_raw_node`, and the one that
+    matters more: `fetch.jsonl` is regenerable from GitHub, while
+    `routing.jsonl` is the system's only original record.
+
+    A field missing from a routing event otherwise survives both
+    gates that look like they would catch it. Static typing cannot
+    see through `Ledger.__iter__`'s `cast`, which hands out a
+    `RoutingEvent` on the strength of the annotation alone, and the
+    reducer below reads only the fields its own branches touch — so a
+    `dispatched` event with no `fit` replays cleanly and is found
+    missing by whichever consumer first wants it, long after the
+    ledger was written.
+
+    `apply_routing_event` calls this first, which puts it on both
+    paths at once: the live write, before `Store.record_routing_event`
+    appends anything, and replay from `rebuild_from_ledgers`.
+
+    Raises `UnknownRoutingEventError` for a tag no member declares,
+    and `msgspec.ValidationError` for a member whose shape does not
+    hold. An unknown *key* is not a violation — msgspec ignores extra
+    keys on a TypedDict — because a ledger written by a later part
+    may carry a field this code has no reducer branch for yet, which
+    is the direction that must stay readable.
+    """
+    event_type: str = event["type"]
+    if event_type not in _ROUTING_BY_TYPE:
+        raise UnknownRoutingEventError(event_type)
+    msgspec.convert(event, _ROUTING_BY_TYPE[event_type])
+
+
+_ROUTING_BY_TYPE: Final[dict[str, type]] = {
+    "dispatched": DispatchedEvent,
+    "route": RouteEvent,
+    "requeue": RequeueEvent,
+}
+"""Each routing tag mapped to the TypedDict that declares its shape.
+
+Mirrors `raw_nodes.py`'s `_RAW_BY_TYPE`, and checks one way only, the
+same way: a tag here with no branch in `apply_routing_event` still
+reaches that function's closing raise.
+"""
 
 
 def _replay_fetch_event(session: Session, event: FetchEvent) -> None:
@@ -138,7 +195,12 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
     Any other tag raises: the union grows a member per dispatch part,
     and a tag with no branch here means the ledger is ahead of the code,
     not that a verdict can be guessed.
+
+    Every event is put through `validate_routing_event` first, so the
+    branches below narrow a shape already known to hold rather than
+    one asserted by `Ledger.__iter__`'s `cast`.
     """
+    validate_routing_event(event)
     # Captured before the checks below narrow `event` away: statically
     # the union is exhausted by them, but a ledger line is untyped JSON
     # at runtime and can carry anything.

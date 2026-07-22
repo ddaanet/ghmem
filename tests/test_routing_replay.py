@@ -6,6 +6,7 @@ than a whole ledger replayed — is covered by `test_routing_live.py`.
 
 from pathlib import Path
 
+import msgspec
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -170,6 +171,38 @@ def test_unhandled_event_kind_is_rejected_not_routed(tmp_path: Path) -> None:
 
     with _session(tmp_path) as session:
         assert session.get(Route, GraphQLId("I_1")) is None
+
+
+def test_dispatched_event_missing_a_field_is_rejected(tmp_path: Path) -> None:
+    """An event short of a declared field is rejected, not quietly replayed.
+
+    `fit` and `diff_valve_dropped` are write-only: no reducer branch
+    reads them, and `Ledger.__iter__` hands out a `RoutingEvent` on
+    the strength of a `cast`. Without `validate_routing_event` an
+    event missing either one replays perfectly and is found missing
+    only by whichever consumer first wants it — and `routing.jsonl` is
+    the one ledger that cannot be refetched.
+
+    When: a dispatched event carrying every field but `fit` is
+      replayed
+    Then: rebuild raises `msgspec.ValidationError`, and no Dispatch
+      row is created for it
+    """
+    routing_path = tmp_path / "short_routing.jsonl"
+    routing_path.write_text(
+        '{"type": "dispatched", "data": {"session": "s1", "item_id": "I_1", '
+        '"packet_chars": 100, "diff_valve_dropped": 0}}\n',
+        encoding="utf-8",
+    )
+    store = Store.open(tmp_path / DB_NAME)
+    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
+    routing: Ledger[RoutingEvent] = Ledger(routing_path)
+
+    with pytest.raises(msgspec.ValidationError):
+        store.rebuild_from_ledgers(fetch, routing)
+
+    with _session(tmp_path) as session:
+        assert session.get(Dispatch, GraphQLId("I_1")) is None
 
 
 def test_rebuild_discards_state_absent_from_the_ledgers(tmp_path: Path) -> None:
