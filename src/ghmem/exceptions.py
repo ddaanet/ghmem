@@ -12,6 +12,7 @@ state is bad input too.
 """
 
 from datetime import datetime
+from pathlib import Path
 
 from ghmem.aliases import IssueOrPRNumber
 from ghmem.ledger import NO_SIGNAL
@@ -77,6 +78,23 @@ class UnknownRoutingEventError(ValueError):
         """Name the unhandled event tag."""
         super().__init__(f"no reducer for routing event type {event_type!r}")
         self.event_type = event_type
+
+
+class MalformedFrontmatterError(ValueError):
+    """Raised when a topic doc's frontmatter is unreadable or lacks its hook.
+
+    `ghmem index` reads each doc's `description:` as its index hook. A
+    doc that does not open with a `---` frontmatter fence, whose fence
+    never closes, or whose frontmatter is not a mapping carrying a
+    string `description` is a synthesis bug the human should see. Like
+    `UnknownRoutingEventError` it is bad input — `index` raises here
+    rather than indexing a blank hook line.
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Name the doc whose frontmatter could not be read."""
+        super().__init__(f"{path}: malformed frontmatter or missing description")
+        self.path = path
 
 
 class TriageSessionError(ValueError):

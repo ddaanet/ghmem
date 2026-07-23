@@ -8,7 +8,7 @@ to earn its own file.
 `Store.rebuild_from_ledgers` delegates to `ingest.py`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 from sqlalchemy import (
     Engine,
@@ -69,6 +69,23 @@ def untriaged_heat_scores(
     query = query.where(~exists().where(Route.item_id == item.id)).where(
         ~exists().where(Dispatch.item_id == item.id)
     )
+    return _run(engine, query, item)
+
+
+def heat_scores_for(
+    engine: Engine, weights: Mapping[str, float], numbers: Collection[int]
+) -> list[HeatScore]:
+    """Score and rank only the items whose number is in `numbers`.
+
+    A third entry point beside `untriaged_heat_scores`, filtering the
+    same `_ranked_query` aggregate to a handful of items rather than
+    scoring the whole corpus — the difference between a query run after
+    every `close` and one avoided. An item in `numbers` that no corpus
+    row carries simply does not come back; a discussion number never
+    does, since this aggregate runs over `IssueOrPR` only.
+    """
+    query, item = _ranked_query(weights)
+    query = query.where(item.number.in_(numbers))
     return _run(engine, query, item)
 
 

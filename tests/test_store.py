@@ -335,6 +335,20 @@ def test_all_issues_and_prs_orders_by_number(tmp_path: Path) -> None:
     ]
 
 
+def test_discussion_numbers_in_returns_present_ascending(
+    discussion_store: Store,
+) -> None:
+    """discussion_numbers_in keeps present discussion numbers, sorted.
+
+    When: the filter names discussions #2 and #1 plus absent #999
+    Then: only #1 and #2 come back, ascending
+    """
+    assert discussion_store.discussion_numbers_in([2, 1, 999]) == [
+        DiscussionNumber(1),
+        DiscussionNumber(2),
+    ]
+
+
 def test_raw_node_rejects_unknown_key() -> None:
     """forbid_unknown_fields rejects a data object with a stray key.
 

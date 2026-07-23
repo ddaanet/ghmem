@@ -34,6 +34,21 @@ def corpus_dir() -> Path:
     return _git_toplevel() / "corpus"
 
 
+def design_dir() -> Path:
+    """Return the design-docs directory, creating it if absent.
+
+    Honors ``$GHMEM_DESIGN_DIR`` when set; otherwise resolves to
+    ``<git-toplevel>/docs/design``. Created on demand: the first live
+    run's lead finding was a command dying on a directory nothing had
+    made, so `index` writes into a directory it can rely on rather than
+    one a later subproject must remember to scaffold first.
+    """
+    override = os.environ.get("GHMEM_DESIGN_DIR")
+    directory = Path(override) if override else _git_toplevel() / "docs" / "design"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def fetch_ledger_path() -> Path:
     """Return the path to the fetch event ledger."""
     return corpus_dir() / "fetch.jsonl"

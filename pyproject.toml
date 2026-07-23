@@ -8,6 +8,7 @@ dependencies = [
     "click>=8.4.2",
     "githubkit>=0.16.0",
     "msgspec>=0.21.1",
+    "pyyaml>=6.0.3",
     "sqlalchemy>=2.0.51",
 ]
 

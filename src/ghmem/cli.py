@@ -14,9 +14,15 @@ from ghmem.exceptions import (
 )
 from ghmem.github import GitHubClient
 from ghmem.heat import rank
+from ghmem.index_cmd import build_index, render_index
 from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.models import HeatScore
-from ghmem.paths import fetch_ledger_path, routing_ledger_path, sqlite_path
+from ghmem.paths import (
+    design_dir,
+    fetch_ledger_path,
+    routing_ledger_path,
+    sqlite_path,
+)
 from ghmem.show import render, render_discussion
 from ghmem.standing import build_standing
 from ghmem.status import build_status, render_status
@@ -112,6 +118,26 @@ def status() -> None:
     store = Store.open(sqlite_path())
     fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())
     click.echo(render_status(build_status(store, fetch)))
+
+
+@main.command()
+def index() -> None:
+    """Regenerate docs/design/INDEX.md from the topic docs and routing mirror.
+
+    Reads every topic doc beside INDEX.md and the routing mirror's topics, then
+    rewrites the one INDEX.md. Creates docs/design/ if it does not exist — an
+    empty index is a valid state, not an error — and signs off with what it
+    wrote.
+    """
+    store = Store.open(sqlite_path())
+    directory = design_dir()
+    summary = build_index(store, directory)
+    (directory / "INDEX.md").write_text(render_index(summary), encoding="utf-8")
+    click.echo(
+        f"INDEX.md: {summary.topic_count} topics "
+        f"({summary.synthesized_count} synthesized, "
+        f"{summary.pending_count} pending)"
+    )
 
 
 @main.command()

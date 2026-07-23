@@ -19,7 +19,7 @@ itself, or a caller reading it after the session closes will hit
 `DetachedInstanceError`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import date
 from pathlib import Path
 
@@ -43,7 +43,7 @@ from ghmem.exceptions import (
     IssueOrPRNotFoundError,
     PRDiffNotFoundError,
 )
-from ghmem.heat_query import heat_scores, untriaged_heat_scores
+from ghmem.heat_query import heat_scores, heat_scores_for, untriaged_heat_scores
 from ghmem.ingest import rebuild_from_ledgers
 from ghmem.ledger import DispatchedEvent, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import (
@@ -158,6 +158,12 @@ class Store:
         """Score and rank every untriaged item by heat, hottest first."""
         return untriaged_heat_scores(self._engine, weights)
 
+    def heat_scores_for(
+        self, weights: Mapping[str, float], numbers: Collection[int]
+    ) -> list[HeatScore]:
+        """Score and rank the items numbered in `numbers`, hottest first."""
+        return heat_scores_for(self._engine, weights, numbers)
+
     def comments_for(self, item_id: GraphQLId) -> list[Comment]:
         """Return the comments on `item_id`, oldest first."""
         with Session(self._engine) as session:
@@ -269,6 +275,22 @@ class Store:
         if row is None:
             raise DiscussionNotFoundError(number)
         return row
+
+    def discussion_numbers_in(self, numbers: Collection[int]) -> list[DiscussionNumber]:
+        """Return the discussion numbers among `numbers`, ascending.
+
+        Discussions carry no heat score — `heat_scores_for` ranks issues
+        and PRs only — so `build_index` resolves a doc's discussion
+        citations through here and sorts them after the scored ones.
+        """
+        with Session(self._engine) as session:
+            return list(
+                session.execute(
+                    select(Discussion.number)
+                    .where(Discussion.number.in_(numbers))
+                    .order_by(Discussion.number)
+                ).scalars()
+            )
 
     def discussion_comments_for(
         self, discussion_id: GraphQLId

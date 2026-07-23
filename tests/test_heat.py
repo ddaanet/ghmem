@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import Engine, event
 
 from ghmem.aliases import IssueOrPRNumber
-from ghmem.heat import rank
+from ghmem.heat import HEAT_WEIGHTS, rank
 from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
 from ghmem.models import HeatScore
 from ghmem.store import Store
@@ -211,3 +211,23 @@ def test_span_compares_instants_not_text(tmp_path: Path) -> None:
     scores = rank(store)
 
     assert scores[0].span_years == pytest.approx(365 / 365.25)
+
+
+def test_heat_scores_for_filters_and_ranks(store: Store) -> None:
+    """heat_scores_for returns only the named items, hottest first.
+
+    When: the filter names cold #5, hot #1, and absent #999
+    Then: only #1 and #5 come back, #1 (hotter) ahead of #5
+    """
+    scores = store.heat_scores_for(HEAT_WEIGHTS, [5, 1, 999])
+
+    assert [s.number for s in scores] == [IssueOrPRNumber(1), IssueOrPRNumber(5)]
+
+
+def test_heat_scores_for_empty_filter_returns_nothing(store: Store) -> None:
+    """An empty filter scores nothing, rather than the whole corpus.
+
+    When: heat_scores_for is called with no numbers
+    Then: it returns an empty list
+    """
+    assert store.heat_scores_for(HEAT_WEIGHTS, []) == []
