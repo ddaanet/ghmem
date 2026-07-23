@@ -161,7 +161,15 @@ unretrievable; GitHub Projects data needs a `read:project` token scope
   plus ground-truth checks (dmaluka/JoeKar must derive as maintainers
   in the right eras; known-hot threads like #93/#3127 must rank in the
   top percentile). Standing rule: heuristic formulas are grounded in
-  data analysis.
+  data analysis. That calibration has a prerequisite the first live
+  run made concrete: it must normalize each metric's scale before it
+  touches a weight, or it tunes the wrong knob. A weight does not set
+  a metric's influence when the metrics differ ~40× in range —
+  reactions reach 432 across the corpus while related-item counts
+  reach 19, so at the shipped weights the metric weighted highest
+  (related items, 3.0) contributes 14% of the top scores and the one
+  weighted lowest (reactions, 0.5) contributes 33%. Sparsity
+  compounds it: most items score zero on most metrics.
 - **Topic-doc structure: FR/NFR/Limitations/Open questions/History**
   (detailed under Artifact below). My human partner's format from
   prior private use, adapted with descriptive-requirement semantics
