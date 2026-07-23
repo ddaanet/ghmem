@@ -25,7 +25,12 @@ class Ledger[E]:
         called by the caller at its own checkpoints. Bulk ingestion thus
         runs at memory speed and pays for durability only when it wants
         it, instead of an fsync per event baked into every append.
+
+        The containing directory is created on demand, so the first
+        append to a corpus that does not exist yet succeeds instead of
+        discarding a page already fetched from GitHub.
         """
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(event))
             handle.write("\n")

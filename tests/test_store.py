@@ -42,6 +42,21 @@ def discussion_store(tmp_path: Path) -> Store:
     return store
 
 
+def test_open_creates_missing_corpus_directory(tmp_path: Path) -> None:
+    """Opening a database under an absent directory creates it.
+
+    When: a store is opened at a path whose parent does not exist
+    Then: an empty-ledger rebuild runs instead of failing to open the file
+    """
+    store = Store.open(tmp_path / "corpus" / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(tmp_path / "corpus" / "fetch.jsonl")
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "corpus" / "routing.jsonl")
+
+    store.rebuild_from_ledgers(fetch, routing)
+
+    assert store.all_issues_and_prs() == []
+
+
 def test_rebuild_populates_tables(store: Store) -> None:
     """A rebuild replays every raw-node kind into its table.
 

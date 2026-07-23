@@ -37,6 +37,19 @@ def test_reopen_appends(tmp_path: Path) -> None:
     assert list(second) == [{"n": 1}, {"n": 2}]
 
 
+def test_append_creates_missing_corpus_directory(tmp_path: Path) -> None:
+    """Appending into a directory that does not exist yet succeeds.
+
+    When: a ledger under an absent corpus directory is appended to
+    Then: the directory is created and the event reads back
+    """
+    ledger: Ledger[dict[str, int]] = Ledger(tmp_path / "corpus" / "events.jsonl")
+
+    ledger.append({"n": 1})
+
+    assert list(ledger) == [{"n": 1}]
+
+
 def test_sync_missing_file_is_noop(tmp_path: Path) -> None:
     """Syncing a never-appended ledger neither raises nor creates a file.
 

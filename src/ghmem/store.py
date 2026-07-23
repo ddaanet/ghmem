@@ -76,7 +76,14 @@ class Store:
 
     @classmethod
     def open(cls, path: Path) -> Store:
-        """Open (creating if absent) the SQLite database at `path`."""
+        """Open (creating if absent) the SQLite database at `path`.
+
+        Creates the containing directory too: SQLite cannot create a
+        database inside a directory that is not there, so without this
+        a fresh checkout fails every read command with a driver-level
+        "unable to open database file" rather than an empty corpus.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
         engine = create_engine(
             f"sqlite:///{path}", connect_args={"timeout": BUSY_TIMEOUT_SECONDS}
         )
