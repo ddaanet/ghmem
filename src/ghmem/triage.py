@@ -32,7 +32,8 @@ from ghmem.ledger import (
     RouteEvent,
     RoutingEvent,
 )
-from ghmem.show import DIFF_BODY_MAX_CHARS, diff_body_dropped, render
+from ghmem.show import render
+from ghmem.show_diff import DIFF_BODY_MAX_CHARS, diff_body_dropped
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import Store
 

@@ -13,7 +13,8 @@ import pytest
 from ghmem import triage
 from ghmem.aliases import IssueOrPRNumber
 from ghmem.ledger import DispatchedData, FetchEvent, Ledger, RoutingEvent
-from ghmem.show import DIFF_BODY_MAX_CHARS, _cut_diff_body, render
+from ghmem.show import render
+from ghmem.show_diff import DIFF_BODY_MAX_CHARS, _cut_diff_body
 from ghmem.standing import build_standing
 from ghmem.store import Store
 from tests.diff_fixtures import (
@@ -130,7 +131,7 @@ def test_dispatch_records_what_the_diff_valve_dropped(tmp_path: Path) -> None:
       and its whole packet still fits the batch budget
     Then: the dispatched event is tagged fit, and its
       diff_valve_dropped equals the drop computed independently from
-      the fixture generator and `show._cut_diff_body`
+      the fixture generator and `show_diff._cut_diff_body`
     """
     store, routing = _diff_session(tmp_path, diff_lines=_VALVE_DIFF_LINES)
     full = big_diff_text(_VALVE_DIFF_LINES)

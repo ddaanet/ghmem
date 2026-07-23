@@ -9,7 +9,8 @@ from ghmem.aliases import IssueOrPRNumber
 from ghmem.cli import main
 from ghmem.exceptions import IssueOrPRNotFoundError
 from ghmem.ledger import FetchEvent, Ledger, RoutingEvent
-from ghmem.show import DIFF_BODY_MAX_CHARS, _cut_diff_body, render
+from ghmem.show import render
+from ghmem.show_diff import DIFF_BODY_MAX_CHARS, _cut_diff_body
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import Store
 from tests.diff_fixtures import (
