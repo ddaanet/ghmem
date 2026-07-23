@@ -1,5 +1,6 @@
 """Test the SQLite mirror: rebuild-from-ledgers and the query API."""
 
+import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
@@ -55,6 +56,45 @@ def test_open_creates_missing_corpus_directory(tmp_path: Path) -> None:
     store.rebuild_from_ledgers(fetch, routing)
 
     assert store.all_issues_and_prs() == []
+
+
+PARENT_KEYS = [
+    ("comment", "item_id"),
+    ("review", "pr_id"),
+    ("review_comment", "review_id"),
+    ("reaction", "subject_id"),
+    ("cross_ref", "src_id"),
+    ("cross_ref", "dst_id"),
+    ("discussion_comment", "discussion_id"),
+]
+"""Every column in the schema holding the id of a row's parent.
+
+The heat query correlates a subquery per metric per item, so each of
+these is looked up once per item scored and a table scan on any of
+them makes `heat` unusable at corpus scale. Two of them are served by
+the leading column of a composite primary key rather than by a
+declared index, which is why the test below asserts the plan SQLite
+chooses instead of the presence of `index=True`.
+"""
+
+
+@pytest.mark.parametrize(("table", "column"), PARENT_KEYS)
+def test_parent_key_lookup_is_indexed(tmp_path: Path, table: str, column: str) -> None:
+    """Looking a child row up by its parent's id never scans the table.
+
+    When: SQLite plans an equality lookup on each parent-key column
+    Then: every plan is a SEARCH through an index, not a SCAN
+    """
+    store = Store.open(tmp_path / "cache.sqlite")
+    fetch: Ledger[FetchEvent] = Ledger(FIXTURE)
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
+    store.rebuild_from_ledgers(fetch, routing)
+    query = f"EXPLAIN QUERY PLAN SELECT 1 FROM {table} WHERE {column} = ''"  # noqa: S608
+
+    with sqlite3.connect(tmp_path / "cache.sqlite") as connection:
+        plan = connection.execute(query).fetchall()
+
+    assert [row[-1] for row in plan if str(row[-1]).startswith("SCAN")] == []
 
 
 def test_rebuild_populates_tables(store: Store) -> None:

@@ -8,6 +8,19 @@ they would a plain dataclass.
 
 `ingest.py` owns turning raw GraphQL JSON into these entities and
 replaying them into SQLite; this module only owns what they *are*.
+
+Every column holding a parent's id is indexed. The heat query
+correlates one subquery per metric per item, so an unindexed parent
+key costs a full scan of the child table for every item scored:
+against the live corpus `heat` had not finished after ten minutes, and
+took twelve seconds once these indexes existed.
+
+Two parent keys carry no declaration because they need none.
+`Reaction.subject_id` and `CrossRef.src_id` are the leading columns of
+their composite primary keys, so SQLite's automatic index over that
+key already serves a lookup by them. That is a consequence of the
+column order in those keys rather than a decision recorded anywhere —
+reordering either primary key would quietly reintroduce a table scan.
 """
 
 import json
@@ -160,7 +173,7 @@ class Comment(Base):
     """A general issue/PR comment."""
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
-    item_id: Mapped[GraphQLId]
+    item_id: Mapped[GraphQLId] = mapped_column(index=True)
     author: Mapped[str]
     created_at: Mapped[datetime]
     updated_at: Mapped[datetime]
@@ -172,7 +185,7 @@ class Review(Base):
     """A pull-request review."""
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
-    pr_id: Mapped[GraphQLId]
+    pr_id: Mapped[GraphQLId] = mapped_column(index=True)
     author: Mapped[str]
     state: Mapped[str]
     submitted_at: Mapped[datetime]
@@ -183,7 +196,7 @@ class ReviewComment(Base):
     """A single comment left on a pull-request review."""
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
-    review_id: Mapped[GraphQLId]
+    review_id: Mapped[GraphQLId] = mapped_column(index=True)
     author: Mapped[str]
     created_at: Mapped[datetime]
     updated_at: Mapped[datetime]
@@ -203,7 +216,7 @@ class CrossRef(Base):
     """A cross-reference from one issue/PR to another (e.g. "closes")."""
 
     src_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
-    dst_id: Mapped[GraphQLId] = mapped_column(primary_key=True)
+    dst_id: Mapped[GraphQLId] = mapped_column(primary_key=True, index=True)
     kind: Mapped[str] = mapped_column(primary_key=True)
 
 
@@ -244,7 +257,7 @@ class DiscussionComment(Base):
     """A comment on a discussion."""
 
     id: Mapped[GraphQLId] = mapped_column(primary_key=True)
-    discussion_id: Mapped[GraphQLId]
+    discussion_id: Mapped[GraphQLId] = mapped_column(index=True)
     parent_id: Mapped[GraphQLId | None]
     author: Mapped[str]
     created_at: Mapped[datetime]
