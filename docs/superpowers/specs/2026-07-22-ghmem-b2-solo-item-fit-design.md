@@ -83,10 +83,10 @@ now cut at the last newline at or before the cap. A single line longer
 than the cap therefore renders as no body at all, followed by the
 marker.
 
-**A cap of zero means no body.** `diff_max_chars=0` emits the fence and
-the `… [diff truncated] …` marker with nothing between them. The
-diffstat file list still renders in full. This is the floor render the
-fit computation measures against.
+**A cap of zero means no body.** `diff_max_chars=0` emits an empty
+fence followed by the `… [diff truncated] …` marker. The diffstat file
+list still renders in full. This is the floor render the fit
+computation measures against.
 
 ### The fit path in `serve_next`
 

@@ -66,6 +66,17 @@ def diff_standing_table(diff_store: Store) -> StandingTable:
     return build_standing(diff_store)
 
 
+def _fenced_diff_body(output: str) -> str:
+    """Return what `output`'s ```diff fence encloses, marker excluded.
+
+    Slicing on the fences rather than on the truncation marker is what
+    makes the length assertions mean the cap: the marker renders below
+    the closing fence, so slicing up to it would count the fence into
+    the body and overstate it by four characters.
+    """
+    return output.split("```diff\n", 1)[1].split("\n```", 1)[0]
+
+
 def test_renders_standing_annotations(
     store: Store, standing_table: StandingTable
 ) -> None:
@@ -129,13 +140,34 @@ def test_diff_body_cut_at_a_whole_line_within_the_cap(
     )
 
     assert "… [diff truncated] …" in output
-    body = output.split("```diff\n", 1)[1].split("\n… [diff truncated]", 1)[0]
+    body = _fenced_diff_body(output)
     assert len(body) <= cap
     assert len(body) > len(DIFF_HEADER_LINE)
     body_lines = body.split("\n")
     assert body_lines[0] == DIFF_HEADER_LINE
     for index, line in enumerate(body_lines[1:]):
         assert line == diff_body_line(index)
+
+
+def test_truncation_marker_sits_below_the_closing_fence(
+    diff_store: Store, diff_standing_table: StandingTable
+) -> None:
+    """The truncation marker is a note about the diff, not a line of it.
+
+    A unified diff has no line beginning with `…`, so a marker inside
+    the fence is a line the reader has to know to discount, and a
+    `diff`-highlighting renderer styles it as patch text regardless.
+
+    When: a PR whose diff body was cut is rendered
+    Then: the marker follows the fence that closes the diff block, with
+      nothing of the body after it
+    """
+    output = render(
+        diff_store, diff_standing_table, IssueOrPRNumber(1), diff_max_chars=0
+    )
+
+    marker = output.index("… [diff truncated] …")
+    assert output[:marker].endswith("```\n")
 
 
 def test_diff_max_chars_zero_renders_the_file_list_and_no_body(
@@ -199,7 +231,7 @@ def test_cap_on_a_newline_index_keeps_the_whole_line_it_ends(
         diff_store, diff_standing_table, IssueOrPRNumber(1), diff_max_chars=cap
     )
 
-    body = output.split("```diff\n", 1)[1].split("\n… [diff truncated]", 1)[0]
+    body = _fenced_diff_body(output)
     assert len(body) == cap
 
 

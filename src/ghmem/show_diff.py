@@ -36,9 +36,16 @@ def render_diff(
     Issues have no diff — `PRDiffNotFoundError` means the section is
     omitted entirely. The diffstat file list always renders in full,
     whatever the cap: it is the part of a diff that keeps its signal
-    when the body is gone. The truncation marker follows the body when
-    the cut fired here, or when the fetched diff was already
+    when the body is gone. The truncation marker follows the closing
+    fence when the cut fired here, or when the fetched diff was already
     `truncated`.
+
+    The marker sits **outside** the fence because it is not diff. A
+    unified diff has no line that starts with `…`, so inside the fence
+    it is a line the reader has to recognise as not being part of the
+    patch — and a `diff`-highlighting renderer marks it up as one
+    anyway. Below the fence it reads as what it is: a note about the
+    block above it.
 
     The (possibly empty) body is appended to `lines` unconditionally,
     even when it is `""`, rather than only `if body:`. That keeps the
@@ -55,9 +62,9 @@ def render_diff(
     body, cut = _cut_diff_body(diff.diff_text, diff_max_chars)
     lines.append("```diff")
     lines.append(body)
+    lines.append("```")
     if cut or diff.truncated:
         lines.append("… [diff truncated] …")
-    lines.append("```")
     lines.append("")
     return lines
 
