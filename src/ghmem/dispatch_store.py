@@ -13,6 +13,7 @@ conditional insert, and the append-before-commit ordering.
 """
 
 import hashlib
+from dataclasses import dataclass
 from typing import cast
 
 from sqlalchemy import CursorResult, Engine, exists, func, select
@@ -20,9 +21,10 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId
+from ghmem.exceptions import UnknownSnapshotError
 from ghmem.ingest import apply_routing_event
-from ghmem.ledger import DispatchedEvent, Ledger, RoutingEvent
-from ghmem.models import Dispatch, IssueOrPR, Route, Topic
+from ghmem.ledger import CloseEvent, DispatchedEvent, Ledger, RoutingEvent
+from ghmem.models import Dispatch, IssueOrPR, Route, Snapshot, Topic
 
 
 def record_routing_event(
@@ -230,6 +232,67 @@ def topic_digest(engine: Engine, name: str) -> str:
     """Open a session and hash topic `name`'s current routed-item set."""
     with Session(engine) as session:
         return _topic_digest(session, name)
+
+
+@dataclass(frozen=True, slots=True)
+class CloseOutcome:
+    """The result of a `close_topic` compare-and-set attempt.
+
+    `cleared` tells the two outcomes apart: `True` means the topic's
+    dirty flag was cleared and a `CloseEvent` was appended; `False`
+    means the topic changed since its snapshot and nothing was
+    written at all.
+    """
+
+    topic: str
+    cleared: bool
+
+
+def close_topic(
+    engine: Engine, routing: Ledger[RoutingEvent], token: str
+) -> CloseOutcome:
+    """Clear `token`'s topic dirty flag if its snapshot is still current.
+
+    Raises `UnknownSnapshotError` if `token` names no `Snapshot` row —
+    nothing that `topic.assemble` ever minted.
+
+    The compare-and-set: the snapshot's stored digest is checked
+    against the topic's *live* digest, recomputed here and now, never
+    against itself. A mismatch means the topic changed after the
+    snapshot was taken — writes nothing, appends nothing, commits
+    nothing, and returns `cleared=False` so the caller can tell the
+    close was declined rather than that there was nothing to close.
+
+    A match appends exactly one `CloseEvent`, applies it through the
+    shared reducer so the live write and a cold rebuild can never
+    disagree, and commits. The ledger append happens *before* the
+    mirror's commit — durable-truth-first, the same ordering
+    `record_routing_event` uses — so a crash between the two loses
+    nothing: the next rebuild replays the event that already landed.
+
+    The read, the decision, the ledger append, and the mirror commit
+    all share one `Session`, the compare-and-set sibling of
+    `reserve_dispatch`: splitting the read from the write would open a
+    window for the topic to change in between. No `IMMEDIATE`
+    transaction is needed, unlike `reserve_dispatch` — `close` never
+    races `route`, and distinct synthesis agents close distinct
+    topics.
+    """
+    with Session(engine) as session:
+        snapshot = session.get(Snapshot, token)
+        if snapshot is None:
+            raise UnknownSnapshotError(token)
+        current = _topic_digest(session, snapshot.topic)
+        if current != snapshot.digest:
+            return CloseOutcome(snapshot.topic, cleared=False)
+        event: CloseEvent = {
+            "type": "close",
+            "data": {"token": token, "topic": snapshot.topic},
+        }
+        apply_routing_event(session, event)
+        routing.append(event)
+        session.commit()
+        return CloseOutcome(snapshot.topic, cleared=True)
 
 
 def routed_items(engine: Engine, name: str) -> list[tuple[IssueOrPR, Route]]:

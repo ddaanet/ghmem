@@ -44,6 +44,7 @@ from ghmem.aliases import GraphQLId, JsonObject
 from ghmem.exceptions import UnknownRoutingEventError
 from ghmem.ledger import (
     NO_SIGNAL,
+    CloseEvent,
     DispatchedEvent,
     FetchEvent,
     Ledger,
@@ -137,6 +138,7 @@ _ROUTING_BY_TYPE: Final[dict[str, type]] = {
     "route": RouteEvent,
     "requeue": RequeueEvent,
     "snapshot": SnapshotEvent,
+    "close": CloseEvent,
 }
 """Each routing tag mapped to the TypedDict that declares its shape.
 
@@ -197,6 +199,11 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
     `"snapshot"` upserts a `Snapshot` row by token — a plain record of
     what `topic.assemble` minted, touching no `Topic.dirty` flag.
 
+    `"close"` clears the named topic's `Topic.dirty` flag
+    unconditionally on the event's presence — no currency recheck
+    here, since `close_topic` already performed that compare-and-set
+    before ever writing this event. A missing `Topic` row is a no-op.
+
     Any other tag raises: the union grows a member per dispatch part,
     and a tag with no branch here means the ledger is ahead of the code,
     not that a verdict can be guessed.
@@ -251,6 +258,13 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
         session.merge(
             Snapshot(token=data["token"], topic=data["topic"], digest=data["digest"])
         )
+        return
+
+    if event["type"] == "close":
+        data = event["data"]
+        topic = session.get(Topic, data["topic"])
+        if topic is not None:
+            topic.dirty = False
         return
 
     raise UnknownRoutingEventError(event_type)

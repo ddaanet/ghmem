@@ -246,8 +246,27 @@ class SnapshotEvent(TypedDict):
     data: SnapshotData
 
 
-type RoutingEvent = DispatchedEvent | RouteEvent | RequeueEvent | SnapshotEvent
-"""The routing-ledger event union.
+class CloseData(TypedDict):
+    """A synthesis-complete verdict for one snapshot token.
 
-Grows in Part C (`CloseEvent`). Do not add members outside that part.
-"""
+    No `cleared` field: the event's very existence is the clean
+    outcome. A stale `close_topic` call writes nothing at all, so
+    there is never a `CloseEvent` recording a rejection to distinguish
+    from one recording success.
+    """
+
+    token: str
+    topic: str
+
+
+class CloseEvent(TypedDict):
+    """A ghmem-constructed record that a topic's synthesis was completed."""
+
+    type: Literal["close"]
+    data: CloseData
+
+
+type RoutingEvent = (
+    DispatchedEvent | RouteEvent | RequeueEvent | SnapshotEvent | CloseEvent
+)
+"""The routing-ledger event union."""

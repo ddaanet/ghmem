@@ -10,7 +10,9 @@ sync client (`github.py`) — none is a lookup miss, so none subclasses
 (`triage.py`): a `route` request inconsistent with current routing
 state is bad input too. `TopicNotRoutedError` belongs to topic
 synthesis (`topic.py`): assembling a topic with no routed items is bad
-input too.
+input too. `UnknownSnapshotError` belongs to topic close
+(`dispatch_store.py`): closing a token with no matching `Snapshot` row
+is bad input too.
 """
 
 from datetime import datetime
@@ -188,3 +190,17 @@ class TopicNotRoutedError(ValueError):
         """Name the topic that carries no routed items."""
         super().__init__(f"topic {name!r} has no routed items")
         self.name = name
+
+
+class UnknownSnapshotError(ValueError):
+    """Raised when `close_topic` is given a token with no matching Snapshot.
+
+    Mirrors `TopicNotRoutedError`: a token `topic.assemble` never
+    minted is bad input to the command, not a lookup miss over a
+    corpus row, hence `ValueError` rather than `LookupError`.
+    """
+
+    def __init__(self, token: str) -> None:
+        """Name the token that carries no snapshot."""
+        super().__init__(f"no snapshot for token {token!r}")
+        self.token = token

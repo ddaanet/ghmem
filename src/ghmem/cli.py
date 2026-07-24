@@ -12,6 +12,7 @@ from ghmem.exceptions import (
     RateLimitError,
     TopicNotRoutedError,
     TriageSessionError,
+    UnknownSnapshotError,
 )
 from ghmem.github import GitHubClient
 from ghmem.heat import rank
@@ -227,6 +228,36 @@ def topic(name: str) -> None:
         click.echo(f"ghmem topic: {exc}", err=True)
         raise SystemExit(1) from exc
     click.echo(output, nl=False)
+
+
+@main.command()
+@click.argument("token")
+def close(token: str) -> None:
+    """Record TOKEN's synthesis as complete, regenerating the topic index.
+
+    A compare-and-set against the snapshot TOKEN names: if the topic
+    changed since that snapshot was taken, nothing is written and the
+    stale outcome is reported on stderr, exit 0 — re-run `ghmem topic`
+    to pick up the change. TOKEN naming no snapshot at all is an
+    actual error: printed to stderr, exit 1, the ledger untouched.
+    """
+    store = Store.open(sqlite_path())
+    routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
+    try:
+        outcome = store.close_topic(routing, token)
+    except UnknownSnapshotError as exc:
+        click.echo(f"ghmem close: {exc}", err=True)
+        raise SystemExit(1) from exc
+    if outcome.cleared:
+        directory = design_dir()
+        summary = build_index(store, directory)
+        (directory / "INDEX.md").write_text(render_index(summary), encoding="utf-8")
+        click.echo(f"closed {outcome.topic}")
+    else:
+        click.echo(
+            f"stale: {outcome.topic} changed since its snapshot; re-run ghmem topic",
+            err=True,
+        )
 
 
 def _emit_served(result: ServeResult) -> None:

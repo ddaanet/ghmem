@@ -147,18 +147,19 @@ def test_every_dispatch_carries_its_own_packet_size(
 def test_unhandled_event_kind_is_rejected_not_routed(tmp_path: Path) -> None:
     """A routing event kind with no reducer branch stops the replay.
 
-    The `RoutingEvent` union grows in Parts B and C, and every new
-    member has to extend the reducer. A `close` event — Part C's shape,
-    carrying no verdict at all — must not fall through into the `route`
+    The `RoutingEvent` union grows across parts, and every new member
+    has to extend the reducer. An unmistakably-unknown tag with a
+    `route`-shaped payload must not fall through into the `route`
     branch and invent a Route and a dirty Topic out of a topic name.
 
-    When: the routing ledger carries a Part C-shaped `close` event
+    When: the routing ledger carries a `route`-shaped event tagged
+      with a kind no member declares
     Then: rebuild raises `UnknownRoutingEventError`, and no Route row
       is created for it
     """
     routing_path = tmp_path / "off_union_routing.jsonl"
     routing_path.write_text(
-        '{"type": "close", "data": {"session": "s1", "item_id": "I_1", '
+        '{"type": "bogus", "data": {"session": "s1", "item_id": "I_1", '
         '"verdict": "softwrap", "note": ""}}\n',
         encoding="utf-8",
     )

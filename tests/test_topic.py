@@ -1,6 +1,7 @@
 """Test `topic.assemble`: routed-topic synthesis-context assembly."""
 
 import hashlib
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -8,11 +9,12 @@ from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import IssueOrPRNumber
-from ghmem.exceptions import TopicNotRoutedError
+from ghmem.dispatch_store import CloseOutcome
+from ghmem.exceptions import TopicNotRoutedError, UnknownSnapshotError
 from ghmem.heat import HEAT_WEIGHTS
 from ghmem.heat_query import heat_scores_for
 from ghmem.ledger import FetchEvent, Ledger, RouteEvent, RoutingEvent
-from ghmem.models import IssueOrPR
+from ghmem.models import IssueOrPR, Topic
 from ghmem.show import render
 from ghmem.standing import build_standing
 from ghmem.store import Store
@@ -208,3 +210,138 @@ def test_assemble_empty_topic_raises(tmp_path: Path) -> None:
         assemble(store, routing, "nonexistent")
 
     assert list(routing) == []
+
+
+def _token(output: str) -> str:
+    """Extract the minted snapshot token from `assemble`'s first line."""
+    return output.splitlines()[0].removeprefix("snapshot: ")
+
+
+def test_close_clean_clears_dirty_and_appends_one_close_event(tmp_path: Path) -> None:
+    """A clean close clears the topic's dirty flag and appends one CloseEvent.
+
+    When: I_1 and I_2 are routed to "softwrap" and assemble mints a token
+    Then: close_topic returns CloseOutcome("softwrap", cleared=True),
+      the Topic row is dirty=False, and exactly one CloseEvent is
+      appended to the routing ledger
+    """
+    store, routing = _store(tmp_path)
+    _route(store, routing, "I_1", "note 1")
+    _route(store, routing, "I_2", "note 2")
+    token = _token(assemble(store, routing, "softwrap"))
+
+    outcome = store.close_topic(routing, token)
+
+    assert outcome == CloseOutcome("softwrap", cleared=True)
+    with Session(_engine(tmp_path)) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=False)
+    close_events = [e for e in routing if e["type"] == "close"]
+    assert len(close_events) == 1
+    assert close_events[0]["data"] == {"token": token, "topic": "softwrap"}
+
+
+def test_close_stale_after_fresh_route_writes_nothing(tmp_path: Path) -> None:
+    """A route landing after the snapshot makes the close stale.
+
+    [mutation anchors: digest drops membership; close_topic appends on
+    the stale path; close_topic compares the current digest against
+    itself.]
+
+    When: I_1 and I_2 are routed and assemble mints a token, then a
+      third item, I_3, is routed to "softwrap" too, then close_topic
+      is called with the (now stale) token
+    Then: it returns cleared=False, the topic stays dirty, and no
+      CloseEvent is appended
+    """
+    store, routing = _store(tmp_path)
+    _route(store, routing, "I_1", "note 1")
+    _route(store, routing, "I_2", "note 2")
+    token = _token(assemble(store, routing, "softwrap"))
+    _route(store, routing, "I_3", "note 3")
+
+    outcome = store.close_topic(routing, token)
+
+    assert outcome == CloseOutcome("softwrap", cleared=False)
+    with Session(_engine(tmp_path)) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
+    assert all(e["type"] != "close" for e in routing)
+
+
+def test_close_stale_after_activity_writes_nothing(tmp_path: Path) -> None:
+    """A routed item's own activity after the snapshot also makes it stale.
+
+    [mutation anchor: digest drops `updated_at`.]
+
+    When: I_1 and I_2 are routed and assemble mints a token, then I_1's
+      `updated_at` is bumped by a direct mirror UPDATE — standing in
+      for a re-fetch that would otherwise require live GitHub activity
+      — then close_topic is called with the (now stale) token
+    Then: it returns cleared=False, the topic stays dirty, and no
+      CloseEvent is appended
+    """
+    store, routing = _store(tmp_path)
+    _route(store, routing, "I_1", "note 1")
+    _route(store, routing, "I_2", "note 2")
+    token = _token(assemble(store, routing, "softwrap"))
+    engine = _engine(tmp_path)
+    with Session(engine) as session:
+        item = session.get(IssueOrPR, "I_1")
+        assert item is not None
+        item.updated_at = item.updated_at + timedelta(days=1)
+        session.commit()
+
+    outcome = store.close_topic(routing, token)
+
+    assert outcome == CloseOutcome("softwrap", cleared=False)
+    with Session(engine) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
+    assert all(e["type"] != "close" for e in routing)
+
+
+def test_close_unknown_token_raises(tmp_path: Path) -> None:
+    """Closing a token no snapshot ever minted raises and appends nothing.
+
+    When: close_topic is called with a token nothing minted
+    Then: UnknownSnapshotError propagates and the ledger stays untouched
+    """
+    store, routing = _store(tmp_path)
+
+    with pytest.raises(UnknownSnapshotError):
+        store.close_topic(routing, "nope")
+
+    assert list(routing) == []
+
+
+def test_close_clean_matches_a_cold_rebuild(tmp_path: Path) -> None:
+    """A clean close's Topic row matches what replaying the ledger gives.
+
+    [mutation anchor: reducer close branch no-ops — replay would leave
+    the topic dirty.]
+
+    Extends `test_routing_live.test_live_writes_match_a_cold_rebuild`
+    to cover the close event: the live write and a cold rebuild from
+    the ledger it produced must agree that the topic is clean.
+
+    When: I_1 and I_2 are routed, assemble mints a token, and
+      close_topic cleanly closes it
+    Then: rebuilding the store from the ledger those writes produced
+      leaves the Topic row dirty=False both live and rebuilt
+    """
+    store, routing = _store(tmp_path)
+    _route(store, routing, "I_1", "note 1")
+    _route(store, routing, "I_2", "note 2")
+    token = _token(assemble(store, routing, "softwrap"))
+    store.close_topic(routing, token)
+
+    engine = _engine(tmp_path)
+    with Session(engine) as session:
+        live = session.get(Topic, "softwrap")
+
+    fetch: Ledger[FetchEvent] = Ledger(FIXTURE)
+    store.rebuild_from_ledgers(fetch, routing)
+
+    with Session(engine) as session:
+        rebuilt = session.get(Topic, "softwrap")
+
+    assert live == Topic(name="softwrap", dirty=False)
+    assert live == rebuilt

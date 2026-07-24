@@ -79,7 +79,7 @@ def test_a_rejected_event_never_reaches_the_ledger(tmp_path: Path) -> None:
     store, routing = _live_store(tmp_path)
     off_union = cast(
         "RoutingEvent",
-        {"type": "close", "data": {"session": "s1", "item_id": "I_1"}},
+        {"type": "bogus", "data": {"session": "s1", "item_id": "I_1"}},
     )
 
     with pytest.raises(UnknownRoutingEventError):

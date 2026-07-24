@@ -29,6 +29,8 @@ from sqlalchemy.orm import Session
 from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 from ghmem.dispatch_store import (
     BUSY_TIMEOUT_SECONDS,
+    CloseOutcome,
+    close_topic,
     dispatch_for,
     dispatched_unrouted,
     record_routing_event,
@@ -341,3 +343,7 @@ class Store:
     def topic_digest(self, name: str) -> str:
         """Return topic `name`'s content digest over its routed items."""
         return topic_digest(self._engine, name)
+
+    def close_topic(self, routing: Ledger[RoutingEvent], token: str) -> CloseOutcome:
+        """Clear `token`'s topic dirty flag if its snapshot is still current."""
+        return close_topic(self._engine, routing, token)
