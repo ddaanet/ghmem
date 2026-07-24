@@ -62,6 +62,13 @@ toplevel), so an agent runs `ghmem` from the repo root and its writes
 land under `docs/design/` regardless. This matches the venv-activation
 pattern in the edify and handoff siblings' `.envrc` files.
 
+A `.envrc` edit takes effect only after Claude Code restarts (same as
+a new `.claude/agents/*.md` file) — its Bash tool's environment is
+fixed for the life of a session, so `PATH_add` will not resolve `ghmem`
+for an agent spawned inside the same session the line was added in.
+Confirmed live: restarting picked up both this line and the new agent
+definitions in one step.
+
 ## Agent: ghmem-triage (Sonnet)
 
 **Frontmatter.** `tools: Bash`; one PreToolUse hook (see The allowlist
@@ -163,8 +170,13 @@ stdin JSON and allows the call *iff* the command is a single `ghmem`
 invocation, via a positive character allowlist:
 
 ```
-^ghmem([[:space:]][A-Za-z0-9_./:=-]+)*$
+^ghmem([ \t][A-Za-z0-9_./:=-]+)*$
 ```
+
+The separator class is `[ \t]`, not `[[:space:]]`: POSIX `[[:space:]]`
+includes the newline character, which would let a `ghmem status\nrm
+-rf /`-style command slip through as a single match (a bats test
+caught this live).
 
 A match exits 0; anything else prints a reason to stderr and exits 2.
 The allowlist is positive by construction — none of `; & | $ ` `` ` ``
