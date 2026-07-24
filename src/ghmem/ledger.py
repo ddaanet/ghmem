@@ -231,9 +231,23 @@ class RequeueEvent(TypedDict):
     data: RequeueData
 
 
-type RoutingEvent = DispatchedEvent | RouteEvent | RequeueEvent
+class SnapshotData(TypedDict):
+    """A minted synthesis-context token, its topic, and its content digest."""
+
+    token: str
+    topic: str
+    digest: str
+
+
+class SnapshotEvent(TypedDict):
+    """A ghmem-constructed record of a minted topic snapshot."""
+
+    type: Literal["snapshot"]
+    data: SnapshotData
+
+
+type RoutingEvent = DispatchedEvent | RouteEvent | RequeueEvent | SnapshotEvent
 """The routing-ledger event union.
 
-Grows in Part C (`SnapshotEvent`, `CloseEvent`). Do not add members
-outside that part.
+Grows in Part C (`CloseEvent`). Do not add members outside that part.
 """

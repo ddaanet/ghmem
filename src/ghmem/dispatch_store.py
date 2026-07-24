@@ -12,6 +12,7 @@ conditional insert, and the append-before-commit ordering.
 `Store.heat_scores` delegates to `heat_query.py`.
 """
 
+import hashlib
 from typing import cast
 
 from sqlalchemy import CursorResult, Engine, exists, func, select
@@ -193,3 +194,56 @@ def topics(engine: Engine) -> list[Topic]:
     """Return every known topic, ordered by name."""
     with Session(engine) as session:
         return list(session.execute(select(Topic).order_by(Topic.name)).scalars())
+
+
+def _topic_digest(session: Session, name: str) -> str:
+    """Hash topic `name`'s current routed-item set into one content digest.
+
+    The single definition: `topic.assemble` never computes this a
+    second way, it only asks `topic_digest` for the result.
+
+    The join with `IssueOrPR` does two jobs at once — it drops routes
+    to items the (regenerable) fetch ledger no longer carries,
+    matching `routes()`'s corpus constraint, and it supplies each
+    item's `updated_at`, which `Route` itself does not carry.
+    `routed_items` filters by the same `verdict == name` join
+    predicate, so its item set can never disagree with what this
+    digest summarizes.
+
+    Ordering by `item_id` gives the hash a canonical input regardless
+    of SQLite's own row order, so the same routed set always hashes to
+    the same digest.
+    """
+    rows = session.execute(
+        select(Route.item_id, IssueOrPR.updated_at)
+        .join(IssueOrPR, IssueOrPR.id == Route.item_id)
+        .where(Route.verdict == name)
+        .order_by(Route.item_id)
+    ).all()
+    payload = "\n".join(
+        f"{item_id}\t{updated_at.isoformat()}" for item_id, updated_at in rows
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def topic_digest(engine: Engine, name: str) -> str:
+    """Open a session and hash topic `name`'s current routed-item set."""
+    with Session(engine) as session:
+        return _topic_digest(session, name)
+
+
+def routed_items(engine: Engine, name: str) -> list[tuple[IssueOrPR, Route]]:
+    """Return (item, route) pairs currently routed to topic `name`.
+
+    Shares `_topic_digest`'s join and `Route.verdict == name` predicate
+    exactly, so the item set this returns and the digest that
+    summarizes it can never disagree about membership.
+    """
+    with Session(engine) as session:
+        rows = session.execute(
+            select(IssueOrPR, Route)
+            .join(Route, Route.item_id == IssueOrPR.id)
+            .where(Route.verdict == name)
+            .order_by(Route.item_id)
+        ).all()
+    return [(item, route) for item, route in rows]

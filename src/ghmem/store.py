@@ -34,8 +34,10 @@ from ghmem.dispatch_store import (
     record_routing_event,
     reserve_dispatch,
     route_for,
+    routed_items,
     routes,
     session_usage,
+    topic_digest,
     topics,
 )
 from ghmem.exceptions import (
@@ -331,3 +333,11 @@ class Store:
     def topics(self) -> list[Topic]:
         """Return every known topic, ordered by name."""
         return topics(self._engine)
+
+    def routed_items(self, name: str) -> list[tuple[IssueOrPR, Route]]:
+        """Return (item, route) pairs currently routed to topic `name`."""
+        return routed_items(self._engine, name)
+
+    def topic_digest(self, name: str) -> str:
+        """Return topic `name`'s content digest over its routed items."""
+        return topic_digest(self._engine, name)

@@ -10,6 +10,7 @@ from ghmem.exceptions import (
     DiscussionNotFoundError,
     IssueOrPRNotFoundError,
     RateLimitError,
+    TopicNotRoutedError,
     TriageSessionError,
 )
 from ghmem.github import GitHubClient
@@ -28,6 +29,7 @@ from ghmem.standing import build_standing
 from ghmem.status import build_status, render_status
 from ghmem.store import Store
 from ghmem.sync import sync as run_sync
+from ghmem.topic import assemble
 from ghmem.triage import ServeResult, mint_session, record_verdict, serve_next
 
 
@@ -206,6 +208,25 @@ def route(token: str, number: int, verdict: str, note: str) -> None:
         click.echo(f"ghmem route: {exc}", err=True)
         raise SystemExit(1) from exc
     _emit_served(serve_next(store, routing, token))
+
+
+@main.command()
+@click.argument("name")
+def topic(name: str) -> None:
+    """Assemble NAME's synthesis context behind a freshly minted snapshot.
+
+    Prints the assembled context to stdout on success. NAME carrying
+    no routed items is an actual error: printed to stderr, exit 1, the
+    ledger untouched.
+    """
+    store = Store.open(sqlite_path())
+    routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
+    try:
+        output = assemble(store, routing, name)
+    except TopicNotRoutedError as exc:
+        click.echo(f"ghmem topic: {exc}", err=True)
+        raise SystemExit(1) from exc
+    click.echo(output, nl=False)
 
 
 def _emit_served(result: ServeResult) -> None:

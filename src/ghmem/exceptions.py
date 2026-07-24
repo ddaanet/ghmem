@@ -8,7 +8,9 @@ sync client (`github.py`) — none is a lookup miss, so none subclasses
 (`ingest.py`): a bad event tag is bad input, hence `ValueError`.
 `TriageSessionError` belongs to the triage session loop
 (`triage.py`): a `route` request inconsistent with current routing
-state is bad input too.
+state is bad input too. `TopicNotRoutedError` belongs to topic
+synthesis (`topic.py`): assembling a topic with no routed items is bad
+input too.
 """
 
 from datetime import datetime
@@ -172,3 +174,17 @@ class TriageSessionError(ValueError):
         request, not two.
         """
         return cls(f"#{number} was never fetched into the corpus", number=number)
+
+
+class TopicNotRoutedError(ValueError):
+    """Raised when `topic.assemble` finds no item currently routed to a topic.
+
+    Mirrors `UnknownRoutingEventError`: nothing to synthesize is bad
+    input to the command, not a lookup miss over a corpus row, hence
+    `ValueError` rather than `LookupError`.
+    """
+
+    def __init__(self, name: str) -> None:
+        """Name the topic that carries no routed items."""
+        super().__init__(f"topic {name!r} has no routed items")
+        self.name = name

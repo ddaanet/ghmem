@@ -319,6 +319,19 @@ class Topic(Base):
     dirty: Mapped[bool]
 
 
+class Snapshot(Base):
+    """A minted synthesis-context token for one topic, with its content digest.
+
+    Keyed on `token` rather than `topic`: a topic that is snapshotted,
+    edited, and re-snapshotted before the first synthesis lands must
+    keep both tokens resolvable, not overwrite the earlier one.
+    """
+
+    token: Mapped[str] = mapped_column(primary_key=True)
+    topic: Mapped[str]
+    digest: Mapped[str]
+
+
 @dataclass(frozen=True, slots=True)
 class HeatScore:
     """One item's heat score, with the per-metric breakdown behind it.

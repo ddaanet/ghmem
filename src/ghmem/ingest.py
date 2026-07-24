@@ -50,8 +50,9 @@ from ghmem.ledger import (
     RequeueEvent,
     RouteEvent,
     RoutingEvent,
+    SnapshotEvent,
 )
-from ghmem.models import Base, Dispatch, FetchFailed, Route, Topic
+from ghmem.models import Base, Dispatch, FetchFailed, Route, Snapshot, Topic
 from ghmem.raw_nodes import _RAW_BY_TYPE
 
 
@@ -135,6 +136,7 @@ _ROUTING_BY_TYPE: Final[dict[str, type]] = {
     "dispatched": DispatchedEvent,
     "route": RouteEvent,
     "requeue": RequeueEvent,
+    "snapshot": SnapshotEvent,
 }
 """Each routing tag mapped to the TypedDict that declares its shape.
 
@@ -192,6 +194,9 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
     error, so replay of a requeue stays idempotent — see `Dispatch`'s
     docstring for why the delete is load-bearing.
 
+    `"snapshot"` upserts a `Snapshot` row by token — a plain record of
+    what `topic.assemble` minted, touching no `Topic.dirty` flag.
+
     Any other tag raises: the union grows a member per dispatch part,
     and a tag with no branch here means the ledger is ahead of the code,
     not that a verdict can be guessed.
@@ -239,6 +244,13 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
         dispatch = session.get(Dispatch, GraphQLId(data["item_id"]))
         if dispatch is not None:
             session.delete(dispatch)
+        return
+
+    if event["type"] == "snapshot":
+        data = event["data"]
+        session.merge(
+            Snapshot(token=data["token"], topic=data["topic"], digest=data["digest"])
+        )
         return
 
     raise UnknownRoutingEventError(event_type)
