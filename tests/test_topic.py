@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import IssueOrPRNumber
@@ -13,49 +13,12 @@ from ghmem.dispatch_store import CloseOutcome
 from ghmem.exceptions import TopicNotRoutedError, UnknownSnapshotError
 from ghmem.heat import HEAT_WEIGHTS
 from ghmem.heat_query import heat_scores_for
-from ghmem.ledger import FetchEvent, Ledger, RouteEvent, RoutingEvent
-from ghmem.models import IssueOrPR, Topic
+from ghmem.ledger import FetchEvent, Ledger
+from ghmem.models import IssueOrPR, Route, Topic
 from ghmem.show import render
 from ghmem.standing import build_standing
-from ghmem.store import Store
 from ghmem.topic import assemble
-
-FIXTURE = Path(__file__).parent / "fixtures" / "heat_corpus.jsonl"
-SHOW_FIXTURE = Path(__file__).parent / "fixtures" / "show_corpus.jsonl"
-
-
-def _store(
-    tmp_path: Path, fixture: Path = FIXTURE
-) -> tuple[Store, Ledger[RoutingEvent]]:
-    """Return a Store and its routing ledger, rebuilt from `fixture`."""
-    store = Store.open(tmp_path / "cache.sqlite")
-    fetch: Ledger[FetchEvent] = Ledger(fixture)
-    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
-    store.rebuild_from_ledgers(fetch, routing)
-    return store, routing
-
-
-def _engine(tmp_path: Path) -> Engine:
-    """Return a fresh engine on the mirror `_store` built under `tmp_path`."""
-    return create_engine(f"sqlite:///{tmp_path / 'cache.sqlite'}")
-
-
-def _route(
-    store: Store, routing: Ledger[RoutingEvent], item_id: str, note: str
-) -> None:
-    """Route `item_id` to "softwrap" live, carrying `note`."""
-    store.record_routing_event(
-        routing,
-        RouteEvent(
-            type="route",
-            data={
-                "session": "s1",
-                "item_id": item_id,
-                "verdict": "softwrap",
-                "note": note,
-            },
-        ),
-    )
+from tests.topic_helpers import FIXTURE, SHOW_FIXTURE, _engine, _route, _store, _token
 
 
 def test_assemble_header_carries_the_minted_token(tmp_path: Path) -> None:
@@ -175,7 +138,10 @@ def test_assemble_snapshot_digest_matches_recomputation(tmp_path: Path) -> None:
     When: I_1 and I_2 are routed to "softwrap" and assemble is called
     Then: the SnapshotEvent's digest equals a sha256 computed here,
       independently of `dispatch_store._topic_digest`, over sorted
-      `(item_id, updated_at.isoformat())` pairs of the routed items
+      `(item_id, updated_at.isoformat())` pairs of the items actually
+      routed to "softwrap" — the membership is derived from the
+      `Route` rows, not hardcoded, so a future test routing a
+      different set can't silently pass
     """
     store, routing = _store(tmp_path)
     _route(store, routing, "I_1", "note 1")
@@ -185,9 +151,14 @@ def test_assemble_snapshot_digest_matches_recomputation(tmp_path: Path) -> None:
 
     snapshot = next(e for e in routing if e["type"] == "snapshot")
     with Session(_engine(tmp_path)) as session:
+        routed_ids = (
+            session.execute(select(Route.item_id).where(Route.verdict == "softwrap"))
+            .scalars()
+            .all()
+        )
         rows = session.execute(
             select(IssueOrPR.id, IssueOrPR.updated_at).where(
-                IssueOrPR.id.in_(["I_1", "I_2"])
+                IssueOrPR.id.in_(routed_ids)
             )
         ).all()
     payload = "\n".join(
@@ -210,11 +181,6 @@ def test_assemble_empty_topic_raises(tmp_path: Path) -> None:
         assemble(store, routing, "nonexistent")
 
     assert list(routing) == []
-
-
-def _token(output: str) -> str:
-    """Extract the minted snapshot token from `assemble`'s first line."""
-    return output.splitlines()[0].removeprefix("snapshot: ")
 
 
 def test_close_clean_clears_dirty_and_appends_one_close_event(tmp_path: Path) -> None:

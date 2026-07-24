@@ -98,8 +98,9 @@ def _render_item_line(
 
     `title` and the four counts come from `score` (`HeatScore`); dates,
     state, and author come from `item` (`IssueOrPR`); `note` comes from
-    `route`. `note` is always present here: `routed_items` only returns
-    real-topic verdicts, and `record_verdict` requires a note for those.
+    `route`. `note` is always present here: `routed_items` excludes
+    `NO_SIGNAL` routes, so every row it returns carries a real-topic
+    verdict, and `record_verdict` requires a note for those.
     """
     who = standing.annotation(item.author, item.created_at.date())
     line = (

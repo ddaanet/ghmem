@@ -1,11 +1,15 @@
 """Test the `ghmem close` CLI command."""
 
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from ghmem.cli import main
+from ghmem.models import IssueOrPR
 
 FIXTURE = Path(__file__).parent / "fixtures" / "heat_corpus.jsonl"
 
@@ -61,6 +65,45 @@ def test_close_clean_regenerates_index_and_recaps(
     written = (design / "INDEX.md").read_text(encoding="utf-8")
     assert "[softwrap](softwrap.md)" in written
     assert "*not yet synthesized*" not in written
+
+
+def test_close_stale_exits_zero_and_skips_index(
+    corpus: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A stale close exits 0, recaps on stderr, and never touches INDEX.md.
+
+    When: `ghmem topic softwrap` mints a snapshot token, then a routed
+      item's `updated_at` is bumped by a direct mirror UPDATE —
+      standing in for a re-fetch that would otherwise require live
+      GitHub activity, mirroring `test_close_stale_after_activity` at
+      the library level — and `ghmem close <tok>` is invoked with the
+      now-stale token
+    Then: the command exits 0, stdout carries no "closed", stderr
+      carries the "stale: ..." recap, and INDEX.md is not written —
+      "softwrap" stays unmarked as synthesized
+    """
+    design = tmp_path / "design"
+    design.mkdir()
+    monkeypatch.setenv("GHMEM_DESIGN_DIR", str(design))
+
+    runner = CliRunner()
+    topic_result = runner.invoke(main, ["topic", "softwrap"])
+    assert topic_result.exit_code == 0, topic_result.output
+    token = topic_result.output.splitlines()[0].removeprefix("snapshot: ")
+
+    engine = create_engine(f"sqlite:///{corpus / 'cache.sqlite'}")
+    with Session(engine) as session:
+        item = session.get(IssueOrPR, "I_1")
+        assert item is not None
+        item.updated_at = item.updated_at + timedelta(days=1)
+        session.commit()
+
+    result = runner.invoke(main, ["close", token])
+
+    assert result.exit_code == 0
+    assert "closed" not in result.stdout
+    assert "stale: softwrap changed since its snapshot" in result.stderr
+    assert not (design / "INDEX.md").exists()
 
 
 def test_close_unknown_token_exits_one(corpus: Path) -> None:

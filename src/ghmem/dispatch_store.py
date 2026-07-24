@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from ghmem.aliases import GraphQLId
 from ghmem.exceptions import UnknownSnapshotError
 from ghmem.ingest import apply_routing_event
-from ghmem.ledger import CloseEvent, DispatchedEvent, Ledger, RoutingEvent
+from ghmem.ledger import NO_SIGNAL, CloseEvent, DispatchedEvent, Ledger, RoutingEvent
 from ghmem.models import Dispatch, IssueOrPR, Route, Snapshot, Topic
 
 
@@ -209,8 +209,16 @@ def _topic_digest(session: Session, name: str) -> str:
     matching `routes()`'s corpus constraint, and it supplies each
     item's `updated_at`, which `Route` itself does not carry.
     `routed_items` filters by the same `verdict == name` join
-    predicate, so its item set can never disagree with what this
-    digest summarizes.
+    predicate — including the `verdict != NO_SIGNAL` exclusion below —
+    so its item set can never disagree with what this digest
+    summarizes. Both filters must change in lockstep.
+
+    `Route.verdict == name` already excludes `NO_SIGNAL` whenever
+    `name` is a real topic, since `NO_SIGNAL` can never equal a topic
+    name — but the explicit `!= NO_SIGNAL` here also blocks the
+    degenerate case where `name` itself is `"no-signal"`, which would
+    otherwise report a bogus "topic" of every reviewed-nothing-here
+    item.
 
     Ordering by `item_id` gives the hash a canonical input regardless
     of SQLite's own row order, so the same routed set always hashes to
@@ -219,7 +227,7 @@ def _topic_digest(session: Session, name: str) -> str:
     rows = session.execute(
         select(Route.item_id, IssueOrPR.updated_at)
         .join(IssueOrPR, IssueOrPR.id == Route.item_id)
-        .where(Route.verdict == name)
+        .where(Route.verdict == name, Route.verdict != NO_SIGNAL)
         .order_by(Route.item_id)
     ).all()
     payload = "\n".join(
@@ -298,15 +306,16 @@ def close_topic(
 def routed_items(engine: Engine, name: str) -> list[tuple[IssueOrPR, Route]]:
     """Return (item, route) pairs currently routed to topic `name`.
 
-    Shares `_topic_digest`'s join and `Route.verdict == name` predicate
-    exactly, so the item set this returns and the digest that
-    summarizes it can never disagree about membership.
+    Shares `_topic_digest`'s join and predicate exactly — including the
+    `verdict != NO_SIGNAL` exclusion — so the item set this returns and
+    the digest that summarizes it can never disagree about membership.
+    The two filters must change in lockstep.
     """
     with Session(engine) as session:
         rows = session.execute(
             select(IssueOrPR, Route)
             .join(Route, Route.item_id == IssueOrPR.id)
-            .where(Route.verdict == name)
+            .where(Route.verdict == name, Route.verdict != NO_SIGNAL)
             .order_by(Route.item_id)
         ).all()
     return [(item, route) for item, route in rows]
