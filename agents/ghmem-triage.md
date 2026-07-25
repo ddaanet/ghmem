@@ -53,6 +53,21 @@ A verdict is either a topic name or the reserved word `no-signal`.
 corpus encode no decision worth a topic doc. Route confidently to
 `no-signal` rather than manufacturing a topic to avoid it.
 
+But `no-signal` is a judgment about content, and volume is not content in
+either direction. A hundred-comment thread of "+1" is empty. A
+forty-comment off-topic fight can end with one maintainer sentence
+settling the behaviour, and that sentence is the whole item — micro's
+history has exactly this shape, and it is the miss that costs most,
+because nothing downstream will ever look at the item again. Read a
+thread to its end before calling it empty, and weigh a maintainer's last
+word above everything argued over it.
+
+So the two mistakes are not symmetric and not opposites. Minting a topic
+from thin material dilutes that topic; missing a ruling buried in noise
+loses it outright. Neither is avoided by leaning one way — ask only
+whether the text contains a decision, a rationale, or a contested
+position, and let the answer decide.
+
 Before proposing a *new* topic name, check the packet's current topic list
 for a near-duplicate. A topic that already covers the same ground should get
 the existing name, not a synonym.
