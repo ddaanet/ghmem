@@ -1,6 +1,6 @@
 ---
 name: ghmem-triage
-description: Routes one metered batch of ghmem corpus items to a topic or no-signal. Use when a `ghmem status` backlog needs triaging (fresh items, or a requeued batch after `triage --requeue`).
+description: Routes one metered batch of ghmem corpus items to a topic or no-signal. Use when a `ghmem status` backlog needs triaging (fresh items, or a requeued batch after `ghmem requeue`).
 tools: Bash
 model: sonnet
 hooks:
