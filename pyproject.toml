@@ -37,7 +37,14 @@ wrap-summaries = 80
 wrap-descriptions = 80
 
 [tool.ruff]
-exclude = ["plugin", ".claude", "plans/prototypes"]
+# `calibration` joins `plans/prototypes` as replay material rather than
+# library code: one-off analysis scripts, kept so a finding can be
+# re-derived instead of trusted. Excluding it also closes a gate hole —
+# `ruff check` took no path argument, so it was the only check reaching
+# outside `src` and `tests`, while `gate-inputs-hash` hashes only those.
+# A calibration script could turn `green` red without invalidating the
+# cache, which surfaces as an unrelated commit going red much later.
+exclude = ["plugin", ".claude", "plans/prototypes", "calibration"]
 output-format = "concise"
 unsafe-fixes = true
 

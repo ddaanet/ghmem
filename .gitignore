@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 tmp/
+# Rendered corpus items a calibration run measures. Regenerable from the
+# corpus by rerunning that run's measure.py, and large — both calibration
+# READMEs already say they are not kept.
+calibration/*/renders/

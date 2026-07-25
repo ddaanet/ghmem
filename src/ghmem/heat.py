@@ -2,19 +2,31 @@
 
 The ranking itself is one aggregate query, `Store.heat_scores`; this
 module owns only what that query cannot know, the relative weight of
-each metric. Weights pass in as parameters, so recalibrating them in
-subproject 4 changes the constants below and no SQL.
+each metric. Weights pass in as parameters, so changing the constants
+below never touches SQL.
+
+Calibrated 2026-07-25 against 198 read-only signal labels, and retained:
+no fitted vector ranked better than this one, and the fitted vector lost
+to it under cross-validation. See `docs/ghmem-heat-weights.md` — the
+result is a negative one, and the reasoning for keeping numbers that
+started out as guesses lives there rather than here.
 """
 
 from ghmem.models import HeatScore
 from ghmem.store import Store
 
+# Only `comments` has a coefficient the calibration could resolve. The
+# other four sit inside their own minimum detectable effect, so these
+# are values the evidence declines to improve on — not values it
+# confirms. Reweighting reorders topic-name minting, which
+# `record_verdict` makes permanent, so the bar for changing one is a
+# demonstrated gain and not a better point estimate.
 HEAT_WEIGHTS: dict[str, float] = {
-    "comments": 1.0,  # PROVISIONAL — calibrated in subproject 4
-    "reactions": 0.5,  # PROVISIONAL — calibrated in subproject 4
-    "participants": 2.0,  # PROVISIONAL — calibrated in subproject 4
-    "related_items": 3.0,  # PROVISIONAL — calibrated in subproject 4
-    "span_years": 1.0,  # PROVISIONAL — calibrated in subproject 4
+    "comments": 1.0,
+    "reactions": 0.5,
+    "participants": 2.0,
+    "related_items": 3.0,
+    "span_years": 1.0,
 }
 
 
