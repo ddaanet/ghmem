@@ -189,13 +189,23 @@ run_hook() {
   [ "$status" -eq 2 ]
 }
 
+# The next two close their body with exactly what their opener named, so the
+# delimiter's own character class is the only rule left that can turn them
+# down. Both would go through if it admitted the character they are about.
+
 @test "ghmem-only: blocks a delimiter that closes its own quoting" {
   # A quote inside the delimiter ends the single-quoted span, and what the
-  # shell then does with the rest is not what the hook read. Quoting holding
-  # all the way to the end of the word is the whole guarantee. The body closes
-  # with exactly what the opener named, so excluding the quote from the
-  # delimiter is the only rule left that can turn this down.
+  # shell then does with the rest of the line is not what the hook read.
   run run_hook "$(printf "ghmem route abc123 42 t <<'IT'S'\na note\nIT'S")"
+  [ "$status" -eq 2 ]
+}
+
+@test "ghmem-only: blocks a delimiter carrying a shell metacharacter" {
+  # Single quotes would in fact keep this inert — bash expands nothing in a
+  # delimiter word. The class is narrow anyway so that the hook's safety is
+  # visible in the pattern instead of resting on that argument.
+  # shellcheck disable=SC2016 # the literal $(...) is the point
+  run run_hook "$(printf 'ghmem route abc123 42 t <<%s\na note\n$(id)' "'\$(id)'")"
   [ "$status" -eq 2 ]
 }
 

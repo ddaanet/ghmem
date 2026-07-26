@@ -19,8 +19,15 @@
 # The opener names its own delimiter rather than being held to a fixed word.
 # A fixed one is a word a note may never contain, and a note is prose about a
 # corpus whose vocabulary nobody controls; the writer picking a word their own
-# note does not contain is the same guarantee without the exclusion. Any run
-# of non-whitespace will do, minus the quote that would end the quoting.
+# note does not contain is the same guarantee without the exclusion.
+#
+# The delimiter is held to letters, digits and underscores. Single quotes
+# would in fact make any byte but the quote itself inert — bash expands
+# nothing in a heredoc delimiter word and quote removal returns it verbatim,
+# so what this hook captures is what bash will match. But that safety is then
+# a proof about quoting rather than something visible in the pattern, and it
+# would rest entirely on the quote's exclusion. Nobody needs a delimiter with
+# a `$` in it, so the narrow class costs nothing and is checkable at sight.
 #
 # An empty body is refused as well. A heredoc carrying nothing is malformed
 # whichever verdict it accompanies: it opened a note and then supplied none.
@@ -32,13 +39,13 @@ tab=$'\t'
 sep="[ ${tab}]"
 arg="[A-Za-z0-9_./:=-]+"
 bare_re="^ghmem(${sep}${arg})*$"
-opener_re="^ghmem(${sep}${arg})*${sep}<<'([^'[:space:]]+)'$"
+opener_re="^ghmem(${sep}${arg})*${sep}<<'([A-Za-z0-9_]+)'$"
 
 block() {
   echo "ghmem-only: blocked — allowed are a bare 'ghmem ...' invocation and" \
-    "one ending \"<<'DELIM'\" for a DELIM of your choosing (any non-empty run" \
-    "of non-whitespace, no quote), carrying a non-empty note body closed by a" \
-    "final DELIM line and naming it nowhere else" \
+    "one ending \"<<'DELIM'\" for a DELIM of your choosing (letters, digits" \
+    "and underscores), carrying a non-empty note body closed by a final" \
+    "DELIM line and naming it nowhere else" \
     "(no chaining, substitution, pipes, or redirects)" >&2
   exit 2
 }

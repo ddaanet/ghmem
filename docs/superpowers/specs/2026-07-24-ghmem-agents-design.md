@@ -233,12 +233,22 @@ could turn it back into instructions is the delimiter line appearing
 before the end, so that is forbidden, as is anything following the
 terminator.
 
-`DELIM` is whatever the opener names — any non-empty run of
-non-whitespace, minus the quote that would end the quoting — and every
-rule above re-anchors to that captured token. A fixed delimiter would be
-a word a note may never contain, and a note is prose about a corpus
-whose vocabulary nobody controls; the writer picking a word their own
-note does not contain buys the same guarantee without the exclusion.
+`DELIM` is whatever the opener names — letters, digits and underscores —
+and every rule above re-anchors to that captured token. A fixed
+delimiter would be a word a note may never contain, and a note is prose
+about a corpus whose vocabulary nobody controls; the writer picking a
+word their own note does not contain buys the same guarantee without the
+exclusion.
+
+The class is narrower than it strictly has to be. Single quotes would
+make any byte but the quote itself inert, since bash expands nothing in
+a heredoc delimiter word and quote removal returns it verbatim, so what
+the hook captures is what bash matches — a differential test over `$(…)`,
+backticks, `>`, `|`, `&&`, `*`, `\` and `"` found no delimiter on which
+the two parses disagree. But that makes the hook's safety a proof about
+quoting rather than something visible in the pattern, resting entirely
+on one excluded character. Nobody needs a `$` in a delimiter, so the
+narrow class costs nothing.
 
 An empty body is refused as well. A heredoc carrying nothing is
 malformed whichever verdict it accompanies: it opened a note and then
