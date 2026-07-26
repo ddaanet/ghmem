@@ -225,9 +225,9 @@ def _resolve_note(note: str, *, from_stdin: bool) -> str:
     """Return the note to record, reading stdin when `--note` was given.
 
     Rejects the ways the pair can be malformed the same way
-    `record_verdict` rejects a bad note pairing, so `route` maps one
-    exception class for every reason it can turn a request down. An
-    empty stdin is among them: `--note` with nothing behind it is a
+    `record_verdict` rejects a verdict with no note, so `route` maps
+    one exception class for every reason it can turn a request down.
+    An empty stdin is among them: `--note` with nothing behind it is a
     malformed command, never a request to record no note.
     """
     if not from_stdin:

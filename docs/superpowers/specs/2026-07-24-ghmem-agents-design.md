@@ -228,10 +228,10 @@ instructions is the delimiter line appearing before the end, so that is
 forbidden, as is anything following the terminator.
 
 An empty body is refused as well. A heredoc carrying nothing is
-malformed whichever verdict it accompanies: one that takes a note has
-none, and one that takes no note should not have opened a heredoc.
-That is a fact about the command's shape, so the hook owns it — while
-*which* verdicts want a note stays a domain rule in `record_verdict`.
+malformed whichever verdict it accompanies: it opened a note and then
+supplied none. That is a fact about the command's shape, so the hook
+owns it — while *which* verdicts want a note stays a domain rule in
+`record_verdict`.
 `route --note` rejects an empty stdin for the same reason, so a caller
 reaching the CLI by some other path cannot record an empty note
 either.

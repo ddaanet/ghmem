@@ -62,11 +62,11 @@ Then repeat, once per item in the packet:
    GHMEMNOTE
    ```
 
-   For `no-signal`, which takes no note, drop the `--note` and the body:
-
-   ```
-   ghmem route <token> <number> no-signal
-   ```
+   That shape is the same for every verdict. `no-signal` takes a note
+   too, and it is the one nothing downstream can reconstruct: say what
+   you looked at and why it carried no decision — "wishlist thread, no
+   maintainer ruling", "substance is in the referenced PRs #1683/#2942",
+   "duplicate of #2238, discussion happened there".
 
 Write the note as ordinary prose. Backticks, apostrophes, `$`, quotes and
 parentheses all belong in it and all reach the ledger untouched: the
@@ -113,19 +113,10 @@ the existing name, not a synonym.
 The CLI-facing id for a verdict is the item number as it appears in the
 packet — the same number `ghmem show <number>` takes.
 
-## Final report
+## When you are done
 
-Your last message must lead with the terminal status line, copied verbatim
-from the CLI's own output, so the orchestrator can branch on line one alone:
-
-- `batch complete: …` — this worker's batch is done, but the corpus has
-  more. The orchestrator should spawn another batch.
-- `triage complete: …` — the corpus is exhausted. The orchestrator should
-  stop spawning triage workers.
-
-Do not paraphrase or reword either line — the orchestrator, and whoever
-reads your report next, keys off the exact prefix.
-
-After the status line, list every id → verdict you issued this batch, one
-per line. Do not add commentary on routing accuracy; that is judged
-elsewhere, not by you.
+Stop when the CLI prints a terminal status line instead of a packet, and
+say so in one line. Nothing depends on the wording: your last message is
+not delivered to whoever dispatched you, and everything you would have
+reported is already in the ledger and in `ghmem status`. Spend no effort
+composing a summary for a reader who will not receive it.

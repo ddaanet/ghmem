@@ -107,10 +107,10 @@ run_hook() {
   [ "$status" -eq 0 ]
 }
 
-# A heredoc carrying nothing is a malformed command either way: a verdict
-# that takes a note has none, and one that takes no note should not have
-# opened a heredoc at all. Blocking it here is a grammar rule — it needs no
-# knowledge of which verdict wants a note, which stays in `record_verdict`.
+# A heredoc carrying nothing is a malformed command whichever verdict it
+# accompanies: it opened a note and then supplied none. Blocking it here is a
+# grammar rule — it needs no knowledge of which verdict wants a note, which
+# stays in `record_verdict`.
 
 @test "ghmem-only: blocks a heredoc with no body at all" {
   run run_hook "$(printf "ghmem route abc123 42 no-signal --note <<'GHMEMNOTE'\nGHMEMNOTE")"

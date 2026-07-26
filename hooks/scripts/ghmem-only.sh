@@ -17,10 +17,9 @@
 # appearing early, so that is what the checks below forbid.
 #
 # An empty body is refused as well. A heredoc carrying nothing is malformed
-# whichever verdict it accompanies: one that takes a note has none, and one
-# that takes no note should not have opened a heredoc. That is a fact about
-# the command's shape, so it belongs here; which verdicts want a note is a
-# domain rule and stays in `record_verdict`.
+# whichever verdict it accompanies: it opened a note and then supplied none.
+# That is a fact about the command's shape, so it belongs here; which
+# verdicts want a note is a domain rule and stays in `record_verdict`.
 set -euo pipefail
 
 readonly DELIM='GHMEMNOTE'

@@ -19,7 +19,6 @@ from datetime import datetime
 from pathlib import Path
 
 from ghmem.aliases import IssueOrPRNumber
-from ghmem.ledger import NO_SIGNAL
 
 
 class IssueOrPRNotFoundError(LookupError):
@@ -104,7 +103,7 @@ class MalformedFrontmatterError(ValueError):
 class TriageSessionError(ValueError):
     """Raised when a `route` request is inconsistent with routing state.
 
-    A topic verdict with no note, `no-signal` carrying a note, two
+    A verdict with no note, two
     notes offered at once, a note spanning lines, a number never
     dispatched to the calling session (or dispatched to a different
     one), a number already carrying a `Route`, or a number never
@@ -143,13 +142,8 @@ class TriageSessionError(ValueError):
 
     @classmethod
     def missing_note(cls, verdict: str) -> TriageSessionError:
-        """Report a topic verdict (anything but `NO_SIGNAL`) with no note."""
+        """Report a verdict with no note, `NO_SIGNAL` included."""
         return cls(f"verdict {verdict!r} needs a note", verdict=verdict)
-
-    @classmethod
-    def stray_note(cls) -> TriageSessionError:
-        """`NO_SIGNAL` carried a note with nothing for it to attach to."""
-        return cls(f"{NO_SIGNAL!r} takes no note")
 
     @classmethod
     def two_notes(cls) -> TriageSessionError:
@@ -160,9 +154,9 @@ class TriageSessionError(ValueError):
     def empty_note(cls) -> TriageSessionError:
         """Report `--note` fed nothing, which no verdict can mean.
 
-        A verdict that takes a note is missing it, and one that takes none
-        should not have opened a heredoc. Either way the command is malformed,
-        so it is refused rather than read as a request for an empty note.
+        Every verdict takes a note, so an empty one is a note missing rather
+        than a note declined, and the command is malformed. It is refused rather
+        than read as a request for an empty note.
         """
         return cls("--note was given no note")
 

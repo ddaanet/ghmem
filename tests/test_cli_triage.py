@@ -145,15 +145,21 @@ def test_route_with_a_valid_verdict_prints_the_next_packet(
     )
 
 
-def test_route_rejects_a_topic_verdict_with_no_note(served: Served) -> None:
-    """A non-no-signal verdict with no note is an actual error.
+@pytest.mark.parametrize("verdict", ["some-topic", "no-signal"])
+def test_route_rejects_a_verdict_with_no_note(served: Served, verdict: str) -> None:
+    """Every verdict needs a note, `no-signal` included.
 
-    When: `route` is called with a topic verdict and no NOTE argument,
-      for an item genuinely dispatched to this token
+    Parametrized over both verdict kinds because the rule's whole
+    point is that it does not branch on the verdict: an item written
+    off is a decision, and a decision with no reasoning behind it is
+    not auditable later.
+
+    When: `route` is called with no NOTE argument, for an item
+      genuinely dispatched to this token
     Then: exit 1, empty stdout, the rejection on stderr
     """
     result = served.runner.invoke(
-        main, ["route", served.token, str(served.number), "some-topic"]
+        main, ["route", served.token, str(served.number), verdict]
     )
 
     assert result.exit_code == 1
@@ -161,20 +167,31 @@ def test_route_rejects_a_topic_verdict_with_no_note(served: Served) -> None:
     assert "ghmem route:" in result.stderr
 
 
-def test_route_rejects_no_signal_carrying_a_note(served: Served) -> None:
-    """A `no-signal` verdict carrying a note is an actual error.
+def test_route_records_the_note_on_a_no_signal_verdict(
+    corpus: Path, served: Served
+) -> None:
+    """A `no-signal` verdict keeps the reason it was written off for.
 
-    When: `route` is called with `no-signal` and a nonempty NOTE, for
-      an item genuinely dispatched to this token
-    Then: exit 1, empty stdout, the rejection on stderr
+    The note has no topic to attach to, which is exactly why it has to
+    land on the `Route` row: nothing downstream would otherwise hold
+    why an item was passed over.
+
+    When: `route` is called with `no-signal` and a note
+    Then: exit 0, and the `Route` row carries verdict and note both
     """
+    first = served.number
+
     result = served.runner.invoke(
-        main, ["route", served.token, str(served.number), "no-signal", "stray"]
+        main,
+        ["route", served.token, str(first), "no-signal", "substance is in #1683"],
     )
 
-    assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "ghmem route:" in result.stderr
+    assert result.exit_code == 0, result.output
+    engine = create_engine(f"sqlite:///{corpus / 'cache.sqlite'}")
+    with Session(engine) as session:
+        routed = session.get(Route, GraphQLId(f"I_{first}"))
+    assert routed is not None
+    assert (routed.verdict, routed.note) == ("no-signal", "substance is in #1683")
 
 
 def test_route_note_flag_reads_the_note_from_stdin(

@@ -51,11 +51,13 @@ def _route(
 
 
 def _route_no_signal(store: Store, routing: Ledger[RoutingEvent], item_id: str) -> None:
-    """Route `item_id` to `NO_SIGNAL` live, carrying no note.
+    """Route `item_id` to `NO_SIGNAL` live, with the note every verdict carries.
 
-    `record_verdict` requires a `NO_SIGNAL` verdict to carry no note —
-    mirrored here since these tests write raw `RouteEvent`s directly,
-    bypassing `record_verdict`'s own guards.
+    These tests write raw `RouteEvent`s directly, bypassing
+    `record_verdict`'s guards, so the note is mirrored here rather than
+    enforced — a `NO_SIGNAL` row with an empty note is a shape the
+    ledger still holds from before the rule covered it, and no topic
+    assembly should depend on which it gets.
     """
     store.record_routing_event(
         routing,
@@ -65,7 +67,7 @@ def _route_no_signal(store: Store, routing: Ledger[RoutingEvent], item_id: str) 
                 "session": "s1",
                 "item_id": item_id,
                 "verdict": NO_SIGNAL,
-                "note": "",
+                "note": "nothing decided here",
             },
         ),
     )

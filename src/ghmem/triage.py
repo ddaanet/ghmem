@@ -25,7 +25,6 @@ from ghmem.budget import BATCH_CHARS, BATCH_ITEMS
 from ghmem.exceptions import IssueOrPRNotFoundError, TriageSessionError
 from ghmem.heat import HEAT_WEIGHTS
 from ghmem.ledger import (
-    NO_SIGNAL,
     DispatchedEvent,
     DispatchFit,
     Ledger,
@@ -256,10 +255,11 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
 
     Rejects with `TriageSessionError`, never touching the ledger:
 
-    - a topic verdict (anything but `NO_SIGNAL`) with no note — a
-      verdict with no reasoning behind it is not routable;
-    - `NO_SIGNAL` carrying a note — there is no topic for it to
-      attach to;
+    - any verdict with no note, `NO_SIGNAL` included — a verdict with
+      no reasoning behind it is not auditable, and writing an item off
+      is as much a decision as routing it. A `NO_SIGNAL` note has no
+      topic to attach to; it stays on the `Route` row, which is the
+      only place holding why the item was passed over;
     - `number` not currently dispatched to `session_token` — the real
       guard, catching an agent routing an id it was never handed, or
       reusing a token after a requeue deleted its `Dispatch` row. It
@@ -275,10 +275,8 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
       `Store.get_issue_or_pr`'s `IssueOrPRNotFoundError`, so a caller
       maps one exception class for every rejection here, not two.
     """
-    if verdict != NO_SIGNAL and not note:
+    if not note:
         raise TriageSessionError.missing_note(verdict)
-    if verdict == NO_SIGNAL and note:
-        raise TriageSessionError.stray_note()
 
     try:
         item_id = store.get_issue_or_pr(number).id
