@@ -20,9 +20,10 @@ change:
 
 - `.claude/agents/ghmem-triage.md` — the triage agent (Sonnet).
 - `.claude/agents/ghmem-synthesize.md` — the synthesis agent (Opus).
-- `.claude/hooks/ghmem-only.sh` — the Bash allowlist hook, shared by
-  both agents; plus `.claude/hooks/scope-docs-design.sh`, the
-  write-path hook the synthesis agent alone carries.
+- `tools/ghmem/hooks/scripts/ghmem-only.sh` — the Bash allowlist
+  hook, shared by both agents; plus
+  `tools/ghmem/hooks/scripts/scope-docs-design.sh`, the write-path
+  hook the synthesis agent alone carries.
 - A `PATH_add` line in the repo-root `.envrc`.
 
 Out of scope, deliberately:
@@ -68,6 +69,20 @@ fixed for the life of a session, so `PATH_add` will not resolve `ghmem`
 for an agent spawned inside the same session the line was added in.
 Confirmed live: restarting picked up both this line and the new agent
 definitions in one step.
+
+**Dispatch these agents without a custom name.** Spawn them by
+`subagent_type` alone. Passing a `name` overwrites the dispatch's
+`agentType` with that name and demotes the real definition to a
+separate `customAgentType` field; frontmatter hooks are registered by
+resolving `agentType`, so a named dispatch resolves nothing, registers
+zero hooks, and runs with an unrestricted shell. Nothing reports this
+— there is no error on either side, and the agent cannot tell.
+
+The cost is only that a worker cannot be addressed by name mid-flight,
+which triage and synthesis never need. The benefit is the containment
+the whole design rests on. This is not a stylistic preference: every
+ghmem worker dispatched before 2026-07-25 carried a name, and every
+one of them ran uncontained for that reason alone.
 
 ## Agent: ghmem-triage (Sonnet)
 
@@ -164,8 +179,18 @@ no per-call agent-identity branching are needed. A blocking hook
 and over `bypassPermissions`/`auto` mode — the allowlist cannot be
 escaped by the parent session's permission mode.
 
-**Bash allowlist — `.claude/hooks/ghmem-only.sh`, shared by both
-agents.** Matcher `Bash`. The script reads `.tool_input.command` from
+**Layout.** Both scripts live under `tools/ghmem/hooks/scripts/`, and
+their bats suites under `tools/ghmem/tests/` beside the pytest ones.
+That is the shape a Claude Code plugin takes — `hooks/scripts/` under
+a plugin root — so packaging ghmem as a plugin later moves the
+directory without rearranging it, and the frontmatter path changes
+only its prefix (`${CLAUDE_PROJECT_DIR}/tools/ghmem` →
+`${CLAUDE_PLUGIN_ROOT}`). Keeping the tests in the Python package's
+`tests/` is what puts them inside `just green`'s cache inputs, so a
+hook edit can no longer go unverified.
+
+**Bash allowlist — `tools/ghmem/hooks/scripts/ghmem-only.sh`, shared
+by both agents.** Matcher `Bash`. The script reads `.tool_input.command` from
 stdin JSON and allows the call *iff* the command is a single `ghmem`
 invocation, via a positive character allowlist:
 
@@ -189,8 +214,30 @@ prefilter — `if` controls only whether the hook runs, and a
 non-matching command would then fall through to permission rules
 instead of being denied.
 
-**Write-path scope — `.claude/hooks/scope-docs-design.sh`, synthesis
-agent only.** Matcher `Write|Edit`. Reads `.tool_input.file_path` and
+**The one exception — a note arriving by quoted heredoc.** A `route`
+verdict carries a note, and a note is prose: spaces, apostrophes,
+backticks and parentheses all belong in it, and none of them survives
+the class above. Quoting prose as an argument is itself the hazard —
+the first incremental slice lost notes to backtick substitution that
+way. So a second shape is allowed whole: a first line matching the
+grammar above and ending `--note <<'GHMEMNOTE'`, then a body closed by
+a final `GHMEMNOTE` line. The delimiter is quoted, so bash expands
+nothing in the body, and that is what makes an arbitrary body safe to
+permit. The body is data; the only thing that could turn it back into
+instructions is the delimiter line appearing before the end, so that is
+forbidden, as is anything following the terminator.
+
+An empty body is refused as well. A heredoc carrying nothing is
+malformed whichever verdict it accompanies: one that takes a note has
+none, and one that takes no note should not have opened a heredoc.
+That is a fact about the command's shape, so the hook owns it — while
+*which* verdicts want a note stays a domain rule in `record_verdict`.
+`route --note` rejects an empty stdin for the same reason, so a caller
+reaching the CLI by some other path cannot record an empty note
+either.
+
+**Write-path scope — `tools/ghmem/hooks/scripts/scope-docs-design.sh`,
+synthesis agent only.** Matcher `Write|Edit`. Reads `.tool_input.file_path` and
 exits 0 only when it resolves under `docs/design/`, else exits 2.
 There is no frontmatter field for directory scoping, and permission
 rules (`Edit(docs/design/**)`) only auto-approve rather than

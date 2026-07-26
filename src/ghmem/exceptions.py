@@ -104,10 +104,11 @@ class MalformedFrontmatterError(ValueError):
 class TriageSessionError(ValueError):
     """Raised when a `route` request is inconsistent with routing state.
 
-    A topic verdict with no note, `no-signal` carrying a note, a
-    number never dispatched to the calling session (or dispatched to
-    a different one), a number already carrying a `Route`, or a
-    number never fetched into the corpus at all — bad input, the same
+    A topic verdict with no note, `no-signal` carrying a note, two
+    notes offered at once, a note spanning lines, a number never
+    dispatched to the calling session (or dispatched to a different
+    one), a number already carrying a `Route`, or a number never
+    fetched into the corpus at all — bad input, the same
     reasoning that puts `UnknownRoutingEventError` here. The ownership
     check is a consistency check against agent error, not
     authentication: the allowlist hook is what constrains which
@@ -149,6 +150,31 @@ class TriageSessionError(ValueError):
     def stray_note(cls) -> TriageSessionError:
         """`NO_SIGNAL` carried a note with nothing for it to attach to."""
         return cls(f"{NO_SIGNAL!r} takes no note")
+
+    @classmethod
+    def two_notes(cls) -> TriageSessionError:
+        """Report two notes offered at once: a NOTE argument and `--note`."""
+        return cls("--note and a NOTE argument are two notes; pass one")
+
+    @classmethod
+    def empty_note(cls) -> TriageSessionError:
+        """Report `--note` fed nothing, which no verdict can mean.
+
+        A verdict that takes a note is missing it, and one that takes none
+        should not have opened a heredoc. Either way the command is malformed,
+        so it is refused rather than read as a request for an empty note.
+        """
+        return cls("--note was given no note")
+
+    @classmethod
+    def multiline_note(cls) -> TriageSessionError:
+        """Report a piped note spanning lines, which a topic cannot render.
+
+        `topic.py` gives each routed item one line ending in its note,
+        so an embedded newline would split one item into two rows of a
+        synthesis context, and nothing downstream would notice.
+        """
+        return cls("a note is a single line; it cannot span lines")
 
     @classmethod
     def not_dispatched(

@@ -191,7 +191,10 @@ def triage() -> None:
 @click.argument("number", type=int)
 @click.argument("verdict")
 @click.argument("note", required=False, default="")
-def route(token: str, number: int, verdict: str, note: str) -> None:
+@click.option("--note", "note_from_stdin", is_flag=True, help="Read NOTE from stdin.")
+def route(
+    token: str, number: int, verdict: str, note: str, *, note_from_stdin: bool
+) -> None:
     """Record a verdict for NUMBER under TOKEN, then serve the next packet.
 
     One command per triaged item, so an agent spends no step sitting
@@ -200,15 +203,43 @@ def route(token: str, number: int, verdict: str, note: str) -> None:
     actual error: printed to stderr, exit 1, the ledger untouched.
     Otherwise this behaves exactly like `triage`: a packet or a
     terminal message, exit 0 either way.
+
+    `--note` takes the note from stdin instead of the argument list.
+    A note is prose, and prose carries the characters a shell reads as
+    instructions; passing it as an argument means quoting it, and a
+    quoting mistake corrupts the note silently. Fed by a quoted
+    heredoc, stdin expands nothing at all.
     """
     store = Store.open(sqlite_path())
     routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
     try:
+        note = _resolve_note(note, from_stdin=note_from_stdin)
         record_verdict(store, routing, token, IssueOrPRNumber(number), verdict, note)
     except TriageSessionError as exc:
         click.echo(f"ghmem route: {exc}", err=True)
         raise SystemExit(1) from exc
     _emit_served(serve_next(store, routing, token))
+
+
+def _resolve_note(note: str, *, from_stdin: bool) -> str:
+    """Return the note to record, reading stdin when `--note` was given.
+
+    Rejects the ways the pair can be malformed the same way
+    `record_verdict` rejects a bad note pairing, so `route` maps one
+    exception class for every reason it can turn a request down. An
+    empty stdin is among them: `--note` with nothing behind it is a
+    malformed command, never a request to record no note.
+    """
+    if not from_stdin:
+        return note
+    if note:
+        raise TriageSessionError.two_notes()
+    piped = click.get_text_stream("stdin").read().strip()
+    if not piped:
+        raise TriageSessionError.empty_note()
+    if "\n" in piped:
+        raise TriageSessionError.multiline_note()
+    return piped
 
 
 @main.command()

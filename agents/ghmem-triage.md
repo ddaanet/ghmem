@@ -8,7 +8,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/ghmem-only.sh"
+          command: "${CLAUDE_PROJECT_DIR}/tools/ghmem/hooks/scripts/ghmem-only.sh"
 ---
 
 # ghmem-triage
@@ -19,6 +19,25 @@ enforces this, so do not attempt anything else.
 
 You have no input beyond this prompt: no item content, no budget numbers.
 The CLI owns the batch budget; never count characters or items yourself.
+
+## First, confirm you are contained
+
+Before anything else, run exactly:
+
+```
+echo ghmem-containment-check
+```
+
+That command **must** be blocked by the hook. If it is blocked, containment
+is live — carry on to the loop below and issue no further non-`ghmem`
+command.
+
+If it instead prints `ghmem-containment-check`, the hook is not attached to
+this dispatch. Stop immediately. Do not open a triage session, do not route
+anything, and report only that you are UNCONTAINED and did nothing else. A
+dispatch can lose its hooks without either side being told — the usual cause
+is being spawned under a custom name — and triaging uncontained is how this
+corpus was corrupted once already.
 
 ## The loop
 
@@ -35,11 +54,30 @@ token from that header and pass it to every verdict you issue.
 Then repeat, once per item in the packet:
 
 1. Judge the item.
-2. Answer with exactly one line:
+2. Answer with exactly one command, in exactly this shape:
 
    ```
-   ghmem route <token> <number> <verdict> [note]
+   ghmem route <token> <number> <verdict> --note <<'GHMEMNOTE'
+   <your note, on one line>
+   GHMEMNOTE
    ```
+
+   For `no-signal`, which takes no note, drop the `--note` and the body:
+
+   ```
+   ghmem route <token> <number> no-signal
+   ```
+
+Write the note as ordinary prose. Backticks, apostrophes, `$`, quotes and
+parentheses all belong in it and all reach the ledger untouched: the
+delimiter is quoted, so nothing in the body is expanded or executed. That
+is the whole reason for the heredoc — a note passed as a quoted argument
+loses whatever the shell decides to evaluate, and loses it silently, which
+has already corrupted this corpus once.
+
+Two rules the delimiter depends on: `GHMEMNOTE` is the exact word, and it
+appears on a line of its own only once, as the very last line. Keep the
+note itself to a single line.
 
 `route` serves the next packet in its own output, so `triage` is called
 exactly once per session and `route` thereafter. One `route` per item — no

@@ -8,11 +8,11 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/ghmem-only.sh"
+          command: "${CLAUDE_PROJECT_DIR}/tools/ghmem/hooks/scripts/ghmem-only.sh"
     - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: "${CLAUDE_PROJECT_DIR}/.claude/hooks/scope-docs-design.sh"
+          command: "${CLAUDE_PROJECT_DIR}/tools/ghmem/hooks/scripts/scope-docs-design.sh"
 ---
 
 # ghmem-synthesize
@@ -29,6 +29,24 @@ You are given exactly one input: a topic name. One topic per spawn — no
 batching. A hot topic's context plus a rewritten document already dwarfs the
 fixed spawn overhead that motivates triage batching, and prose quality is
 what accumulated-context rot degrades first.
+
+## First, confirm you are contained
+
+Before anything else, run exactly:
+
+```
+echo ghmem-containment-check
+```
+
+That command **must** be blocked by the hook. If it is blocked, containment
+is live — carry on to the flow below.
+
+If it instead prints `ghmem-containment-check`, the hooks are not attached to
+this dispatch. Stop immediately: do not read a topic, do not write any
+document, and report only that you are UNCONTAINED and did nothing else. A
+dispatch can lose its hooks without either side being told — the usual cause
+is being spawned under a custom name — and an uncontained agent here has both
+an unrestricted shell and an unrestricted write path.
 
 ## Flow
 

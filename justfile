@@ -18,6 +18,14 @@ green:
     #!{{ bash_prolog }}
     sync
     require-docformatter
+    # bats is a system tool, unpinned by uv.lock exactly like docformatter,
+    # so its absence gets the same explained failure ahead of the cache
+    # rather than a bare "command not found" from the middle of the run.
+    if ! command -v bats > /dev/null; then
+        echo "bats is not on PATH; the hook suites cannot run." >&2
+        echo "Install it from your package manager: apt install bats" >&2
+        exit 1
+    fi
     # Skip the gate outright when nothing it depends on has changed
     # since it last passed. Every check is a pure function of the same
     # inputs, so a re-run over an untouched tree can only reprint the
@@ -54,6 +62,17 @@ green:
         passed=$(grep -oE '[0-9]+ passed' "$tmpfile" | tail -1) || passed=pytest
         recap-add "$passed"
     else status=false
+    fi
+    # The hook suites, which guard the agents' containment. bats prints a
+    # line per case even when every one passes, so it is captured and shown
+    # only on failure; its count joins the recap the way pytest's does.
+    set-tmpfile
+    if bats --formatter tap tests > "$tmpfile" 2>&1
+    then recap-add "$(grep -c '^ok' "$tmpfile") bats"
+    else
+        status=false
+        echo "${HEADER_STYLE}# bats${NORMAL}"
+        cat "$tmpfile"
     fi
     report "line limits" ./scripts/check_line_limits.sh
     # Recap what ran, so a quiet gate reads as one whose checks all passed
@@ -127,20 +146,23 @@ check-sentinel () {
     [ -f "$sentinel" ] && [ "$(cat "$sentinel")" = "$(gate-inputs-hash)" ]
 }
 
-# Everything a gate outcome can depend on: the interpreter, docformatter
-# (the one tool the lockfile does not pin), the pinned dependencies, the
-# tool configuration, the checks themselves, and the sources they run
-# over. Names are hashed alongside contents so a rename or a deletion
-# counts as a change. `--others --exclude-standard` picks up files not
-# yet added to git — a brand-new test file is exactly when a stale
-# cached pass would hurt most — while still leaving the ignored caches
-# out.
+# Everything a gate outcome can depend on: the interpreter, the two
+# tools the lockfile does not pin (docformatter and bats), the pinned
+# dependencies, the tool configuration, the checks themselves, and the
+# sources they run over — `hooks` among them, since the bats suites run
+# over those scripts and a check whose inputs the hash does not cover
+# would go stale-green on the next hook edit. Names are hashed alongside
+# contents so a rename or a deletion counts as a change. `--others
+# --exclude-standard` picks up files not yet added to git — a brand-new
+# test file is exactly when a stale cached pass would hurt most — while
+# still leaving the ignored caches out.
 gate-inputs-hash () {
     {
         python3 --version
         docformatter --version
+        bats --version
         git ls-files -z --cached --others --exclude-standard \
-                justfile pyproject.toml uv.lock scripts src tests \
+                justfile pyproject.toml uv.lock scripts src tests hooks \
             | sort -z \
             | while IFS= read -r -d '' file; do
                   printf '%s\n' "$file"

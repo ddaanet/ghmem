@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
-# .claude/hooks/scope-docs-design.sh — the PreToolUse(Write|Edit) hook that
+# hooks/scripts/scope-docs-design.sh — the PreToolUse(Write|Edit) hook that
 # scopes ghmem-synthesize's writes to docs/design/. Spec:
 # docs/superpowers/specs/2026-07-24-ghmem-agents-design.md
 # §The allowlist hook (write-path scope).
 bats_require_minimum_version 1.5.0
 
-HOOK="$BATS_TEST_DIRNAME/../scope-docs-design.sh"
+HOOK="$BATS_TEST_DIRNAME/../hooks/scripts/scope-docs-design.sh"
 
 setup() {
   PROJECT_DIR="$BATS_TEST_TMPDIR/project"
