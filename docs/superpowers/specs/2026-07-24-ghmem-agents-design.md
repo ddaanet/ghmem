@@ -111,10 +111,13 @@ once per session — until the CLI prints a terminal status line. One
 
 **Judgment (agent-body prose, written at build time).** A verdict is a
 topic name or the reserved `no-signal`. `no-signal` is the comfortable
-default, not a failure — most items encode no decision. Before
-proposing a *new* topic, consult the current topic list to avoid
-near-duplicates. The CLI-facing id is the item number (matching
-`ghmem show <number>`).
+default, not a failure — most items carry no knowledge worth a topic
+doc. The trial is what the text carries, never whether the thread
+concluded: substantial maintainer feedback on an open PR is knowledge,
+and the corpus is kept in sync rather than photographed, so a later run
+captures what the thread becomes. Before proposing a *new* topic,
+consult the current topic list to avoid near-duplicates. The CLI-facing
+id is the item number (matching `ghmem show <number>`).
 
 **Final report.** Lead with the terminal status line, verbatim, so
 the orchestrator branches on line one:

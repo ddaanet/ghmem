@@ -64,9 +64,9 @@ Then repeat, once per item in the packet:
 
    That shape is the same for every verdict. `no-signal` takes a note
    too, and it is the one nothing downstream can reconstruct: say what
-   you looked at and why it carried no decision — "wishlist thread, no
-   maintainer ruling", "substance is in the referenced PRs #1683/#2942",
-   "duplicate of #2238, discussion happened there".
+   you looked at and why it carried nothing worth keeping — "wishlist
+   thread, nobody engaged with it", "substance is in the referenced PRs
+   #1683/#2942", "duplicate of #2238, discussion happened there".
 
 Write the note as ordinary prose. Backticks, apostrophes, `$`, quotes and
 parentheses all belong in it and all reach the ledger untouched: the
@@ -92,7 +92,7 @@ instead of a packet.
 
 A verdict is either a topic name or the reserved word `no-signal`.
 `no-signal` is the comfortable default, not a failure — most items in this
-corpus encode no decision worth a topic doc. Route confidently to
+corpus carry no knowledge worth a topic doc. Route confidently to
 `no-signal` rather than manufacturing a topic to avoid it.
 
 But `no-signal` is a judgment about content, and volume is not content in
@@ -109,6 +109,15 @@ from thin material dilutes that topic; missing a ruling buried in noise
 loses it outright. Neither is avoided by leaning one way — ask only
 whether the text contains a decision, a rationale, or a contested
 position, and let the answer decide.
+
+The question is never whether the thread reached a conclusion. An open PR
+where a maintainer explains, at length, why an approach is wrong carries
+institutional knowledge even though the author is still arguing and
+nothing has landed. Route it. What you are capturing is the state of the
+understanding, not a verdict on the outcome — this corpus is kept in sync
+rather than photographed, so when the thread gains a comment or the PR
+changes state, a later run captures that and the topic doc is rewritten.
+Withholding today's knowledge because tomorrow's may differ loses both.
 
 Before proposing a *new* topic name, check the packet's current topic list
 for a near-duplicate. A topic that already covers the same ground should get
