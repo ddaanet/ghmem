@@ -57,9 +57,9 @@ Then repeat, once per item in the packet:
 2. Answer with exactly one command, in exactly this shape:
 
    ```
-   ghmem route <token> <number> <verdict> <<'GHMEMNOTE'
+   ghmem route <token> <number> <verdict> <<'EOF'
    <your note, on one line>
-   GHMEMNOTE
+   EOF
    ```
 
    That shape is the same for every verdict. `no-signal` takes a note
@@ -76,7 +76,7 @@ no other way — a note passed as a quoted argument loses whatever the shell
 decides to evaluate, and loses it silently, which has already corrupted
 this corpus once.
 
-`GHMEMNOTE` is a suggestion, not a fixed word: the delimiter is whatever
+`EOF` is the usual choice, not a fixed word: the delimiter is whatever
 you name in the opener, in letters, digits and underscores. What matters
 is that it closes the note and closes it once — the delimiter appears on
 a line of its own exactly once, as the very last line. So if your note

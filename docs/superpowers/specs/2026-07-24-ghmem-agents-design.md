@@ -100,9 +100,9 @@ token from that header and passes it to every verdict. Then repeat:
 judge the packet, answer with exactly one
 
 ```
-ghmem route <token> <number> <verdict> <<'GHMEMNOTE'
+ghmem route <token> <number> <verdict> <<'EOF'
 <the note, on one line>
-GHMEMNOTE
+EOF
 ```
 
 and receive the next packet — `route` serves it, so `triage` is called
