@@ -10,11 +10,17 @@
 # enumerated.
 #
 # That class cannot carry a note, and a note is the reason `route` exists.
-# So one shape is allowed past it whole: a heredoc with a fixed, quoted
-# delimiter. Quoted means bash expands nothing in the body, which is what
-# makes an arbitrary body safe to permit — the body is data, and the only
-# thing that could turn it back into instructions is the delimiter line
-# appearing early, so that is what the checks below forbid.
+# So one shape is allowed past it whole: a heredoc with a quoted delimiter.
+# Quoted means bash expands nothing in the body, which is what makes an
+# arbitrary body safe to permit — the body is data, and the only thing that
+# could turn it back into instructions is the delimiter line appearing early,
+# so that is what the checks below forbid.
+#
+# The opener names its own delimiter rather than being held to a fixed word.
+# A fixed one is a word a note may never contain, and a note is prose about a
+# corpus whose vocabulary nobody controls; the writer picking a word their own
+# note does not contain is the same guarantee without the exclusion. Any run
+# of non-whitespace will do, minus the quote that would end the quoting.
 #
 # An empty body is refused as well. A heredoc carrying nothing is malformed
 # whichever verdict it accompanies: it opened a note and then supplied none.
@@ -22,18 +28,18 @@
 # verdicts want a note is a domain rule and stays in `record_verdict`.
 set -euo pipefail
 
-readonly DELIM='GHMEMNOTE'
-
 tab=$'\t'
 sep="[ ${tab}]"
 arg="[A-Za-z0-9_./:=-]+"
 bare_re="^ghmem(${sep}${arg})*$"
-opener_re="^ghmem(${sep}${arg})*${sep}<<'${DELIM}'$"
+opener_re="^ghmem(${sep}${arg})*${sep}<<'([^'[:space:]]+)'$"
 
 block() {
   echo "ghmem-only: blocked — allowed are a bare 'ghmem ...' invocation and" \
-    "one ending '--note <<'${DELIM}'' with a non-empty note body closed by a" \
-    "final ${DELIM} line (no chaining, substitution, pipes, or redirects)" >&2
+    "one ending \"<<'DELIM'\" for a DELIM of your choosing (any non-empty run" \
+    "of non-whitespace, no quote), carrying a non-empty note body closed by a" \
+    "final DELIM line and naming it nowhere else" \
+    "(no chaining, substitution, pipes, or redirects)" >&2
   exit 2
 }
 
@@ -46,17 +52,22 @@ fi
 
 [[ "${command%%$'\n'*}" =~ $opener_re ]] || block
 
+# Group 1 is the repeated argument group, so the delimiter is group 2. Every
+# rule below is anchored to it: what the opener named is what has to close the
+# body, and nothing weaker counts.
+delim="${BASH_REMATCH[2]}"
+
 # One optional trailing newline is the shell's, not the body's.
 body="${command#*$'\n'}"
 body="${body%$'\n'}"
 mapfile -t lines <<<"$body"
 
 last=$((${#lines[@]} - 1))
-[[ "${lines[last]}" == "$DELIM" ]] || block
+[[ "${lines[last]}" == "$delim" ]] || block
 
 note=""
 for ((i = 0; i < last; i++)); do
-  [[ "${lines[i]}" == "$DELIM" ]] && block
+  [[ "${lines[i]}" == "$delim" ]] && block
   note+="${lines[i]}"
 done
 [[ "$note" =~ [^[:space:]] ]] || block

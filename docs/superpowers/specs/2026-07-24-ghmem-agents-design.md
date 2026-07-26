@@ -100,7 +100,9 @@ token from that header and passes it to every verdict. Then repeat:
 judge the packet, answer with exactly one
 
 ```
-ghmem route <token> <number> <verdict> [note]
+ghmem route <token> <number> <verdict> <<'GHMEMNOTE'
+<the note, on one line>
+GHMEMNOTE
 ```
 
 and receive the next packet — `route` serves it, so `triage` is called
@@ -219,20 +221,28 @@ verdict carries a note, and a note is prose: spaces, apostrophes,
 backticks and parentheses all belong in it, and none of them survives
 the class above. Quoting prose as an argument is itself the hazard —
 the first incremental slice lost notes to backtick substitution that
-way. So a second shape is allowed whole: a first line matching the
-grammar above and ending `--note <<'GHMEMNOTE'`, then a body closed by
-a final `GHMEMNOTE` line. The delimiter is quoted, so bash expands
-nothing in the body, and that is what makes an arbitrary body safe to
-permit. The body is data; the only thing that could turn it back into
-instructions is the delimiter line appearing before the end, so that is
-forbidden, as is anything following the terminator.
+way, and `route` now takes a note no other way. So a second shape is
+allowed whole: a first line matching the grammar above and ending
+`<<'DELIM'`, then a body closed by a final `DELIM` line. The delimiter
+is quoted, so bash expands nothing in the body, and that is what makes
+an arbitrary body safe to permit. The body is data; the only thing that
+could turn it back into instructions is the delimiter line appearing
+before the end, so that is forbidden, as is anything following the
+terminator.
+
+`DELIM` is whatever the opener names — any non-empty run of
+non-whitespace, minus the quote that would end the quoting — and every
+rule above re-anchors to that captured token. A fixed delimiter would be
+a word a note may never contain, and a note is prose about a corpus
+whose vocabulary nobody controls; the writer picking a word their own
+note does not contain buys the same guarantee without the exclusion.
 
 An empty body is refused as well. A heredoc carrying nothing is
 malformed whichever verdict it accompanies: it opened a note and then
 supplied none. That is a fact about the command's shape, so the hook
 owns it — while *which* verdicts want a note stays a domain rule in
 `record_verdict`.
-`route --note` rejects an empty stdin for the same reason, so a caller
+`route` rejects an empty stdin for the same reason, so a caller
 reaching the CLI by some other path cannot record an empty note
 either.
 

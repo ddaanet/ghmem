@@ -57,7 +57,7 @@ Then repeat, once per item in the packet:
 2. Answer with exactly one command, in exactly this shape:
 
    ```
-   ghmem route <token> <number> <verdict> --note <<'GHMEMNOTE'
+   ghmem route <token> <number> <verdict> <<'GHMEMNOTE'
    <your note, on one line>
    GHMEMNOTE
    ```
@@ -71,13 +71,17 @@ Then repeat, once per item in the packet:
 Write the note as ordinary prose. Backticks, apostrophes, `$`, quotes and
 parentheses all belong in it and all reach the ledger untouched: the
 delimiter is quoted, so nothing in the body is expanded or executed. That
-is the whole reason for the heredoc — a note passed as a quoted argument
-loses whatever the shell decides to evaluate, and loses it silently, which
-has already corrupted this corpus once.
+is the whole reason for the heredoc, and the reason `route` takes the note
+no other way — a note passed as a quoted argument loses whatever the shell
+decides to evaluate, and loses it silently, which has already corrupted
+this corpus once.
 
-Two rules the delimiter depends on: `GHMEMNOTE` is the exact word, and it
-appears on a line of its own only once, as the very last line. Keep the
-note itself to a single line.
+`GHMEMNOTE` is a suggestion, not a fixed word: the delimiter is whatever
+you name in the opener, any run of non-whitespace. What matters is that
+it closes the note and closes it once — the delimiter appears on a line
+of its own exactly once, as the very last line. So if your note has to
+quote the delimiter word, pick a different delimiter rather than
+rewording the note. Keep the note itself to a single line.
 
 `route` serves the next packet in its own output, so `triage` is called
 exactly once per session and `route` thereafter. One `route` per item — no

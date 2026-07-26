@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,21 @@ def _item_number(packet: str) -> int:
         if line.startswith("item: "):
             return int(line.removeprefix("item: "))
     raise AssertionError(f"no 'item:' line in packet:\n{packet}")
+
+
+def _route(
+    runner: CliRunner, token: str, number: int, verdict: str, note: str
+) -> Result:
+    """Invoke `route` the only way it can be called: the note on stdin.
+
+    `input` stands in for the quoted heredoc a worker writes — the
+    trailing newline included, since a heredoc body always carries one.
+    Tests about a malformed stdin invoke `route` directly instead, to
+    keep the exact bytes they are about in the test that is about them.
+    """
+    return runner.invoke(
+        main, ["route", token, str(number), verdict], input=f"{note}\n"
+    )
 
 
 class Served(NamedTuple):
@@ -95,9 +110,7 @@ def test_triage_on_fully_routed_corpus_prints_the_terminal_message(
     """
     number = served.number
     for _ in range(3):
-        result = served.runner.invoke(
-            main, ["route", served.token, str(number), "some-topic", "note"]
-        )
+        result = _route(served.runner, served.token, number, "some-topic", "note")
         if result.stdout:
             number = _item_number(result.stdout)
 
@@ -125,9 +138,7 @@ def test_route_with_a_valid_verdict_prints_the_next_packet(
     """
     first = served.number
 
-    result = served.runner.invoke(
-        main, ["route", served.token, str(first), "some-topic", "note"]
-    )
+    result = _route(served.runner, served.token, first, "some-topic", "note")
 
     assert result.exit_code == 0, result.output
     assert result.stderr == ""
@@ -145,28 +156,6 @@ def test_route_with_a_valid_verdict_prints_the_next_packet(
     )
 
 
-@pytest.mark.parametrize("verdict", ["some-topic", "no-signal"])
-def test_route_rejects_a_verdict_with_no_note(served: Served, verdict: str) -> None:
-    """Every verdict needs a note, `no-signal` included.
-
-    Parametrized over both verdict kinds because the rule's whole
-    point is that it does not branch on the verdict: an item written
-    off is a decision, and a decision with no reasoning behind it is
-    not auditable later.
-
-    When: `route` is called with no NOTE argument, for an item
-      genuinely dispatched to this token
-    Then: exit 1, empty stdout, the rejection on stderr
-    """
-    result = served.runner.invoke(
-        main, ["route", served.token, str(served.number), verdict]
-    )
-
-    assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "ghmem route:" in result.stderr
-
-
 def test_route_records_the_note_on_a_no_signal_verdict(
     corpus: Path, served: Served
 ) -> None:
@@ -181,9 +170,8 @@ def test_route_records_the_note_on_a_no_signal_verdict(
     """
     first = served.number
 
-    result = served.runner.invoke(
-        main,
-        ["route", served.token, str(first), "no-signal", "substance is in #1683"],
+    result = _route(
+        served.runner, served.token, first, "no-signal", "substance is in #1683"
     )
 
     assert result.exit_code == 0, result.output
@@ -194,24 +182,18 @@ def test_route_records_the_note_on_a_no_signal_verdict(
     assert (routed.verdict, routed.note) == ("no-signal", "substance is in #1683")
 
 
-def test_route_note_flag_reads_the_note_from_stdin(
-    corpus: Path, served: Served
-) -> None:
-    """`--note` takes the note from stdin instead of the argument list.
+def test_route_reads_the_note_from_stdin(corpus: Path, served: Served) -> None:
+    """The note comes off stdin, which is the only place it can come from.
 
     The shape a quoted heredoc feeds: prose full of characters no
     argument-level allowlist can pass, delivered with zero expansion.
 
-    When: `route` is invoked with `--note` and the note on stdin
+    When: `route` is invoked with the note on stdin
     Then: exit 0, and the recorded `Route` carries the piped text
     """
     note = "dmaluka's ruling on `b.Settings` & $HOME; see #3659 (merged)"
 
-    result = served.runner.invoke(
-        main,
-        ["route", served.token, str(served.number), "some-topic", "--note"],
-        input=note,
-    )
+    result = _route(served.runner, served.token, served.number, "some-topic", note)
 
     assert result.exit_code == 0
     engine = create_engine(f"sqlite:///{corpus / 'cache.sqlite'}")
@@ -221,7 +203,7 @@ def test_route_note_flag_reads_the_note_from_stdin(
     assert routed.note == note
 
 
-def test_route_note_flag_strips_the_heredocs_trailing_newline(
+def test_route_strips_the_heredocs_trailing_newline(
     corpus: Path, served: Served
 ) -> None:
     """Surrounding whitespace is not part of the note.
@@ -229,12 +211,12 @@ def test_route_note_flag_strips_the_heredocs_trailing_newline(
     A heredoc body always ends in a newline the author did not type,
     so it cannot be allowed to reach the ledger.
 
-    When: `route --note` is fed a note padded with newlines
+    When: `route` is fed a note padded with newlines
     Then: the recorded note is the stripped text
     """
     result = served.runner.invoke(
         main,
-        ["route", served.token, str(served.number), "some-topic", "--note"],
+        ["route", served.token, str(served.number), "some-topic"],
         input="\na note\n\n",
     )
 
@@ -246,19 +228,19 @@ def test_route_note_flag_strips_the_heredocs_trailing_newline(
     assert routed.note == "a note"
 
 
-def test_route_note_flag_rejects_a_note_spanning_lines(served: Served) -> None:
+def test_route_rejects_a_note_spanning_lines(served: Served) -> None:
     """A note is one line, because a topic's context renders one per line.
 
     `topic.py` appends the note to a single-line item bullet, so an
     embedded newline would silently split one item into two rows of
     the synthesis context.
 
-    When: `route --note` is fed a note containing a line break
+    When: `route` is fed a note containing a line break
     Then: exit 1, empty stdout, the rejection on stderr
     """
     result = served.runner.invoke(
         main,
-        ["route", served.token, str(served.number), "some-topic", "--note"],
+        ["route", served.token, str(served.number), "some-topic"],
         input="first line\nsecond line\n",
     )
 
@@ -267,22 +249,23 @@ def test_route_note_flag_rejects_a_note_spanning_lines(served: Served) -> None:
     assert "ghmem route:" in result.stderr
 
 
-def test_route_note_flag_rejects_an_empty_note(served: Served) -> None:
-    """`--note` with nothing behind it is malformed, not a silent no-op.
+@pytest.mark.parametrize("verdict", ["some-topic", "no-signal"])
+def test_route_rejects_a_blank_stdin(served: Served, verdict: str) -> None:
+    """A `route` that fed no note is malformed, not a silent no-op.
 
-    Whichever verdict it accompanies, the command is wrong: one that
-    takes a note has none, and one that takes no note should not have
-    passed `--note` at all. `no-signal` is the case under test because
-    it is the one that would otherwise accept it — an empty note is
-    exactly what `record_verdict` requires of it, so nothing further
-    down would object.
+    Parametrized over both verdict kinds because the rule's whole
+    point is that it does not branch on the verdict: an item written
+    off is a decision, and a decision with no reasoning behind it is
+    not auditable later. `no-signal` is the case that would otherwise
+    slip through — an empty note is exactly what nothing downstream
+    would object to.
 
-    When: `route --note` is fed a blank stdin under a `no-signal` verdict
+    When: `route` is fed a blank stdin
     Then: exit 1, empty stdout, the rejection on stderr
     """
     result = served.runner.invoke(
         main,
-        ["route", served.token, str(served.number), "no-signal", "--note"],
+        ["route", served.token, str(served.number), verdict],
         input="  \n",
     )
 
@@ -291,30 +274,30 @@ def test_route_note_flag_rejects_an_empty_note(served: Served) -> None:
     assert "ghmem route:" in result.stderr
 
 
-def test_route_rejects_the_note_flag_alongside_a_positional_note(
-    served: Served,
+def test_route_refuses_a_note_passed_as_an_argument(
+    corpus: Path, served: Served
 ) -> None:
-    """Two notes are an ambiguity, not a merge.
+    """There is no argument form to fall back on, and no silent fallback.
 
-    When: `route` is given both a NOTE argument and `--note`
-    Then: exit 1, empty stdout, the rejection on stderr
+    A note passed as an argument is what corrupted this corpus once —
+    the shell substituted a backticked fragment away before `route`
+    ever saw it. Removing the argument only helps if the removal is
+    load-bearing: a fourth argument has to be a usage error, not a
+    note quietly ignored in favour of the stdin one.
+
+    When: `route` is given a fourth argument, with a note on stdin too
+    Then: exit 2, and no `Route` row was written for the item
     """
     result = served.runner.invoke(
         main,
-        [
-            "route",
-            served.token,
-            str(served.number),
-            "some-topic",
-            "positional",
-            "--note",
-        ],
-        input="piped",
+        ["route", served.token, str(served.number), "some-topic", "an argument note"],
+        input="a piped note\n",
     )
 
-    assert result.exit_code == 1
-    assert result.stdout == ""
-    assert "ghmem route:" in result.stderr
+    assert result.exit_code == 2
+    engine = create_engine(f"sqlite:///{corpus / 'cache.sqlite'}")
+    with Session(engine) as session:
+        assert session.get(Route, GraphQLId(f"I_{served.number}")) is None
 
 
 def test_route_rejects_a_number_dispatched_to_another_token(served: Served) -> None:
@@ -327,9 +310,7 @@ def test_route_rejects_a_number_dispatched_to_another_token(served: Served) -> N
     impostor_packet = served.runner.invoke(main, ["triage"])
     impostor = _session_token(impostor_packet.stdout)
 
-    result = served.runner.invoke(
-        main, ["route", impostor, str(served.number), "some-topic", "note"]
-    )
+    result = _route(served.runner, impostor, served.number, "some-topic", "note")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -364,12 +345,12 @@ def test_full_lifecycle_matches_a_cold_rebuild(
     token = _session_token(served.stdout)
     number = _item_number(served.stdout)
 
-    result = runner.invoke(main, ["route", token, str(number), "some-topic", "note"])
+    result = _route(runner, token, number, "some-topic", "note")
     assert result.exit_code == 0, result.output
     assert result.stdout, "expected a second packet before the batch ends"
     number = _item_number(result.stdout)
 
-    result = runner.invoke(main, ["route", token, str(number), "some-topic", "note"])
+    result = _route(runner, token, number, "some-topic", "note")
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert result.stderr.strip() == "batch complete: budget exhausted"

@@ -146,19 +146,14 @@ class TriageSessionError(ValueError):
         return cls(f"verdict {verdict!r} needs a note", verdict=verdict)
 
     @classmethod
-    def two_notes(cls) -> TriageSessionError:
-        """Report two notes offered at once: a NOTE argument and `--note`."""
-        return cls("--note and a NOTE argument are two notes; pass one")
-
-    @classmethod
     def empty_note(cls) -> TriageSessionError:
-        """Report `--note` fed nothing, which no verdict can mean.
+        """Report a stdin carrying nothing, which no verdict can mean.
 
         Every verdict takes a note, so an empty one is a note missing rather
         than a note declined, and the command is malformed. It is refused rather
         than read as a request for an empty note.
         """
-        return cls("--note was given no note")
+        return cls("no note arrived on stdin; feed one with a quoted heredoc")
 
     @classmethod
     def multiline_note(cls) -> TriageSessionError:

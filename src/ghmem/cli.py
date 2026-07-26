@@ -190,30 +190,27 @@ def triage() -> None:
 @click.argument("token")
 @click.argument("number", type=int)
 @click.argument("verdict")
-@click.argument("note", required=False, default="")
-@click.option("--note", "note_from_stdin", is_flag=True, help="Read NOTE from stdin.")
-def route(
-    token: str, number: int, verdict: str, note: str, *, note_from_stdin: bool
-) -> None:
+def route(token: str, number: int, verdict: str) -> None:
     """Record a verdict for NUMBER under TOKEN, then serve the next packet.
 
-    One command per triaged item, so an agent spends no step sitting
-    on a purely deterministic result. A rejected verdict — a bad note
-    pairing, or NUMBER not currently dispatched to TOKEN — is an
-    actual error: printed to stderr, exit 1, the ledger untouched.
-    Otherwise this behaves exactly like `triage`: a packet or a
-    terminal message, exit 0 either way.
+    The note this verdict needs arrives on stdin, fed by a heredoc
+    whose delimiter is quoted. There is no way to pass it as an
+    argument: a note is prose, prose carries the characters a shell
+    reads as instructions, and a quoting mistake corrupts the note
+    silently — as one already has. A quoted heredoc expands nothing at
+    all, so the one call form is the safe one.
 
-    `--note` takes the note from stdin instead of the argument list.
-    A note is prose, and prose carries the characters a shell reads as
-    instructions; passing it as an argument means quoting it, and a
-    quoting mistake corrupts the note silently. Fed by a quoted
-    heredoc, stdin expands nothing at all.
+    One command per triaged item, so an agent spends no step sitting
+    on a purely deterministic result. A rejected verdict — a missing
+    or malformed note, or NUMBER not currently dispatched to TOKEN —
+    is an actual error: printed to stderr, exit 1, the ledger
+    untouched. Otherwise this behaves exactly like `triage`: a packet
+    or a terminal message, exit 0 either way.
     """
     store = Store.open(sqlite_path())
     routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
     try:
-        note = _resolve_note(note, from_stdin=note_from_stdin)
+        note = _read_note()
         record_verdict(store, routing, token, IssueOrPRNumber(number), verdict, note)
     except TriageSessionError as exc:
         click.echo(f"ghmem route: {exc}", err=True)
@@ -221,19 +218,15 @@ def route(
     _emit_served(serve_next(store, routing, token))
 
 
-def _resolve_note(note: str, *, from_stdin: bool) -> str:
-    """Return the note to record, reading stdin when `--note` was given.
+def _read_note() -> str:
+    """Return the note fed to stdin, which is the only way to supply one.
 
-    Rejects the ways the pair can be malformed the same way
+    Rejects the ways stdin can be malformed the same way
     `record_verdict` rejects a verdict with no note, so `route` maps
     one exception class for every reason it can turn a request down.
-    An empty stdin is among them: `--note` with nothing behind it is a
+    An empty stdin is among them: a `route` that supplied no note is a
     malformed command, never a request to record no note.
     """
-    if not from_stdin:
-        return note
-    if note:
-        raise TriageSessionError.two_notes()
     piped = click.get_text_stream("stdin").read().strip()
     if not piped:
         raise TriageSessionError.empty_note()
