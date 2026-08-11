@@ -3,9 +3,10 @@
 Design spec. Lets a routed item whose GitHub thread changes — a new
 comment, a state flip — return to the triage pending pool automatically,
 so the next sync-triage-synthesize cycle re-judges it and refreshes its
-topic doc. Replaces the manual "append a corrected `route` event plus
-`rebuild`" workaround, and the unenforceable "revisit if the PR lands"
-notes triage was writing by hand in their place.
+topic doc. Replaces the unenforceable "revisit if the PR lands" notes
+triage was writing by hand for exactly this case. It does not touch the
+separate, still-manual tool for correcting a verdict that was wrong on
+content that never changed — see Motivation.
 
 Parent spec: `2026-07-09-ghmem-design.md` §Architecture (the `route`
 reducer branch, latest-wins `Route`, "re-routing marks both old and new
@@ -16,22 +17,25 @@ live re-route as `already_routed` — deliberate, and explicitly scoped as
 
 ## Motivation
 
-Two things forced this design rather than leaving the manual workaround
-in place. First, the workaround itself: correcting a landed verdict
-today means hand-appending a `route` event straight to the ledger
-(bypassing `record_verdict`'s guard, which only fences the session-loop
-path) and running `rebuild` — used for #1445 (reopened out of
-`no-signal` after `docs/ghmem-tail-sample.md` showed the original call
-wrong) and for #3795/#3783. Every one of those was a human deciding, by
-hand, that a specific item's thread had moved past its verdict. Nothing
-in the system notices that on its own.
+Triage had started writing "revisit if the PR lands" into routing notes
+for a verdict that was only provisionally settled. That note is
+unenforceable: nothing reads it back, nothing schedules the revisit, and
+it decays into a note nobody acts on. Re-entry replaces the note with a
+mechanism: the corpus, not a hand-written reminder, is what decides an
+item needs a second look.
 
-Second, triage had started writing "revisit if the PR lands" into
-routing notes for exactly this situation — a verdict that's only
-provisionally settled. That note is unenforceable: nothing reads it back,
-nothing schedules the revisit, and it decays into a note nobody acts on.
-Re-entry replaces the note with a mechanism: the corpus, not a
-hand-written reminder, is what decides an item needs a second look.
+A separate tool already exists for correcting an already-routed item,
+and predates this design: hand-append a corrected `route` event straight
+to the ledger (bypassing `record_verdict`'s guard, which only fences the
+session-loop path) and run `rebuild` — used for #1445
+(`docs/ghmem-tail-sample.md` found the original `no-signal` call wrong)
+and for #3795/#3783. Those were calibration catches, not corpus-change
+catches: a human re-read content that had not changed and decided the
+earlier verdict was wrong. Re-entry doesn't replace that tool or that
+judgment call — it solves a different problem, a verdict going stale
+because the *thread* moved, not because triage misjudged it the first
+time. The tool itself gets reused for this design's rollout backfill —
+see Rollout.
 
 ## Central call — why this needs no live/replay compare-and-set
 
@@ -104,34 +108,31 @@ abandonment-calibration signal reads exactly the entries it always has,
 uncontaminated by corpus-driven frees.
 
 `Route` gains a matching column: `item_updated_at: Mapped[datetime]`,
-not nullable — see Rollout below for how a pre-migration row still gets
-a value.
+not nullable from the start — see Rollout below for the one-time
+backfill that gives every existing row a value before the column ships.
 
-## Rollout — a cutoff constant, not a backfill
+## Rollout — backfill by event, not a cutoff constant
 
-Hundreds of items are already routed, many already synthesized. Two
-ways to give their `Route` rows a baseline:
+As of this writing, 55 items carry a `Route` (41 distinct topics, of
+which 39 are already dirty and only 2 are clean). The reducer's `route`
+branch dirties the topic being left and the topic being joined on every
+event, regardless of whether the verdict actually changes — so a
+same-verdict backfill event just re-marks an already-dirty topic dirty
+(a no-op) and only flips those 2 clean topics. That's a bounded,
+one-time cost, not the corpus-wide resynthesis storm the event count
+alone would suggest, and it only grows more one-sided as more of the
+corpus gets triaged and stays dirty pending synthesis.
 
-- **Backfill by appending a corrected `route` event per item** —
-  the pattern already used for #1445/#3795/#3783. It reuses the existing
-  reducer unchanged, but at this scale it's the wrong tool: the `route`
-  branch dirties both the topic an item leaves and the one it joins, and
-  a same-topic backfill re-route would dirty *every* topic with a routed
-  item, forcing a full re-synthesis pass across the corpus on rollout
-  day for no actual content change. That cost was invisible at
-  five hand-verified rows; it isn't at corpus scale.
-- **A fixed rollout-cutoff constant, no backfill at all (chosen).** The
-  reducer's `route` branch, replaying a pre-migration `RouteData` that
-  lacks `item_updated_at`, stamps the row with a fixed constant (the
-  date this feature ships) instead of leaving it null. Every
-  already-routed item is then "current as of rollout" without a single
-  extra ledger entry or a single extra dirty flag: only real activity
-  *after* that date makes it stale.
-
-This is a deliberate, scale-driven departure from the backfill-by-event
-pattern, not a rejection of it — the pattern still stands for
-hand-verified individual corrections, where there is no bulk-dirty cost
-to worry about.
+That makes backfill the right tool, not a workaround to avoid: before
+the `item_updated_at` column goes live, append one corrected `route`
+event per currently-routed item — same session, verdict and note, now
+carrying `item_updated_at` stamped from the item's live `updated_at` —
+then `rebuild`. Unlike the #1445/#3795/#3783 corrections, this backfill
+corrects nothing; every event is mechanical (verdict and note copied
+unchanged), so it needs no hand-verification the way those did.
+`Route.item_updated_at` is then `NOT NULL` from the column's first day —
+there's no pre-migration row left for the reducer to special-case, and
+no rollout-cutoff constant to place or maintain.
 
 ## Query change
 
@@ -198,9 +199,12 @@ contract is that one `ghmem sync` invocation does both.
 
 - **No-signal routes re-enter too.** A `Route` with verdict `NO_SIGNAL`
   is still a `Route`; the staleness check doesn't distinguish it from a
-  real topic assignment. This is exactly the #1445/#3795/#3783 shape,
-  now automatic. `ReenterEvent`'s topic-dirty step is a natural no-op
-  here, since no topic is attached.
+  real topic assignment — new activity on a no-signal item's thread
+  re-enters it just like a topic-routed one. `ReenterEvent`'s
+  topic-dirty step is a natural no-op here, since no topic is attached.
+  This still doesn't catch #1445's class of error — a no-signal call
+  wrong on content that never changed — only genuine new activity on a
+  no-signal item.
 - **Dispatch race safety.** Re-reserving a `Dispatch` for a freed item
   goes through the same conditional-INSERT `reserve_dispatch` path
   already used for brand-new items — no new race surface, just a new
@@ -228,9 +232,7 @@ staleness detection only ever walks routed `IssueOrPR` rows.
   dirties the associated topic when one exists, no-ops the dirty for a
   no-signal route, no-ops the delete when no `Dispatch` row exists.
 - **Staleness query tests** for `untriaged_heat_scores`: a fresh `Route`
-  still excludes; a stale one doesn't; a pre-migration row (no
-  `item_updated_at` in its source event) falls back to the rollout
-  constant, tested on both sides of that date.
+  still excludes; a stale one doesn't.
 - **Idempotency test**: the sync detection pass, run twice against an
   item already covered by an unactioned `ReenterEvent`, appends nothing
   the second time.
@@ -250,21 +252,17 @@ Mutation targets:
 - Reducer's `"reenter"` branch dirties the topic unconditionally,
   including for `NO_SIGNAL` → a spurious dirty flag with no topic behind
   it.
-- Rollout fallback reads the live rollout date instead of the fixed
-  constant → the answer for a pre-migration row changes depending on
-  when the query runs, rather than being pinned to rollout day.
+- Backfill script skips an item in its walk → that row is left with no
+  `item_updated_at`, which the column's `NOT NULL` constraint catches
+  loudly at write time rather than silently at query time.
 
 ## Open questions
 
-- **Legacy `RouteData` parsing.** The compat path — stamping
-  `ROLLOUT_CUTOFF` when `item_updated_at` is absent from a replayed
-  `RouteData` — lives in `apply_routing_event`'s existing `"route"`
-  branch, not in `"reenter"`; exact shape (a `.get()` default vs. a
-  dedicated legacy-parse step) is a plan-time call.
-- **`ROLLOUT_CUTOFF` placement and value.** A fixed constant, set to
-  this feature's ship date; which module owns it (`ledger.py`, next to
-  the other routing constants, is the natural home) is a plan-time
-  detail.
+- **Backfill script wiring.** Whether the one-time backfill runs as a
+  dedicated `ghmem` CLI command, a one-off script run manually before
+  the migration lands, or a step folded into the migration itself —
+  mechanically straightforward either way, but the concrete seam is a
+  plan-time call.
 - **Detection-pass wiring.** Whether it lives as a new function in
   `dispatch_store.py` called from `cli.sync`, or elsewhere — the
   CLI-visible contract (one `ghmem sync` call does fetch and detection)
@@ -272,9 +270,8 @@ Mutation targets:
 
 ## History
 
-Written 2026-08-11, after the corpus's third and fourth manual
-re-routes (#3795, #3783, alongside the earlier #1445) made the case that
-a hand-run correction was no longer a one-off — see
+Written 2026-08-11, prompted by triage's recurring unenforceable
+"revisit if the PR lands" notes — see
 `[[ghmem-ongoing-sync-not-snapshot]]` for the underlying argument that
 triage judges content, not settledness, and that a routed item leaving
 the pending pool forever is exactly the terminality this design removes.
