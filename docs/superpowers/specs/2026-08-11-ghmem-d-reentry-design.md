@@ -134,6 +134,11 @@ unchanged), so it needs no hand-verification the way those did.
 there's no pre-migration row left for the reducer to special-case, and
 no rollout-cutoff constant to place or maintain.
 
+It runs as a one-off script, not a `ghmem` CLI command: a transition
+that happens exactly once, for a tool with a user base of one, doesn't
+earn a maintained subcommand. Run once by hand before this ships, then
+discarded.
+
 ## Query change
 
 `untriaged_heat_scores`'s route exclusion moves from "any `Route`
@@ -164,26 +169,42 @@ that verdict is `NO_SIGNAL` and there is no topic to dirty. No change to
 
 ## Where the detection pass runs
 
-Per the "fold into sync, not a separate command" decision: `ghmem sync`
-gains a step, after its existing fetch pass, that walks every item
-currently carrying a `Route` and appends a `ReenterEvent` for any whose
-live `updated_at` has moved past its stamp and that doesn't already have
-a newer, still-unactioned `ReenterEvent` — the idempotency guard that
-keeps a repeatedly-stale item from being flagged again every sync cycle
-before it's re-triaged. The exact function/module boundary (a step
-inside the `sync` CLI command's own flow vs. a new function in
-`dispatch_store.py` it calls) is a plan-time detail; the CLI-visible
-contract is that one `ghmem sync` invocation does both.
+`ghmem sync` never touches the SQLite mirror — it only appends to the
+fetch ledger, so a comment fetched mid-sync doesn't move
+`IssueOrPR.updated_at` in the mirror until the next rebuild. `ghmem
+rebuild` is what replays both ledgers into a fresh mirror, so it's the
+point where a live `updated_at` and a stale `Route.item_updated_at` are
+both in hand at once — the natural home for the walk, not an extra
+mirror-writing step bolted onto `sync`, which has no such path today.
+
+`cli.rebuild` gains a step, after `rebuild_from_ledgers` returns, that
+walks every item currently carrying a `Route` — a new
+`dispatch_store.stale_routes(engine)`, alongside the existing
+`routes()`/`dispatched_unrouted()` queries — and appends a
+`ReenterEvent` for any whose live `updated_at` has moved past its stamp
+and that doesn't already have a newer, still-unactioned `ReenterEvent`
+— the idempotency guard that keeps a repeatedly-stale item from being
+flagged again every rebuild before it's re-triaged. Each event goes
+through `store.record_routing_event`, the same incremental
+mirror-update path `cli.requeue` already uses to apply its events, so no
+second full rebuild is needed to see the effect.
+
+This still means no new CLI command in the operator's cadence — the
+intent behind the earlier "fold into an existing command, not a
+separate one" call — just `rebuild` rather than `sync`: `sync` has no
+mirror-writing path today, and the operator's normal cadence already
+runs `rebuild` right after `sync` regardless.
 
 ## Data flow, end to end
 
 1. Item #N is triaged, routed to topic T. `RouteEvent` carries
    `item_updated_at` = #N's live `updated_at` at that moment.
-2. Someone comments on #N upstream. The next `ghmem sync` refetches #N;
-   its `updated_at` in the mirror moves forward.
-3. That same `sync` invocation's detection pass notices #N's live
-   `updated_at` now exceeds its `Route.item_updated_at`, and no newer
-   `ReenterEvent` already covers it, so it appends one.
+2. Someone comments on #N upstream. The next `ghmem sync` refetches #N
+   into the fetch ledger; the next `ghmem rebuild` replays it, and #N's
+   `updated_at` in the mirror moves forward.
+3. That same `rebuild`'s detection pass notices #N's live `updated_at`
+   now exceeds its `Route.item_updated_at`, and no newer `ReenterEvent`
+   already covers it, so it appends one.
 4. The reducer applies it: #N's `Dispatch` row is freed, topic T is
    dirtied immediately — before any new verdict exists.
 5. `untriaged_heat_scores` now includes #N: its `Route` still exists but
@@ -211,9 +232,9 @@ contract is that one `ghmem sync` invocation does both.
   caller of an existing one.
 - **Repeated staleness after re-triage is expected, not a bug.** If #N
   goes stale again immediately (a comment lands right after the new
-  verdict), the next sync correctly flags it again. That's an accepted
-  cost of the "any `updated_at` change triggers" default — a wasted
-  triage pass at worst, never corrupted state.
+  verdict), the next rebuild correctly flags it again. That's an
+  accepted cost of the "any `updated_at` change triggers" default — a
+  wasted triage pass at worst, never corrupted state.
 
 ## What this does not touch
 
@@ -233,9 +254,9 @@ staleness detection only ever walks routed `IssueOrPR` rows.
   no-signal route, no-ops the delete when no `Dispatch` row exists.
 - **Staleness query tests** for `untriaged_heat_scores`: a fresh `Route`
   still excludes; a stale one doesn't.
-- **Idempotency test**: the sync detection pass, run twice against an
-  item already covered by an unactioned `ReenterEvent`, appends nothing
-  the second time.
+- **Idempotency test**: the detection pass, run via two successive
+  `rebuild` calls against an item already covered by an unactioned
+  `ReenterEvent`, appends nothing the second time.
 - **Rebuild-equivalence test**: replay a ledger containing `route` →
   `reenter` → `route` (re-triage) through `rebuild_from_ledgers` and
   confirm it matches state built by applying the same events live.
@@ -255,18 +276,6 @@ Mutation targets:
 - Backfill script skips an item in its walk → that row is left with no
   `item_updated_at`, which the column's `NOT NULL` constraint catches
   loudly at write time rather than silently at query time.
-
-## Open questions
-
-- **Backfill script wiring.** Whether the one-time backfill runs as a
-  dedicated `ghmem` CLI command, a one-off script run manually before
-  the migration lands, or a step folded into the migration itself —
-  mechanically straightforward either way, but the concrete seam is a
-  plan-time call.
-- **Detection-pass wiring.** Whether it lives as a new function in
-  `dispatch_store.py` called from `cli.sync`, or elsewhere — the
-  CLI-visible contract (one `ghmem sync` call does fetch and detection)
-  is what this spec commits to, not the internal seam.
 
 ## History
 
