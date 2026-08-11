@@ -11,9 +11,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "heat_corpus.jsonl"
 
 _ROUTING_JSONL = (
     '{"type": "route", "data": {"session": "s1", "item_id": "I_1", '
-    '"verdict": "softwrap", "note": "note 1"}}\n'
+    '"verdict": "softwrap", "note": "note 1", '
+    '"item_updated_at": "2026-01-01T00:00:00Z"}}\n'
     '{"type": "route", "data": {"session": "s1", "item_id": "I_2", '
-    '"verdict": "softwrap", "note": "note 2"}}\n'
+    '"verdict": "softwrap", "note": "note 2", '
+    '"item_updated_at": "2026-01-01T00:00:00Z"}}\n'
 )
 
 

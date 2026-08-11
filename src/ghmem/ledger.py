@@ -203,6 +203,7 @@ class RouteData(TypedDict):
     item_id: str
     verdict: str
     note: str
+    item_updated_at: str  # ISO 8601, the item's updated_at at verdict time
 
 
 class RouteEvent(TypedDict):

@@ -84,6 +84,7 @@ def test_routed_item_is_absent(tmp_path: Path) -> None:
                 "item_id": "I_1",
                 "verdict": "softwrap",
                 "note": "",
+                "item_updated_at": "2026-01-01T00:00:00Z",
             },
         ),
         RouteEvent(
@@ -93,6 +94,7 @@ def test_routed_item_is_absent(tmp_path: Path) -> None:
                 "item_id": "I_2",
                 "verdict": "softwrap",
                 "note": "",
+                "item_updated_at": "2026-01-01T00:00:00Z",
             },
         ),
     )

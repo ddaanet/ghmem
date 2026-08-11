@@ -57,7 +57,13 @@ def _route(store: Store, tmp_path: Path, item_id: str, topic: str) -> None:
     routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
     event: RoutingEvent = {
         "type": "route",
-        "data": {"session": "s", "item_id": item_id, "verdict": topic, "note": "n"},
+        "data": {
+            "session": "s",
+            "item_id": item_id,
+            "verdict": topic,
+            "note": "n",
+            "item_updated_at": "2026-01-01T00:00:00Z",
+        },
     }
     store.record_routing_event(routing, event)
 

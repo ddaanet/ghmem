@@ -39,7 +39,13 @@ DISPATCH_2: RoutingEvent = {
 }
 ROUTE_1: RoutingEvent = {
     "type": "route",
-    "data": {"session": "s1", "item_id": "I_1", "verdict": "some-topic", "note": "n"},
+    "data": {
+        "session": "s1",
+        "item_id": "I_1",
+        "verdict": "some-topic",
+        "note": "n",
+        "item_updated_at": "2026-01-01T00:00:00Z",
+    },
 }
 REQUEUE_1: RequeueEvent = {
     "type": "requeue",

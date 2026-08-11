@@ -279,9 +279,10 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
         raise TriageSessionError.missing_note(verdict)
 
     try:
-        item_id = store.get_issue_or_pr(number).id
+        item = store.get_issue_or_pr(number)
     except IssueOrPRNotFoundError as error:
         raise TriageSessionError.unknown_number(number) from error
+    item_id = item.id
 
     dispatch = store.dispatch_for(item_id)
     if dispatch is None or dispatch.session != session_token:
@@ -298,6 +299,7 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
                 "item_id": item_id,
                 "verdict": verdict,
                 "note": note,
+                "item_updated_at": item.updated_at.isoformat(),
             },
         ),
     )

@@ -4,6 +4,7 @@ The same reducer's live path — one event appended and applied, rather
 than a whole ledger replayed — is covered by `test_routing_live.py`.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 import msgspec
@@ -46,13 +47,17 @@ def test_route_creates_topic_marked_dirty(store: Store, tmp_path: Path) -> None:
     """Routing an item to a new topic creates it, marked dirty.
 
     When: item #1 is routed to "softwrap"
-    Then: "softwrap" exists as a Topic and is marked dirty
+    Then: "softwrap" exists as a Topic and is marked dirty, and #1's
+      Route carries the item_updated_at the fixture routed it with
     """
     with _session(tmp_path) as session:
         topic = session.get(Topic, "softwrap")
+        route = session.get(Route, GraphQLId("I_1"))
 
     assert topic is not None
     assert topic.dirty is True
+    assert route is not None
+    assert route.item_updated_at.isoformat() == "2026-01-01T00:00:00+00:00"
 
 
 def test_no_signal_routes_but_creates_no_topic(store: Store, tmp_path: Path) -> None:
@@ -67,7 +72,11 @@ def test_no_signal_routes_but_creates_no_topic(store: Store, tmp_path: Path) -> 
         topic = session.get(Topic, NO_SIGNAL)
 
     assert route == Route(
-        item_id=GraphQLId("I_2"), verdict=NO_SIGNAL, note="", session="s1"
+        item_id=GraphQLId("I_2"),
+        verdict=NO_SIGNAL,
+        note="",
+        session="s1",
+        item_updated_at=datetime.fromisoformat("2026-01-02T00:00:00Z"),
     )
     assert topic is None
 
@@ -102,6 +111,7 @@ def test_reroute_replaces_the_verdict_and_dirties_both_topics(
         verdict="wrapping",
         note="actually about wrapping",
         session="s2",
+        item_updated_at=datetime.fromisoformat("2026-01-01T00:00:00Z"),
     )
 
 
@@ -227,7 +237,13 @@ def test_rebuild_discards_state_absent_from_the_ledgers(tmp_path: Path) -> None:
     with _session(tmp_path) as session:
         session.add(Topic(name="never-routed", dirty=True))
         session.add(
-            Route(item_id=GraphQLId("I_9"), verdict="ghost", note="", session="stale")
+            Route(
+                item_id=GraphQLId("I_9"),
+                verdict="ghost",
+                note="",
+                session="stale",
+                item_updated_at=datetime.fromisoformat("2026-01-01T00:00:00Z"),
+            )
         )
         session.commit()
 

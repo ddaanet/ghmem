@@ -45,6 +45,7 @@ def _route(
                 "item_id": item_id,
                 "verdict": "softwrap",
                 "note": note,
+                "item_updated_at": "2026-01-01T00:00:00Z",
             },
         ),
     )
@@ -68,6 +69,7 @@ def _route_no_signal(store: Store, routing: Ledger[RoutingEvent], item_id: str) 
                 "item_id": item_id,
                 "verdict": NO_SIGNAL,
                 "note": "nothing decided here",
+                "item_updated_at": "2026-01-01T00:00:00Z",
             },
         ),
     )

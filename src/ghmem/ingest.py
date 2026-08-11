@@ -34,6 +34,7 @@ produced the bad node, instead of one `rebuild_from_ledgers` raises
 later with only a JSON line to work back from.
 """
 
+from datetime import datetime
 from typing import Final
 
 import msgspec
@@ -240,6 +241,7 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
                 verdict=data["verdict"],
                 note=data["note"],
                 session=data["session"],
+                item_updated_at=datetime.fromisoformat(data["item_updated_at"]),
             )
         )
         if data["verdict"] != NO_SIGNAL:

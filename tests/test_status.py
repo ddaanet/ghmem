@@ -76,7 +76,8 @@ def test_routing_events_for_unfetched_items_do_not_count(
     ghosted_path.write_text(
         ROUTING_FIXTURE.read_text(encoding="utf-8")
         + '{"type": "route", "data": {"session": "s1", "item_id": "I_ghost", '
-        + '"verdict": "topic-a", "note": "routed after a corpus refetch"}}\n'
+        + '"verdict": "topic-a", "note": "routed after a corpus refetch", '
+        + '"item_updated_at": "2026-01-01T00:00:00Z"}}\n'
         + '{"type": "dispatched", "data": {"session": "s1", '
         + '"item_id": "I_missing", "packet_chars": 90, "fit": "fit", '
         + '"diff_valve_dropped": 0}}\n',

@@ -72,6 +72,7 @@ def test_record_verdict_then_serve_next_yields_the_next_item(tmp_path: Path) -> 
             "item_id": first_id,
             "verdict": "some-topic",
             "note": "reasoning",
+            "item_updated_at": store.get_issue_or_pr(first).updated_at.isoformat(),
         },
     }
 

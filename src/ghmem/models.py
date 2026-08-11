@@ -280,6 +280,7 @@ class Route(Base):
     verdict: Mapped[str]
     note: Mapped[str]
     session: Mapped[str]
+    item_updated_at: Mapped[datetime]
 
 
 class Dispatch(Base):

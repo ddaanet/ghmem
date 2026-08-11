@@ -1,5 +1,6 @@
 """Test the live routing write path: append to the ledger, then apply."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -33,6 +34,7 @@ ROUTE_SOFTWRAP: RouteEvent = {
         "item_id": "I_1",
         "verdict": "softwrap",
         "note": "relates to softwrap",
+        "item_updated_at": "2026-01-01T00:00:00Z",
     },
 }
 ROUTE_WRAPPING: RouteEvent = {
@@ -42,6 +44,7 @@ ROUTE_WRAPPING: RouteEvent = {
         "item_id": "I_1",
         "verdict": "wrapping",
         "note": "actually about wrapping",
+        "item_updated_at": "2026-01-01T00:00:00Z",
     },
 }
 
@@ -111,6 +114,7 @@ def test_recording_writes_the_ledger_and_the_mirror(tmp_path: Path) -> None:
             verdict="softwrap",
             note="relates to softwrap",
             session="s1",
+            item_updated_at=datetime.fromisoformat("2026-01-01T00:00:00Z"),
         )
 
 
