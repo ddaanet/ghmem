@@ -19,7 +19,7 @@ _ROUTING_JSONL = (
     '"item_updated_at": "2026-01-01T00:00:00Z"}}\n'
     '{"type": "route", "data": {"session": "s1", "item_id": "I_2", '
     '"verdict": "softwrap", "note": "note 2", '
-    '"item_updated_at": "2026-01-01T00:00:00Z"}}\n'
+    '"item_updated_at": "2026-01-05T00:00:00Z"}}\n'
 )
 
 

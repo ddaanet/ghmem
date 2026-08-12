@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ghmem.aliases import IssueOrPRNumber
+from ghmem.aliases import GraphQLId, IssueOrPRNumber
 from ghmem.exceptions import MalformedFrontmatterError
 from ghmem.index_cmd import (
     IndexEntry,
@@ -54,6 +54,8 @@ def index_store(tmp_path: Path) -> Store:
 
 def _route(store: Store, tmp_path: Path, item_id: str, topic: str) -> None:
     """Route the corpus item `item_id` to `topic` in the mirror."""
+    item = store.issue_or_pr_by_id(GraphQLId(item_id))
+    assert item is not None
     routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
     event: RoutingEvent = {
         "type": "route",
@@ -62,7 +64,7 @@ def _route(store: Store, tmp_path: Path, item_id: str, topic: str) -> None:
             "item_id": item_id,
             "verdict": topic,
             "note": "n",
-            "item_updated_at": "2026-01-01T00:00:00Z",
+            "item_updated_at": item.updated_at.isoformat(),
         },
     }
     store.record_routing_event(routing, event)

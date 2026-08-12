@@ -9,6 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
 
+from ghmem.aliases import GraphQLId
 from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RouteEvent, RoutingEvent
 from ghmem.store import Store
 
@@ -36,6 +37,8 @@ def _route(
     store: Store, routing: Ledger[RoutingEvent], item_id: str, note: str
 ) -> None:
     """Route `item_id` to "softwrap" live, carrying `note`."""
+    item = store.issue_or_pr_by_id(GraphQLId(item_id))
+    assert item is not None
     store.record_routing_event(
         routing,
         RouteEvent(
@@ -45,7 +48,7 @@ def _route(
                 "item_id": item_id,
                 "verdict": "softwrap",
                 "note": note,
-                "item_updated_at": "2026-01-01T00:00:00Z",
+                "item_updated_at": item.updated_at.isoformat(),
             },
         ),
     )
@@ -60,6 +63,8 @@ def _route_no_signal(store: Store, routing: Ledger[RoutingEvent], item_id: str) 
     ledger still holds from before the rule covered it, and no topic
     assembly should depend on which it gets.
     """
+    item = store.issue_or_pr_by_id(GraphQLId(item_id))
+    assert item is not None
     store.record_routing_event(
         routing,
         RouteEvent(
@@ -69,7 +74,7 @@ def _route_no_signal(store: Store, routing: Ledger[RoutingEvent], item_id: str) 
                 "item_id": item_id,
                 "verdict": NO_SIGNAL,
                 "note": "nothing decided here",
-                "item_updated_at": "2026-01-01T00:00:00Z",
+                "item_updated_at": item.updated_at.isoformat(),
             },
         ),
     )
