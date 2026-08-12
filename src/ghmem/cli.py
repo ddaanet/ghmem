@@ -45,13 +45,17 @@ def main() -> None:
 
 @main.command()
 def rebuild() -> None:
-    """Rebuild the SQLite mirror from the fetch and routing ledgers."""
+    """Rebuild the SQLite mirror, then reenter stale routes."""
     path = sqlite_path()
     store = Store.open(path)
     fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())
     routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
     store.rebuild_from_ledgers(fetch, routing)
-    click.echo(f"Rebuilt {path}")
+    stale = store.stale_routes()
+    for route in stale:
+        event: RoutingEvent = {"type": "reenter", "data": {"item_id": route.item_id}}
+        store.record_routing_event(routing, event)
+    click.echo(f"Rebuilt {path}, reentered {len(stale)} item(s)")
 
 
 @main.command()

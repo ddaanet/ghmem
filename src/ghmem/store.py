@@ -39,6 +39,7 @@ from ghmem.dispatch_store import (
     routed_items,
     routes,
     session_usage,
+    stale_routes,
     topic_digest,
     topics,
 )
@@ -323,6 +324,10 @@ class Store:
     def dispatched_unrouted(self) -> list[Dispatch]:
         """Return corpus items dispatched but carrying no current Route."""
         return dispatched_unrouted(self._engine)
+
+    def stale_routes(self) -> list[Route]:
+        """Return every Route whose item has moved past its stamped verdict."""
+        return stale_routes(self._engine)
 
     def dispatch_for(self, item_id: GraphQLId) -> Dispatch | None:
         """Return `item_id`'s Dispatch row, or None if not outstanding."""

@@ -175,6 +175,33 @@ def dispatched_unrouted(engine: Engine) -> list[Dispatch]:
         )
 
 
+def stale_routes(engine: Engine) -> list[Route]:
+    """Return every Route whose item has moved past its stamped verdict.
+
+    A Route counts as stale when the item's live `updated_at` has moved
+    past `Route.item_updated_at`, and it still carries an outstanding
+    `Dispatch` — the second condition is the idempotency guard: a
+    `"reenter"` event frees that `Dispatch`, so once one has already
+    been appended for the current staleness episode, the item drops out
+    of this query until it's re-triaged and dispatched again. Without
+    it, every rebuild between staleness and re-triage would append
+    another reenter event for the same item. Right after a normal
+    route, `Dispatch` is never deleted by the `"route"` branch and the
+    stamp equals the item's `updated_at`, so a freshly-routed item is
+    never selected either way.
+    """
+    with Session(engine) as session:
+        return list(
+            session.execute(
+                select(Route)
+                .join(IssueOrPR, IssueOrPR.id == Route.item_id)
+                .where(IssueOrPR.updated_at > Route.item_updated_at)
+                .where(exists().where(Dispatch.item_id == Route.item_id))
+                .order_by(Route.item_id)
+            ).scalars()
+        )
+
+
 def dispatch_for(engine: Engine, item_id: GraphQLId) -> Dispatch | None:
     """Return `item_id`'s current `Dispatch` row, or None if not outstanding.
 
