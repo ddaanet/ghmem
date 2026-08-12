@@ -272,10 +272,12 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
       a deliberate B1 policy, not a consequence of the ownership
       lookup above: `ingest.apply_routing_event` already supports a
       live re-route, but wiring one through here is out of scope until
-      a later part asks for it. A *stale* `Route` doesn't reject: that
-      is re-entry's whole path back through this function, and
-      `dispatch_for` above already proves the item was legitimately
-      re-served, not raced into a live re-route;
+      a later part asks for it. The freshness comparison is what tells
+      a live re-route attempt from a reentered item's re-triage apart:
+      a live re-route still carries a fresh `Route` and is rejected
+      exactly as before, while a reentered item's `Route` only clears
+      this check once it has gone genuinely stale — which is re-entry's
+      whole path back through this function;
     - `number` never fetched into the corpus at all — converted from
       `Store.get_issue_or_pr`'s `IssueOrPRNotFoundError`, so a caller
       maps one exception class for every rejection here, not two.

@@ -238,14 +238,20 @@ runs `rebuild` right after `sync` regardless.
 
 ## What this does not touch
 
-`record_verdict`'s B1 rejection of a live re-route stays exactly as it
-is. It still fires for an item with a *fresh* `Route` — this design
-never routes such an item to `serve_next` in the first place, so the
-guard simply never gets exercised by this path. There is still no way
-to re-triage an item on demand; the only way in is corpus-detected
-staleness. No change to `heat`, `status`, `topic`, or `close`. Discussions
-stay out of scope — the triage queue runs over `IssueOrPR` only, and
-staleness detection only ever walks routed `IssueOrPR` rows.
+`record_verdict`'s B1 guard was narrowed, not left alone: it now
+rejects a second verdict only when the existing `Route` is *fresh*
+(its `item_updated_at` still matches or leads the item's live
+`updated_at`). A reentered item's `Route` is stale by construction —
+that staleness is the whole point of re-entry — so it clears the
+guard and the fresh verdict from `serve_next` goes through; a live
+re-route attempt still carries a fresh `Route` and is rejected exactly
+as before. This path is exercised on every reenter, not skipped — it
+is what step 6 of "Data flow, end to end" above depends on. There is
+still no way to re-triage an item on demand; the only way in is
+corpus-detected staleness. No change to `heat`, `status`, `topic`, or
+`close`. Discussions stay out of scope — the triage queue runs over
+`IssueOrPR` only, and staleness detection only ever walks routed
+`IssueOrPR` rows.
 
 ## Testing
 
@@ -288,3 +294,12 @@ The architecture was decided by working through the same live-vs-replay
 question C2 raised for `close`, and finding it doesn't apply here:
 staleness is a stateless read, not reducer state, so — unlike
 `close` — no compare-and-set needs recording.
+
+Corrected 2026-08-12: "What this does not touch" originally predicted
+B1 would stay unchanged and never fire on this path. Task 5's
+implementation found that prediction false — before the fix,
+`record_verdict` rejected on any existing `Route`, so the reenter path
+itself tripped B1 the first time it actually ran end to end. The fix
+narrows the guard to fire only on a *fresh* `Route`, reusing the same
+freshness predicate `untriaged_heat_scores` and `stale_routes` already
+use; the section above now states that as the current behavior.
