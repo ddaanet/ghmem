@@ -6,6 +6,7 @@ order is trivial to reason about and every assertion here is about the
 filter, not the score.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from ghmem.aliases import GraphQLId, IssueOrPRNumber
 from ghmem.heat_query import untriaged_heat_scores
 from ghmem.ledger import DispatchedEvent, FetchEvent, Ledger, RouteEvent, RoutingEvent
-from ghmem.models import Dispatch, HeatScore
+from ghmem.models import Dispatch, HeatScore, IssueOrPR
 from ghmem.store import Store
 
 DB_NAME = "cache.sqlite"
@@ -175,6 +176,46 @@ def test_requeued_item_is_present_again(tmp_path: Path) -> None:
     )
     with Session(_engine(tmp_path)) as session:
         session.delete(session.get_one(Dispatch, GraphQLId("I_1")))
+        session.commit()
+
+    assert _numbers(tmp_path) == [3, 1]
+
+
+def test_stale_routed_item_is_present_again(tmp_path: Path) -> None:
+    """A Route stamped older than its item's current updated_at doesn't exclude.
+
+    When: item #1 is routed with a stamp of "2026-01-01T00:00:00Z", item
+      #2 is routed and left untouched, and #1's live updated_at then
+      moves to "2026-01-03T00:00:00Z"
+    Then: #1 rejoins the queue below #3 (fewer comments); #2 stays excluded
+    """
+    _store(
+        tmp_path,
+        RouteEvent(
+            type="route",
+            data={
+                "session": "s1",
+                "item_id": "I_1",
+                "verdict": "softwrap",
+                "note": "",
+                "item_updated_at": "2026-01-01T00:00:00Z",
+            },
+        ),
+        RouteEvent(
+            type="route",
+            data={
+                "session": "s1",
+                "item_id": "I_2",
+                "verdict": "softwrap",
+                "note": "",
+                "item_updated_at": "2026-01-01T00:00:00Z",
+            },
+        ),
+    )
+    with Session(_engine(tmp_path)) as session:
+        session.get_one(IssueOrPR, GraphQLId("I_1")).updated_at = datetime.fromisoformat(
+            "2026-01-03T00:00:00Z"
+        )
         session.commit()
 
     assert _numbers(tmp_path) == [3, 1]

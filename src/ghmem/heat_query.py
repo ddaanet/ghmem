@@ -56,19 +56,25 @@ def untriaged_heat_scores(
 ) -> list[HeatScore]:
     """Score and rank every item not yet triaged, hottest first.
 
-    "Not yet triaged" excludes an item carrying a `Route` (it already
-    has a verdict) or an outstanding `Dispatch` (some session is
-    holding it right now), as two `NOT EXISTS` clauses on the same
-    `item` alias `_ranked_query` builds its aggregate against.
+    "Not yet triaged" excludes an item carrying a *fresh* `Route` (its
+    stamped `item_updated_at` still matches or leads the item's live
+    `updated_at` — a real verdict that hasn't gone stale) or an
+    outstanding `Dispatch` (some session is holding it right now), as
+    two `NOT EXISTS` clauses on the same `item` alias `_ranked_query`
+    builds its aggregate against. A stale Route no longer excludes —
+    re-entry is what lets a corpus-changed item flow back through here.
 
     Neither needs the explicit `.correlate(item)` the subqueries in
     `_ranked_query` do: these are plain, non-compound `EXISTS`, which
     auto-correlation resolves to `item` on its own.
     """
     query, item = _ranked_query(weights)
-    query = query.where(~exists().where(Route.item_id == item.id)).where(
-        ~exists().where(Dispatch.item_id == item.id)
-    )
+    query = query.where(
+        ~exists().where(
+            Route.item_id == item.id,
+            Route.item_updated_at >= item.updated_at,
+        )
+    ).where(~exists().where(Dispatch.item_id == item.id))
     return _run(engine, query, item)
 
 
