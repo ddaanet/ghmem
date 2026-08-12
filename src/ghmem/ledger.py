@@ -267,7 +267,25 @@ class CloseEvent(TypedDict):
     data: CloseData
 
 
+class ReenterData(TypedDict):
+    """A routed item whose corpus activity moved past its verdict."""
+
+    item_id: str
+
+
+class ReenterEvent(TypedDict):
+    """A ghmem-constructed record that a stale route was reopened."""
+
+    type: Literal["reenter"]
+    data: ReenterData
+
+
 type RoutingEvent = (
-    DispatchedEvent | RouteEvent | RequeueEvent | SnapshotEvent | CloseEvent
+    DispatchedEvent
+    | RouteEvent
+    | RequeueEvent
+    | SnapshotEvent
+    | CloseEvent
+    | ReenterEvent
 )
 """The routing-ledger event union."""

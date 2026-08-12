@@ -49,6 +49,7 @@ from ghmem.ledger import (
     DispatchedEvent,
     FetchEvent,
     Ledger,
+    ReenterEvent,
     RequeueEvent,
     RouteEvent,
     RoutingEvent,
@@ -140,6 +141,7 @@ _ROUTING_BY_TYPE: Final[dict[str, type]] = {
     "requeue": RequeueEvent,
     "snapshot": SnapshotEvent,
     "close": CloseEvent,
+    "reenter": ReenterEvent,
 }
 """Each routing tag mapped to the TypedDict that declares its shape.
 
@@ -267,6 +269,17 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
         topic = session.get(Topic, data["topic"])
         if topic is not None:
             topic.dirty = False
+        return
+
+    if event["type"] == "reenter":
+        data = event["data"]
+        item_id = GraphQLId(data["item_id"])
+        dispatch = session.get(Dispatch, item_id)
+        if dispatch is not None:
+            session.delete(dispatch)
+        route = session.get(Route, item_id)
+        if route is not None and route.verdict != NO_SIGNAL:
+            _mark_topic_dirty(session, route.verdict)
         return
 
     raise UnknownRoutingEventError(event_type)
