@@ -36,8 +36,8 @@ catches: a human re-read content that had not changed and decided the
 earlier verdict was wrong. Re-entry doesn't replace that tool or that
 judgment call — it solves a different problem, a verdict going stale
 because the *thread* moved, not because triage misjudged it the first
-time. The tool itself gets reused for this design's rollout backfill —
-see Rollout.
+time. This design's own rollout could not reuse that tool — see
+Rollout for why, and for what migrated the corpus instead.
 
 ## Central call — why this needs no live/replay compare-and-set
 
@@ -110,8 +110,8 @@ abandonment-calibration signal reads exactly the entries it always has,
 uncontaminated by corpus-driven frees.
 
 `Route` gains a matching column: `item_updated_at: Mapped[datetime]`,
-not nullable from the start — see Rollout below for the one-time
-backfill that gives every existing row a value before the column ships.
+not nullable from the start — see Rollout below for how the existing
+63 routed rows were given a value at migration time.
 
 ## Rollout — the corpus was migrated by editing ledger lines, not appending events
 

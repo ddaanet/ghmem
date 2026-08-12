@@ -202,9 +202,10 @@ class RouteData(TypedDict):
     `item_updated_at` is required on every `route` event, hand-appended
     ones included (see the design spec's Motivation section for the
     #1445/#3795/#3783 corrections that hand-append one straight to the
-    ledger): it must be a timezone-aware UTC ISO-8601 timestamp, the
-    exact form `datetime.isoformat()` renders for a UTC-aware
-    `datetime`. That precision is load-bearing, not cosmetic —
+    ledger): it must be a timezone-aware UTC ISO-8601 timestamp — any
+    form `datetime.fromisoformat` accepts for a UTC-aware value
+    (`+00:00` or `Z`; storage normalizes either to `+00:00`). That
+    awareness is load-bearing, not cosmetic —
     `Route.item_updated_at` is compared two different ways downstream,
     and the two only agree in that one form: as stored text in SQL
     (`stale_routes`, `untriaged_heat_scores` — `_ISODateTime` stores
