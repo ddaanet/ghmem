@@ -42,7 +42,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId, JsonObject
-from ghmem.exceptions import UnknownRoutingEventError
+from ghmem.exceptions import InvalidItemUpdatedAtError, UnknownRoutingEventError
 from ghmem.ledger import (
     NO_SIGNAL,
     CloseData,
@@ -246,7 +246,9 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
                 verdict=data["verdict"],
                 note=data["note"],
                 session=data["session"],
-                item_updated_at=datetime.fromisoformat(data["item_updated_at"]),
+                item_updated_at=_parse_item_updated_at(
+                    item_id, data["item_updated_at"]
+                ),
             )
         )
         if data["verdict"] != NO_SIGNAL:
@@ -273,6 +275,34 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
         return
 
     raise UnknownRoutingEventError(event_type)
+
+
+def _parse_item_updated_at(item_id: str, raw: str) -> datetime:
+    """Parse a `route` event's `item_updated_at`, rejecting a poison pill.
+
+    A hand-appended `route` event (see `RouteData.item_updated_at`'s
+    docstring) can carry a naive or unparseable timestamp. Left
+    unguarded, that value reaches `Route.item_updated_at`, where it
+    breaks two downstream comparisons that only agree when every stamp
+    is timezone-aware UTC: `stale_routes`' textual SQL comparison
+    (silently — a naive string just sorts differently) and
+    `record_verdict`'s Python `datetime` comparison (with an uncaught
+    `TypeError`). Both failure modes are collapsed into one
+    `InvalidItemUpdatedAtError` here, at parse time, naming the item
+    and the raw string, instead of surfacing later from whichever
+    comparison reaches it first.
+
+    Only tz-awareness is checked, not a specific UTC offset — a
+    tz-aware but non-UTC stamp is accepted; enforcing UTC specifically
+    is a separate, later concern.
+    """
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise InvalidItemUpdatedAtError(item_id, raw) from error
+    if parsed.tzinfo is None:
+        raise InvalidItemUpdatedAtError(item_id, raw)
+    return parsed
 
 
 def _apply_snapshot_event(session: Session, data: SnapshotData) -> None:

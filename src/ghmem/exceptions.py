@@ -12,7 +12,10 @@ state is bad input too. `TopicNotRoutedError` belongs to topic
 synthesis (`topic.py`): assembling a topic with no routed items is bad
 input too. `UnknownSnapshotError` belongs to topic close
 (`dispatch_store.py`): closing a token with no matching `Snapshot` row
-is bad input too.
+is bad input too. `InvalidItemUpdatedAtError` belongs to ledger replay
+(`ingest.py`), alongside `UnknownRoutingEventError`: a `route` event's
+`item_updated_at` that doesn't parse, or parses naive, is bad input
+too.
 """
 
 from datetime import datetime
@@ -81,6 +84,32 @@ class UnknownRoutingEventError(ValueError):
         """Name the unhandled event tag."""
         super().__init__(f"no reducer for routing event type {event_type!r}")
         self.event_type = event_type
+
+
+class InvalidItemUpdatedAtError(ValueError):
+    """Raised when a `route` event's `item_updated_at` can't be trusted.
+
+    `ingest.py`'s parse guard raises this for either of two shapes:
+    a string `datetime.fromisoformat` rejects outright, or one it
+    parses but returns naive (no tzinfo) — a hand-appended `route`
+    event (see `RouteData.item_updated_at`'s docstring) is the
+    realistic source of both. Left unguarded, either reaches
+    `Route.item_updated_at`, where it silently breaks `stale_routes`'
+    textual SQL comparison and raises an uncaught `TypeError` from
+    `record_verdict`'s Python `datetime` comparison — bad input the
+    same way an unhandled routing event tag is, hence `ValueError`
+    like `UnknownRoutingEventError`, and raised here instead, at parse
+    time, attributable to the item and the raw string that caused it.
+    """
+
+    def __init__(self, item_id: str, raw: str) -> None:
+        """Name the item and the raw `item_updated_at` string that failed."""
+        super().__init__(
+            f"item {item_id!r}: item_updated_at {raw!r} is not a "
+            "timezone-aware ISO-8601 timestamp"
+        )
+        self.item_id = item_id
+        self.raw = raw
 
 
 class MalformedFrontmatterError(ValueError):

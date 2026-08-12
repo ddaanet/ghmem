@@ -2,9 +2,13 @@
 
 `record_verdict`'s own rejection guards live in
 `test_triage_verdict.py`, split out to keep each module under the
-400-line cap; the one test here that touches `record_verdict` at all
-is the serve-route-serve integration that exercises the queue
-advancing, not the guard.
+400-line cap. Two tests here touch `record_verdict`: the
+serve-route-serve integration that exercises the queue advancing, not
+the guard, and `test_reenter_lifecycle_end_to_end`, which drives the
+full route/stale/reenter/re-route cycle and directly exercises the
+narrowed B1 guard's stale-`Route`-acceptance branch — the fresh verdict
+from the item's second `serve_next` call only goes through because its
+existing `Route` has gone stale.
 """
 
 from datetime import datetime

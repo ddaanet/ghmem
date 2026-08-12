@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId
-from ghmem.exceptions import UnknownRoutingEventError
+from ghmem.exceptions import InvalidItemUpdatedAtError, UnknownRoutingEventError
 from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
 from ghmem.store import Store
@@ -253,6 +253,67 @@ def test_rebuild_discards_state_absent_from_the_ledgers(tmp_path: Path) -> None:
         assert session.get(Topic, "never-routed") is None
         assert session.get(Route, GraphQLId("I_9")) is None
         assert session.get(Topic, "wrapping") is not None
+
+
+def test_route_with_naive_item_updated_at_is_rejected(tmp_path: Path) -> None:
+    """A route event's naive `item_updated_at` is rejected, not stored.
+
+    A hand-appended `route` event with a naive (no-timezone) timestamp
+    — the exact shape a hand-writer might produce, per the design
+    spec's Motivation section — must not reach `Route.item_updated_at`,
+    where it would silently break `stale_routes`' textual SQL
+    comparison and raise an uncaught `TypeError` from
+    `record_verdict`'s Python comparison.
+
+    When: the routing ledger carries a `route` event whose
+      `item_updated_at` has no timezone
+    Then: rebuild raises `InvalidItemUpdatedAtError` naming the item,
+      and no Route row is created for it
+    """
+    routing_path = tmp_path / "naive_routing.jsonl"
+    routing_path.write_text(
+        '{"type": "route", "data": {"session": "s1", "item_id": "I_1", '
+        '"verdict": "softwrap", "note": "n", '
+        '"item_updated_at": "2026-01-01T00:00:00"}}\n',
+        encoding="utf-8",
+    )
+    store = Store.open(tmp_path / DB_NAME)
+    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
+    routing: Ledger[RoutingEvent] = Ledger(routing_path)
+
+    with pytest.raises(InvalidItemUpdatedAtError) as excinfo:
+        store.rebuild_from_ledgers(fetch, routing)
+    assert excinfo.value.item_id == "I_1"
+
+    with _session(tmp_path) as session:
+        assert session.get(Route, GraphQLId("I_1")) is None
+
+
+def test_route_with_unparseable_item_updated_at_is_rejected(tmp_path: Path) -> None:
+    """A route event's unparseable `item_updated_at` is rejected the same way.
+
+    When: the routing ledger carries a `route` event whose
+      `item_updated_at` is not a valid ISO-8601 string at all
+    Then: rebuild raises `InvalidItemUpdatedAtError` naming the item,
+      and no Route row is created for it
+    """
+    routing_path = tmp_path / "malformed_routing.jsonl"
+    routing_path.write_text(
+        '{"type": "route", "data": {"session": "s1", "item_id": "I_1", '
+        '"verdict": "softwrap", "note": "n", '
+        '"item_updated_at": "not-a-timestamp"}}\n',
+        encoding="utf-8",
+    )
+    store = Store.open(tmp_path / DB_NAME)
+    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
+    routing: Ledger[RoutingEvent] = Ledger(routing_path)
+
+    with pytest.raises(InvalidItemUpdatedAtError) as excinfo:
+        store.rebuild_from_ledgers(fetch, routing)
+    assert excinfo.value.item_id == "I_1"
+
+    with _session(tmp_path) as session:
+        assert session.get(Route, GraphQLId("I_1")) is None
 
 
 def test_rebuild_is_idempotent(tmp_path: Path) -> None:

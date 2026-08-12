@@ -197,7 +197,23 @@ class DispatchedEvent(TypedDict):
 
 
 class RouteData(TypedDict):
-    """A triage verdict for one item, to a topic or to `NO_SIGNAL`."""
+    """A triage verdict for one item, to a topic or to `NO_SIGNAL`.
+
+    `item_updated_at` is required on every `route` event, hand-appended
+    ones included (see the design spec's Motivation section for the
+    #1445/#3795/#3783 corrections that hand-append one straight to the
+    ledger): it must be a timezone-aware UTC ISO-8601 timestamp, the
+    exact form `datetime.isoformat()` renders for a UTC-aware
+    `datetime`. That precision is load-bearing, not cosmetic —
+    `Route.item_updated_at` is compared two different ways downstream,
+    and the two only agree in that one form: as stored text in SQL
+    (`stale_routes`, `untriaged_heat_scores` — `_ISODateTime` stores
+    `.isoformat()` in a `Text` column, so the comparison is a string
+    sort, not a temporal one), and as a `datetime` in Python
+    (`record_verdict`'s B1 guard). `ingest.py`'s parse guard rejects a
+    naive or unparseable value with `InvalidItemUpdatedAtError` rather
+    than storing it.
+    """
 
     session: str
     item_id: str

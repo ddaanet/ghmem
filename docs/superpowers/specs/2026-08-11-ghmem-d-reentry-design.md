@@ -13,7 +13,9 @@ reducer branch, latest-wins `Route`, "re-routing marks both old and new
 topics dirty") and §Error handling. B1 policy reference:
 `2026-07-21-ghmem-dispatch-triage.md` (`record_verdict` rejects a
 live re-route as `already_routed` — deliberate, and explicitly scoped as
-"out of scope until a later part asks for it"). This is that part.
+"out of scope until a later part asks for it"). This is that part — for
+a *stale* `Route` only; a live re-route stays rejected (see "What this
+does not touch").
 
 ## Motivation
 
@@ -111,33 +113,52 @@ uncontaminated by corpus-driven frees.
 not nullable from the start — see Rollout below for the one-time
 backfill that gives every existing row a value before the column ships.
 
-## Rollout — backfill by event, not a cutoff constant
+## Rollout — the corpus was migrated by editing ledger lines, not appending events
 
-As of this writing, 55 items carry a `Route` (41 distinct topics, of
-which 39 are already dirty and only 2 are clean). The reducer's `route`
-branch dirties the topic being left and the topic being joined on every
-event, regardless of whether the verdict actually changes — so a
-same-verdict backfill event just re-marks an already-dirty topic dirty
-(a no-op) and only flips those 2 clean topics. That's a bounded,
-one-time cost, not the corpus-wide resynthesis storm the event count
-alone would suggest, and it only grows more one-sided as more of the
-corpus gets triaged and stays dirty pending synthesis.
+`corpus/routing.jsonl` carried 63 pre-existing `route` lines when
+`item_updated_at` was added to `RouteData` — more lines than routed
+items, since a re-routed item leaves more than one `route` line behind
+and replay validates every line, not just the latest one per item. Each
+of the 63 was edited in place, gaining `item_updated_at` stamped from
+its item's `updated_at` in the fetch mirror at migration time — the
+same value an event-based backfill would have produced, written as an
+edit to the existing line rather than a new one appended after it.
+`session`, `verdict`, `note` and `item_id` were left untouched on every
+line; only the new field was added.
 
-That makes backfill the right tool, not a workaround to avoid: before
-the `item_updated_at` column goes live, append one corrected `route`
-event per currently-routed item — same session, verdict and note, now
-carrying `item_updated_at` stamped from the item's live `updated_at` —
-then `rebuild`. Unlike the #1445/#3795/#3783 corrections, this backfill
-corrects nothing; every event is mechanical (verdict and note copied
-unchanged), so it needs no hand-verification the way those did.
-`Route.item_updated_at` is then `NOT NULL` from the column's first day —
-there's no pre-migration row left for the reducer to special-case, and
-no rollout-cutoff constant to place or maintain.
+An event-based backfill — append one corrected `route` event per
+currently-routed item, then `rebuild` — cannot work, at any point in
+the rollout ordering. Producing the events needs `store.routes()`,
+which needs the `item_updated_at` column already live in the mirror;
+getting that column live means a `rebuild`, and `rebuild` replays every
+line of `routing.jsonl` through `validate_routing_event` before it
+replays anything else — so the first legacy `route` line, still
+missing `item_updated_at`, raises `msgspec.ValidationError` before a
+single backfill event is ever produced, let alone appended. Appending
+the corrected events afterward doesn't rescue this either: a full
+sequential replay validates *every* line in order, so a corrected event
+appended after an un-migrated original for the same item is never
+reached — the original line's `ValidationError` fires first, every
+time. This section's original claim — "there's no pre-migration row
+left for the reducer to special-case" — is true of the derived mirror
+row, which is last-write-wins and only ever shows the newest line per
+item, but false of the ledger line itself, which is what replay
+actually validates, one line at a time.
 
-It runs as a one-off script, not a `ghmem` CLI command: a transition
-that happens exactly once, for a tool with a user base of one, doesn't
-earn a maintained subcommand. Run once by hand before this ships, then
-discarded.
+The edit needed no hand-verification, the same character as the
+original #1445/#3795/#3783 corrections but for the opposite reason:
+those corrected a verdict a human had judged wrong; this corrected
+nothing about any verdict — the edit was purely mechanical, adding one
+field whose value was read straight off the fetch mirror.
+`Route.item_updated_at` is then `NOT NULL` from the column's first
+day, same as originally intended — the migration just reached that
+state by editing the ledger's existing lines instead of appending new
+ones after them.
+
+It ran once, by hand, via a one-off script that was never added to the
+repository: a transition that happens exactly once, for a tool with a
+user base of one, doesn't earn a maintained module any more than it
+earns a maintained CLI subcommand. There is nothing left to run again.
 
 ## Query change
 
@@ -303,3 +324,15 @@ itself tripped B1 the first time it actually ran end to end. The fix
 narrows the guard to fire only on a *fresh* `Route`, reusing the same
 freshness predicate `untriaged_heat_scores` and `stale_routes` already
 use; the section above now states that as the current behavior.
+
+Corrected 2026-08-12: Rollout originally described an append-based
+backfill procedure — append one corrected `route` event per
+currently-routed item, then `rebuild`. The final whole-branch review
+proved that procedure cannot execute against any pre-migration corpus,
+at any point in the rollout ordering: `rebuild` validates every
+existing ledger line, so the first un-migrated legacy `route` line
+raises `msgspec.ValidationError` before a backfill event is ever
+produced or, appended afterward, ever reached. The section above now
+describes what actually migrated the corpus: an in-place edit of the
+63 pre-existing `route` lines in `corpus/routing.jsonl`, each gaining
+the stamped field the append-based procedure would have carried.
