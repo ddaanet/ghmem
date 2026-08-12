@@ -7,13 +7,23 @@ is the serve-route-serve integration that exercises the queue
 advancing, not the guard.
 """
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy.orm import Session
 
 from ghmem import triage
+from ghmem.aliases import GraphQLId, IssueOrPRNumber
 from ghmem.ledger import Ledger, RoutingEvent
-from tests.triage_helpers import _content_only, _dispatch_row, _ranked_numbers, _store
+from ghmem.models import IssueOrPR, Route, Topic
+from tests.triage_helpers import (
+    _content_only,
+    _dispatch_row,
+    _engine,
+    _ranked_numbers,
+    _store,
+)
 
 
 def test_fresh_session_serves_the_hottest_item(tmp_path: Path) -> None:
@@ -276,3 +286,91 @@ def test_mint_session_draws_eight_chars_from_the_expected_alphabet() -> None:
 
     assert len(token) == 8
     assert all(c.isalnum() and c.isascii() for c in token)
+
+
+def test_reenter_lifecycle_end_to_end(tmp_path: Path) -> None:
+    """A stale route flows all the way back through triage to a fresh verdict.
+
+    Exercises the spec's full "Data flow, end to end": route, corpus
+    moves, stale_routes + reenter free it, it rejoins the untriaged
+    queue, gets served again, and a fresh verdict closes the loop with
+    an up-to-date stamp.
+
+    When: item #1 is dispatched and routed to "softwrap" (items #2 and
+      #3 routed away too, so #1 is the only untriaged item), its live
+      updated_at moves forward, stale_routes + a reenter event free
+      it, and it's served and routed again
+    Then: it carries a fresh item_updated_at, "softwrap" is dirty, and
+      stale_routes reports nothing more for it
+    """
+    store, routing = _store(tmp_path)
+    for other_id, verdict in (("I_2", "no-signal"), ("I_3", "other-topic")):
+        store.record_routing_event(
+            routing,
+            {
+                "type": "route",
+                "data": {
+                    "session": "s0",
+                    "item_id": other_id,
+                    "verdict": verdict,
+                    "note": "n",
+                    "item_updated_at": "2026-01-01T00:00:00Z",
+                },
+            },
+        )
+    store.record_routing_event(
+        routing,
+        {
+            "type": "dispatched",
+            "data": {
+                "session": "s0",
+                "item_id": "I_1",
+                "packet_chars": 100,
+                "fit": "fit",
+                "diff_valve_dropped": 0,
+            },
+        },
+    )
+    store.record_routing_event(
+        routing,
+        {
+            "type": "route",
+            "data": {
+                "session": "s0",
+                "item_id": "I_1",
+                "verdict": "softwrap",
+                "note": "initial",
+                "item_updated_at": "2026-01-01T00:00:00Z",
+            },
+        },
+    )
+    with Session(_engine(tmp_path)) as session:
+        session.get_one(
+            IssueOrPR, GraphQLId("I_1")
+        ).updated_at = datetime.fromisoformat("2026-01-05T00:00:00Z")
+        session.commit()
+
+    stale = store.stale_routes()
+    assert [r.item_id for r in stale] == [GraphQLId("I_1")]
+    for route in stale:
+        store.record_routing_event(
+            routing, {"type": "reenter", "data": {"item_id": route.item_id}}
+        )
+
+    token = triage.mint_session()
+    served = triage.serve_next(store, routing, token)
+    assert served.packet is not None
+    assert "item: 1" in served.packet
+
+    triage.record_verdict(
+        store, routing, token, IssueOrPRNumber(1), "softwrap", "still softwrap"
+    )
+
+    with Session(_engine(tmp_path)) as session:
+        route = session.get(Route, GraphQLId("I_1"))
+        topic = session.get(Topic, "softwrap")
+    assert route is not None
+    assert route.item_updated_at == datetime.fromisoformat("2026-01-05T00:00:00Z")
+    assert topic is not None
+    assert topic.dirty is True
+    assert store.stale_routes() == []

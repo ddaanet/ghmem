@@ -266,11 +266,16 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
       is a consistency check against agent error, not authentication;
       the allowlist hook is what constrains which agents call `route`
       at all;
-    - `number` already carrying a `Route` — rejecting a second verdict
-      for the same item is a deliberate B1 policy, not a consequence
-      of the ownership lookup above: `ingest.apply_routing_event`
-      already supports a live re-route, but wiring one through here is
-      out of scope until a later part asks for it;
+    - `number` already carrying a *fresh* `Route` (its stamped
+      `item_updated_at` still matches or leads the item's live
+      `updated_at`) — rejecting a second verdict for the same item is
+      a deliberate B1 policy, not a consequence of the ownership
+      lookup above: `ingest.apply_routing_event` already supports a
+      live re-route, but wiring one through here is out of scope until
+      a later part asks for it. A *stale* `Route` doesn't reject: that
+      is re-entry's whole path back through this function, and
+      `dispatch_for` above already proves the item was legitimately
+      re-served, not raced into a live re-route;
     - `number` never fetched into the corpus at all — converted from
       `Store.get_issue_or_pr`'s `IssueOrPRNotFoundError`, so a caller
       maps one exception class for every rejection here, not two.
@@ -287,7 +292,8 @@ def record_verdict(  # noqa: PLR0913 — one argument per field of a route event
     dispatch = store.dispatch_for(item_id)
     if dispatch is None or dispatch.session != session_token:
         raise TriageSessionError.not_dispatched(number, session_token)
-    if store.route_for(item_id) is not None:
+    existing_route = store.route_for(item_id)
+    if existing_route is not None and existing_route.item_updated_at >= item.updated_at:
         raise TriageSessionError.already_routed(number)
 
     store.record_routing_event(
