@@ -189,6 +189,13 @@ def stale_routes(engine: Engine) -> list[Route]:
     route, `Dispatch` is never deleted by the `"route"` branch and the
     stamp equals the item's `updated_at`, so a freshly-routed item is
     never selected either way.
+
+    The one accepted gap: a `rebuild` running concurrently while a
+    session is mid-re-triage of a freshly-reentered item (dispatch
+    just re-reserved, no new verdict yet, no further corpus activity)
+    would re-flag it — out of scope, matching the same operational
+    assumption `requeue`'s own docstring already states: not expected
+    to run concurrently with a live triage session.
     """
     with Session(engine) as session:
         return list(

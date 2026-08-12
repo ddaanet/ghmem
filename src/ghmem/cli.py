@@ -45,7 +45,18 @@ def main() -> None:
 
 @main.command()
 def rebuild() -> None:
-    """Rebuild the SQLite mirror, then reenter stale routes."""
+    """Rebuild the SQLite mirror, then reenter any item its corpus moved past.
+
+    Replays both ledgers into SQLite, then appends a `reenter` event —
+    to `routing.jsonl`, not just the mirror — for every route whose
+    item's corpus activity has moved past its recorded verdict, freeing
+    its dispatch so it rejoins the triage queue. Running it twice in a
+    row reenters nothing the second time. Because it writes to the
+    ledger, run it between orchestration runs, not mid-session: a
+    session mid-re-triage of a freshly-reentered item would have its
+    dispatch pulled out from under it, the same hazard `requeue`'s
+    docstring documents for its own stranded-dispatch write.
+    """
     path = sqlite_path()
     store = Store.open(path)
     fetch: Ledger[FetchEvent] = Ledger(fetch_ledger_path())

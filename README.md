@@ -22,7 +22,10 @@ store already carries its routing tables and its write seam.
 ## Storage model
 
 Two append-only JSONL ledgers are the sources of truth, and SQLite is
-a derived cache of them that `ghmem rebuild` recreates from scratch:
+a derived cache of them that `ghmem rebuild` recreates from scratch.
+The ledger→mirror arrow isn't strictly one-way, though: `rebuild` also
+appends to `routing.jsonl` itself, one `reenter` event per route whose
+item has moved past its recorded verdict — see `ghmem rebuild` below.
 
 - `fetch.jsonl` — everything fetched from GitHub. Regenerable: delete
   it and re-sync.
@@ -44,8 +47,12 @@ re-running after an interruption continues rather than restarting. On
 rate-limit exhaustion it reports the reset time and exits 0; re-run to
 continue.
 
-`ghmem rebuild` — drop and repopulate the SQLite mirror by replaying
-both ledgers. Idempotent.
+`ghmem rebuild` — replay both ledgers into the SQLite mirror, then
+append a `reenter` event for every item whose corpus activity has
+moved past its recorded verdict, freeing its dispatch so it rejoins
+the triage queue. Running it twice in a row reenters nothing the
+second time. Because it writes to `routing.jsonl`, run it between
+orchestration runs, not mid-session.
 
 `ghmem show <number>` / `ghmem discussion <number>` — render one
 thread as compact markdown. Issues/PRs and discussions have disjoint
