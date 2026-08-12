@@ -213,9 +213,9 @@ def test_stale_routed_item_is_present_again(tmp_path: Path) -> None:
         ),
     )
     with Session(_engine(tmp_path)) as session:
-        session.get_one(IssueOrPR, GraphQLId("I_1")).updated_at = datetime.fromisoformat(
-            "2026-01-03T00:00:00Z"
-        )
+        session.get_one(
+            IssueOrPR, GraphQLId("I_1")
+        ).updated_at = datetime.fromisoformat("2026-01-03T00:00:00Z")
         session.commit()
 
     assert _numbers(tmp_path) == [3, 1]
