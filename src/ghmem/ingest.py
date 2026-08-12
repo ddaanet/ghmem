@@ -45,14 +45,17 @@ from ghmem.aliases import GraphQLId, JsonObject
 from ghmem.exceptions import UnknownRoutingEventError
 from ghmem.ledger import (
     NO_SIGNAL,
+    CloseData,
     CloseEvent,
     DispatchedEvent,
     FetchEvent,
     Ledger,
+    ReenterData,
     ReenterEvent,
     RequeueEvent,
     RouteEvent,
     RoutingEvent,
+    SnapshotData,
     SnapshotEvent,
 )
 from ghmem.models import Base, Dispatch, FetchFailed, Route, Snapshot, Topic
@@ -258,31 +261,43 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
         return
 
     if event["type"] == "snapshot":
-        data = event["data"]
-        session.merge(
-            Snapshot(token=data["token"], topic=data["topic"], digest=data["digest"])
-        )
+        _apply_snapshot_event(session, event["data"])
         return
 
     if event["type"] == "close":
-        data = event["data"]
-        topic = session.get(Topic, data["topic"])
-        if topic is not None:
-            topic.dirty = False
+        _apply_close_event(session, event["data"])
         return
 
     if event["type"] == "reenter":
-        data = event["data"]
-        item_id = GraphQLId(data["item_id"])
-        dispatch = session.get(Dispatch, item_id)
-        if dispatch is not None:
-            session.delete(dispatch)
-        route = session.get(Route, item_id)
-        if route is not None and route.verdict != NO_SIGNAL:
-            _mark_topic_dirty(session, route.verdict)
+        _apply_reenter_event(session, event["data"])
         return
 
     raise UnknownRoutingEventError(event_type)
+
+
+def _apply_snapshot_event(session: Session, data: SnapshotData) -> None:
+    """Record a minted snapshot token for a topic."""
+    session.merge(
+        Snapshot(token=data["token"], topic=data["topic"], digest=data["digest"])
+    )
+
+
+def _apply_close_event(session: Session, data: CloseData) -> None:
+    """Clear the dirty flag for a closed topic."""
+    topic = session.get(Topic, data["topic"])
+    if topic is not None:
+        topic.dirty = False
+
+
+def _apply_reenter_event(session: Session, data: ReenterData) -> None:
+    """Free a stale route's dispatch and dirty its topic if it was routed."""
+    item_id = GraphQLId(data["item_id"])
+    dispatch = session.get(Dispatch, item_id)
+    if dispatch is not None:
+        session.delete(dispatch)
+    route = session.get(Route, item_id)
+    if route is not None and route.verdict != NO_SIGNAL:
+        _mark_topic_dirty(session, route.verdict)
 
 
 def _mark_topic_dirty(session: Session, name: str) -> None:
