@@ -121,14 +121,15 @@ def serve_next(
         return ServeResult(packet=None, message="batch complete: budget exhausted")
 
     standing = build_standing(store)
+    topics = _topic_line(store)
     for candidate in candidates:
         packet, packet_chars = _render_packet(
-            store, standing, session_token, candidate.number
+            store, standing, session_token, candidate.number, topics=topics
         )
         fit: DispatchFit = "fit"
         if first_of_session and packet_chars > BATCH_CHARS:
             packet, packet_chars, fit = _fit_first_item(
-                store, standing, session_token, candidate.number
+                store, standing, session_token, candidate.number, topics
             )
         elif not first_of_session and chars_used + packet_chars > BATCH_CHARS:
             return ServeResult(packet=None, message="batch complete: budget exhausted")
@@ -165,27 +166,48 @@ def serve_next(
     return ServeResult(packet=None, message="batch complete: all candidates taken")
 
 
+def _topic_line(store: Store) -> str:
+    """Render the `topics:` line naming every topic minted so far.
+
+    Named unconditionally, `(none)` included, matching
+    `status.render_status`'s own empty marker: an agent reading the
+    packet must never have to tell "nothing minted yet" from "the
+    packet omitted the line", and it is the second that this line
+    exists to rule out. `Store.topics` is already name-ordered, which
+    puts near-duplicates that share a prefix next to each other —
+    the scan the agent is actually asked to perform.
+    """
+    names = [topic.name for topic in store.topics()]
+    return f"topics: {', '.join(names) or '(none)'}"
+
+
 def _render_packet(  # noqa: PLR0913 — one argument per rendering input
     store: Store,
     standing: StandingTable,
     session_token: str,
     number: IssueOrPRNumber,
     *,
+    topics: str,
     diff_max_chars: int = DIFF_BODY_MAX_CHARS,
     note: str | None = None,
 ) -> tuple[str, int]:
     """Render one packet and the char count that counts against the budget.
 
-    `packet_chars` measures the item line and the rendered thread
-    only — the two-line header above them is fixed overhead the
-    budget doesn't need to track, and folding it in would make the
+    `packet_chars` measures the item line, the topic line and the
+    rendered thread — the two-line header above them is fixed overhead
+    the budget doesn't need to track, and folding it in would make the
     reported size depend on the session token's own length for no
     reason a caller cares about. `note`, when set, joins the header as
     a `packet-note: ` line beside `packet-chars`, so recording a
     truncation never changes what the truncation was measured against.
+
+    `topics` arrives rendered rather than as a `Store` read here, so
+    that `_fit_first_item`'s floor render and the re-render it sizes
+    from that floor cannot disagree about the list: one read per
+    `serve_next` call, reused across every render it performs.
     """
     rendered = render(store, standing, number, diff_max_chars=diff_max_chars)
-    body = f"item: {number}\n{rendered}"
+    body = f"item: {number}\n{topics}\n{rendered}"
     packet_chars = len(body)
     header = f"session: {session_token}\npacket-chars: {packet_chars}\n"
     if note is not None:
@@ -200,7 +222,11 @@ _OVERSIZED_NOTE = (
 
 
 def _fit_first_item(
-    store: Store, standing: StandingTable, session_token: str, number: IssueOrPRNumber
+    store: Store,
+    standing: StandingTable,
+    session_token: str,
+    number: IssueOrPRNumber,
+    topics: str,
 ) -> tuple[str, int, DispatchFit]:
     """Fit a session's oversized first item to BATCH_CHARS by cutting its diff.
 
@@ -224,7 +250,7 @@ def _fit_first_item(
     packet fits.
     """
     _floor_packet, floor_chars = _render_packet(
-        store, standing, session_token, number, diff_max_chars=0
+        store, standing, session_token, number, topics=topics, diff_max_chars=0
     )
     allowance = BATCH_CHARS - floor_chars
     if allowance > 0:
@@ -233,12 +259,19 @@ def _fit_first_item(
             standing,
             session_token,
             number,
+            topics=topics,
             diff_max_chars=allowance,
             note=_DIFF_CUT_NOTE,
         )
         return packet, packet_chars, "diff_cut"
     packet, packet_chars = _render_packet(
-        store, standing, session_token, number, diff_max_chars=0, note=_OVERSIZED_NOTE
+        store,
+        standing,
+        session_token,
+        number,
+        topics=topics,
+        diff_max_chars=0,
+        note=_OVERSIZED_NOTE,
     )
     return packet, packet_chars, "oversized"
 

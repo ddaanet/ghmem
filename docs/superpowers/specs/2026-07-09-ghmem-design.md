@@ -246,7 +246,10 @@ emit from the local corpus.
 - `ghmem triage` — opens a metered batch session: mints a session
   token and yields the next untriaged item (heat order) as a complete
   packet — a `session: <token>` line, a `packet-chars: <n>` header, the
-  id, and its `show` rendering. The CLI meters items and characters
+  id, a `topics:` line naming every topic minted so far, and its `show`
+  rendering. The topic line sits inside the budgeted body, so an
+  oversized first item's diff allowance is computed over a floor that
+  already carries it. The CLI meters items and characters
   served per token (ledger events), and the budget gate runs
   **before** serving: if the next item's packet would exceed the
   remaining budget, the batch ends with that item still queued — empty
@@ -380,7 +383,8 @@ path is `ghmem` commands over the local corpus.
   (items remain: spawn another batch) or `triage complete` (stop) —
   followed by the id → verdict lines, so the orchestrator branches on
   the first line. May propose new
-  topics, consulting the full topic list first to avoid near-duplicates.
+  topics, consulting the packet's own `topics:` line first to avoid
+  near-duplicates.
   "No-signal" is a comfortable default verdict, not a failure — most
   items encode no decision.
 - **ghmem-synthesize (Opus).** Input: one topic's context from

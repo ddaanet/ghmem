@@ -26,7 +26,12 @@ from tests.diff_fixtures import (
     write_diff_corpus,
     write_two_pr_diff_corpus,
 )
-from tests.triage_helpers import _content_only, _ranked_numbers, _store
+from tests.triage_helpers import (
+    _body_prefix,
+    _content_only,
+    _ranked_numbers,
+    _store,
+)
 
 _DIFF_LINES = 500
 
@@ -76,27 +81,27 @@ def _floor_chars(store: Store, number: IssueOrPRNumber) -> int:
     r"""Return `number`'s packet size with its diff body removed.
 
     Built from `show.render(..., diff_max_chars=0)` and the
-    `item: {number}\\n` line directly, not by calling `triage`'s
+    `_body_prefix` lead lines directly, not by calling `triage`'s
     private renderer, so this is an independent measure of the floor
     rather than a restatement of the formula under test.
     """
     standing = build_standing(store)
     body = render(store, standing, number, diff_max_chars=0)
-    return len(f"item: {number}\n{body}")
+    return len(_body_prefix(store, number) + body)
 
 
 def _full_chars(store: Store, number: IssueOrPRNumber) -> int:
     r"""Return `number`'s full packet size at the default diff valve.
 
     Built the same way `_floor_chars` is — from `show.render` and the
-    `item: {number}\\n` line directly, not by calling `triage`'s
+    `_body_prefix` lead lines directly, not by calling `triage`'s
     private renderer — so it's an independent measure of the fit
     path's entry boundary rather than a restatement of the formula
     under test.
     """
     standing = build_standing(store)
     body = render(store, standing, number)
-    return len(f"item: {number}\n{body}")
+    return len(_body_prefix(store, number) + body)
 
 
 def test_packet_within_budget_records_fit_and_carries_no_note(tmp_path: Path) -> None:

@@ -55,12 +55,20 @@ def _dispatch_row(tmp_path: Path, item_id: str) -> Dispatch | None:
         return session.get(Dispatch, item_id)
 
 
-def _content_only(store: Store, number: IssueOrPRNumber) -> str:
-    """Render `number`'s packet body the way `triage._render_packet` does.
+def _body_prefix(store: Store, number: IssueOrPRNumber) -> str:
+    r"""Return a packet body's two lead lines: `item:` then `topics:`.
 
     Duplicated in miniature rather than imported: this is the test's
     own independent measure of what a packet's char cost should be, so
-    it doesn't share a formula with the code it's checking.
+    it doesn't share a formula with the code it's checking. Every size
+    measure across the triage test modules is built on this one, so a
+    line added to the body is accounted in exactly one place here.
     """
+    names = ", ".join(topic.name for topic in store.topics()) or "(none)"
+    return f"item: {number}\ntopics: {names}\n"
+
+
+def _content_only(store: Store, number: IssueOrPRNumber) -> str:
+    """Render `number`'s packet body the way `triage._render_packet` does."""
     standing = build_standing(store)
-    return f"item: {number}\n{render(store, standing, number)}"
+    return _body_prefix(store, number) + render(store, standing, number)

@@ -96,7 +96,9 @@ batch budget; the agent never counts characters or items.
 **Loop.** Open a session with `ghmem triage`, which mints the session
 token and serves the first packet. Each packet leads with a `session:
 <token>` header line (and a `packet-chars:` line); the agent reads the
-token from that header and passes it to every verdict. Then repeat:
+token from that header and passes it to every verdict. The body opens
+with the item id and a `topics:` line naming every topic minted so
+far. Then repeat:
 judge the packet, answer with exactly one
 
 ```
@@ -116,7 +118,7 @@ doc. The trial is what the text carries, never whether the thread
 concluded: substantial maintainer feedback on an open PR is knowledge,
 and the corpus is kept in sync rather than photographed, so a later run
 captures what the thread becomes. Before proposing a *new* topic,
-consult the current topic list to avoid near-duplicates. The CLI-facing
+consult the packet's own `topics:` line to avoid near-duplicates. The CLI-facing
 id is the item number (matching `ghmem show <number>`).
 
 **Final report.** Lead with the terminal status line, verbatim, so

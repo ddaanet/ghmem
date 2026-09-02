@@ -119,9 +119,11 @@ rather than photographed, so when the thread gains a comment or the PR
 changes state, a later run captures that and the topic doc is rewritten.
 Withholding today's knowledge because tomorrow's may differ loses both.
 
-Before proposing a *new* topic name, check the packet's current topic list
-for a near-duplicate. A topic that already covers the same ground should get
-the existing name, not a synonym.
+Every packet carries a `topics:` line naming every topic minted so far,
+name-ordered. Read it before proposing a *new* name, and prefer an existing
+topic that already covers the same ground over a synonym for it. Concurrent
+sessions share that list, so a name another session minted moments ago is
+already on it.
 
 The CLI-facing id for a verdict is the item number as it appears in the
 packet — the same number `ghmem show <number>` takes.
