@@ -1,7 +1,7 @@
 # ghmem subproject 3 — the agentic layer
 
 Design spec for the third of ghmem's four subprojects. The parent
-spec `docs/superpowers/specs/2026-07-09-ghmem-design.md` is the source
+spec `docs/ghmem-design.md` is the source
 of truth for the system as a whole and for the standing rules this
 subproject enforces; this document specifies only the agentic layer
 and does not re-derive decisions settled there.
@@ -343,7 +343,7 @@ Mechanical correctness against the live corpus, not routing accuracy:
 
 ## References
 
-- Parent spec: `docs/superpowers/specs/2026-07-09-ghmem-design.md`
+- Parent spec: `docs/ghmem-design.md`
   (§Agentic layer, §Validation, §Execution structure).
 - Claude Code mechanics confirmed for the hook design:
   `https://code.claude.com/docs/en/sub-agents.md` (frontmatter

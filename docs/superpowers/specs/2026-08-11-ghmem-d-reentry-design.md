@@ -8,7 +8,7 @@ triage was writing by hand for exactly this case. It does not touch the
 separate, still-manual tool for correcting a verdict that was wrong on
 content that never changed — see Motivation.
 
-Parent spec: `2026-07-09-ghmem-design.md` §Architecture (the `route`
+Parent spec: `docs/ghmem-design.md` §Architecture (the `route`
 reducer branch, latest-wins `Route`, "re-routing marks both old and new
 topics dirty") and §Error handling. B1 policy reference:
 `2026-07-21-ghmem-dispatch-triage.md` (`record_verdict` rejects a

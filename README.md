@@ -5,10 +5,9 @@ GitHub PR/issue/discussion history into a local corpus so that
 agentic sessions can query it instead of re-fetching from the
 GitHub API on every run.
 
-The design spec is
-`docs/superpowers/specs/2026-07-09-ghmem-design.md` at the repository
-root, and it is the source of truth — this file describes what is
-built, not what is intended.
+The living design is `docs/ghmem-design.md` at the repository root,
+and it is the source of truth — this file describes what is built, not
+what is intended.
 
 ## What exists today
 

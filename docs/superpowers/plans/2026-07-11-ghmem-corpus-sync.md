@@ -39,7 +39,7 @@ ruff (`select=ALL`), mypy strict.
 
 ## Global Constraints
 
-Copied from the spec (`docs/superpowers/specs/2026-07-09-ghmem-design.md`)
+Copied from the spec (`docs/ghmem-design.md`)
 plus constraints the landed code has since established; every task's
 requirements implicitly include these.
 

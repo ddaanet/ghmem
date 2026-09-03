@@ -33,7 +33,7 @@ strict, docformatter, justfile `green`.
 
 ## Global Constraints
 
-Copied from the spec (`docs/superpowers/specs/2026-07-09-ghmem-design.md`)
+Copied from the spec (`docs/ghmem-design.md`)
 and the landed corpus code; every task's requirements implicitly include
 these.
 

@@ -64,7 +64,7 @@ pytest + pytest-mock, ruff (`select=ALL`), mypy strict.
 ## Global Constraints
 
 Copied verbatim from the spec
-(`docs/superpowers/specs/2026-07-09-ghmem-design.md`); every task's
+(`docs/ghmem-design.md`); every task's
 requirements implicitly include these.
 
 - Python floor **>=3.14**; no stringified forward references.
