@@ -297,6 +297,27 @@ class ReenterEvent(TypedDict):
     data: ReenterData
 
 
+class UnrouteData(TypedDict):
+    """A routed item returned whole to the triage queue."""
+
+    item_id: str
+
+
+class UnrouteEvent(TypedDict):
+    """A ghmem-constructed record that a verdict was withdrawn.
+
+    Carries no session, unlike `RequeueData`. An unroute is an operator
+    correction over items some *other* session judged, so there is no
+    session whose ownership it could assert and none worth calibrating
+    against. What is being withdrawn stays legible regardless: the
+    `route` event this supersedes is still in the ledger, session and
+    note included.
+    """
+
+    type: Literal["unroute"]
+    data: UnrouteData
+
+
 type RoutingEvent = (
     DispatchedEvent
     | RouteEvent
@@ -304,5 +325,6 @@ type RoutingEvent = (
     | SnapshotEvent
     | CloseEvent
     | ReenterEvent
+    | UnrouteEvent
 )
 """The routing-ledger event union."""

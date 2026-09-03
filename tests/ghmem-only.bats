@@ -30,6 +30,19 @@ run_hook() {
   [ "$status" -eq 0 ]
 }
 
+# The pairing matters: a guard broken closed passes every deny case, so the
+# real `unroute` string is asserted ALLOW beside a must-block sibling.
+@test "ghmem-only: allows a multi-number ghmem unroute" {
+  run run_hook "ghmem unroute 1445 3795 3783"
+  [ "$status" -eq 0 ]
+}
+
+@test "ghmem-only: blocks a ghmem unroute with a chained command" {
+  run run_hook "ghmem unroute 1445; rm -rf /"
+  [ "$status" -eq 2 ]
+  [ -n "$output" ]
+}
+
 @test "ghmem-only: allows args containing dots, slashes, colons, equals, underscores" {
   run run_hook "ghmem show docs/design/foo.md --format=json item_42:1"
   [ "$status" -eq 0 ]

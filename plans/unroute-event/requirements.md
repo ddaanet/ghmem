@@ -55,12 +55,13 @@ Acceptance criteria:
   that reduce to no change, and a subsequent `rebuild` agrees with the
   live mirror.
 
-**FR-3: The vacated topic is marked dirty**
+**FR-3: The vacated topic is dirtied, or dropped if left empty**
 
 An item leaving a real (non-`NO_SIGNAL`) verdict dirties that topic, so
-the topic doc gets rewritten without the item. This mirrors what the
-`route` branch already does for the topic an item leaves on a
-re-route, and what `_apply_reenter_event` does.
+the topic doc gets rewritten without the item — as `route`'s
+leaving-topic step and `_apply_reenter_event` already do. When the
+leaving item was the topic's last, the `Topic` row is deleted instead
+(Q-2). `route` is unchanged.
 
 **FR-4: Emptying a topic must not break synthesis**
 
@@ -70,7 +71,9 @@ the batch this event exists to serve, not an edge case: 57 of the
 corpus's 71 topics hold exactly one item, and 20 of the 22 items to be
 re-triaged minted a fresh name.
 
-Today that state is reachable by no other path, and it is not handled:
+Re-routing the last item out of a topic reaches the same state today,
+so the path is not new — but no corpus route has ever done it, and it
+is not handled:
 
 - `status` lists the empty topic under both `topics:` and `dirty:`;
 - `topic.assemble` raises `TopicNotRoutedError` for it, so a synthesis
@@ -119,10 +122,20 @@ file a re-sync cannot regenerate.
 
 **NFR-2: Every touched source file stays under 400 lines**
 
-`scripts/check_line_limits.sh` runs inside `just green`. Current sizes
-of the files this touches: `ingest.py` 339, `cli.py` 313, `ledger.py`
-308, `dispatch_store.py` 355. None has room to spare for a large
-addition; a split is a live possibility rather than a formality.
+`scripts/check_line_limits.sh` runs inside `just green`. Sizes before
+this change of the files it touches: `ingest.py` 339, `cli.py` 313,
+`ledger.py` 308, `dispatch_store.py` 355. None has room to spare for a
+large addition; a split is a live possibility rather than a formality.
+
+It was needed. `ingest.py` reached 416 lines, so the routing reducer
+moved to `routing_reduce.py` along the seam `ingest.py`'s own module
+docstring already draws — that module owns the fetch ledger's raw
+nodes and the drop-and-replay driver, the new one owns what a routing
+event means. `ingest.py` is 111 and `routing_reduce.py` 328.
+`dispatch_store.py` and `ingest.py` now import `apply_routing_event`
+from the new module directly; `store.py` and `sync_core.py` still
+reach `rebuild_from_ledgers` and `validate_raw_node` in `ingest.py`,
+which kept them. No compatibility alias was left behind.
 
 **NFR-3: `just precommit` passes**
 
@@ -219,33 +232,81 @@ point on such a docstring.
   worker runs with an unrestricted shell. This is how the corpus was
   corrupted once already.
 
-### Open Questions
+### Decisions
 
-- **Q-1: What selects the items to unroute?** Positional numbers match
-  every other ghmem command, but the batch is naturally identified by
-  the two session tokens that produced it. A `--session` selector would
-  fit this job and may have no second caller. Positional numbers are
-  the conservative default.
-- **Q-2: What happens to a topic whose last item leaves?** Delete the
-  `Topic` row in the reducer; leave it and make `status` omit empty
-  topics from the dirty set; or leave it and make `topic.assemble`
-  return a deletion instruction rather than raise. The choice
-  determines whether a synthesized `docs/design/<name>.md` for an
-  emptied topic is removed, and by what. Feeds FR-4.
-- **Q-3: Should a triage worker be able to call `ghmem unroute`?** The
-  allowlist permits it (C-5), so a worker rejected with
-  `already_routed` could unroute the item and re-route it. Whether that
-  is a containment hole worth closing, and whether the hook is even the
-  right place to close it, is unsettled.
-- **Q-4: Are the 4 `no-signal` routes in scope?** None of the 22 is
-  currently `no-signal`, so the question is only whether `unroute`
-  should refuse a `NO_SIGNAL` verdict or treat it uniformly. Uniform
-  treatment is the simpler contract.
+**Q-1 — positional issue/PR numbers, variadic, at least one required.**
+
+`ghmem unroute NUMBER...` names items the way `show`, `triage` and
+`route` do. The batch's session identity is a property of *this* job,
+not of the command: the 22 numbers are derivable once with a query
+over `Route.session`, and the command that consumes them stays in
+ghmem's one vocabulary. A `--session` selector remains additive if a
+second caller ever appears; removing one would not be. The allowlist
+hook's argument class permits either form, so containment does not
+decide it.
+
+**Q-2 — the reducer deletes a `Topic` row the unroute leaves empty.**
+
+A `Topic` row exists exactly while some `Route` carries its name. The
+reducer's leaving-topic step becomes: dirty the topic if routed items
+remain, delete its row if none do. Nothing else changes — `status`
+stops listing it under `topics:` and `dirty:` because it is gone, and
+`topic.assemble` is never dispatched for it, so FR-4's loop runs to
+completion with no special case anywhere downstream.
+
+Two consequences are deliberate:
+
+- **The step is scoped to `unroute`, and `route` keeps its behaviour.**
+  Re-routing the last item out of a topic reaches the same empty state,
+  and three tests in `test_routing_replay.py` plus two in
+  `test_routing_live.py` pin the current answer to it — the emptied
+  topic survives as a dirty row. There is a real distinction to stand
+  on: a re-routed item is still in the corpus under another name, so
+  the emptied topic's doc has a rewrite to receive, while a withdrawn
+  verdict leaves the name standing for nothing. Whether the two paths
+  should converge is a live question and an explicitly tested contract
+  to overturn, so it is left open rather than settled inside this
+  change. No corpus route has ever emptied a topic: the mirror holds
+  zero empty `Topic` rows across 95 routes.
+- **Nothing removes `docs/design/<name>.md`.** The reducer writes
+  SQLite and is replayed by `rebuild`; a filesystem delete inside it
+  would make replay destructive. A synthesized doc is prose about items
+  that were really routed there, so an emptied-but-synthesized topic
+  keeps its doc, and `ghmem index` keeps listing it from disk. For this
+  batch the question is moot: none of the 20 topics the 22 items empty
+  has a doc.
+
+**Q-3 — no containment change; `ghmem unroute` stays permitted.**
+
+The escalation the question names does not exist. `unroute` clears the
+`Dispatch` along with the `Route`, so a worker that unroutes an item it
+was rejected on immediately fails `record_verdict`'s `not_dispatched`
+guard. Its only route back is to be served the item again through the
+metered queue, which is the sanctioned loop.
+
+The residual — a confused worker returning other sessions' items to the
+queue — is not a new class of exposure. `ghmem-only.sh` is a
+command-*shape* allowlist, and it already permits `ghmem requeue` and
+`ghmem rebuild`, both corpus-wide mutating operator commands. Singling
+out `unroute` there would be theatre while those stay open, and "which
+subcommands may this caller run" needs authority vocabulary the hook
+does not have — it sees one command string, and one copy of it contains
+both agents. No incident has occurred; the rule waits for one.
+
+**Q-4 — uniform: `unroute` treats every verdict alike, `NO_SIGNAL`
+included.**
+
+The `Route` row is deleted whatever it holds; the topic-release step is
+skipped for `NO_SIGNAL` exactly as `route`'s leaving branch and
+`_apply_reenter_event` already skip it. Refusing `NO_SIGNAL` would make
+it the one verdict that can never be corrected, and with `no-signal`
+running at 4 of 95 routes against a 36.5% calibrated base rate, that is
+the population most likely to need correcting.
 
 ### References
 
 - `plans/unroute-event/recall-artifact.md` — curated memory entries
-- `docs/superpowers/specs/2026-07-09-ghmem-design.md` — ghmem spec,
+- `docs/ghmem-design.md` — ghmem spec,
   sole source of truth for the pipeline's decisions
 - `.claude/handoff-task.md` — the re-triage task this event serves
 - Corpus measurements taken 2026-09-02 against

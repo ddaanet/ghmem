@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId
 from ghmem.exceptions import UnknownSnapshotError
-from ghmem.ingest import apply_routing_event
 from ghmem.ledger import NO_SIGNAL, CloseEvent, DispatchedEvent, Ledger, RoutingEvent
 from ghmem.models import Dispatch, IssueOrPR, Route, Snapshot, Topic
+from ghmem.routing_reduce import apply_routing_event
 
 
 def record_routing_event(

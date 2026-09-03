@@ -92,6 +92,43 @@ def requeue() -> None:
 
 
 @main.command()
+@click.argument("numbers", type=int, nargs=-1, required=True)
+def unroute(numbers: tuple[int, ...]) -> None:
+    """Withdraw each NUMBER's verdict, returning it to the triage queue.
+
+    The correction path for a verdict that was reached wrongly rather
+    than one the corpus has moved past — `rebuild`'s `reenter` covers
+    the latter. Both the item's route and its outstanding dispatch are
+    cleared, so it is served afresh to a later session with no trace of
+    the old verdict constraining it. Nothing is edited out of
+    `routing.jsonl`: the superseded `route` event stays there, session
+    and note included.
+
+    Every number is resolved against the corpus before any event is
+    appended, so a typo at the end of a long batch leaves no
+    half-applied correction. A number carrying no verdict is not an
+    error — re-running the same batch is a no-op, which is what makes
+    the command safe to repeat.
+
+    Not a triage-session command: it takes no token, and an item it
+    frees rejoins the queue rather than becoming routable on the spot.
+    """
+    store = Store.open(sqlite_path())
+    routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
+    try:
+        item_ids = [
+            store.get_issue_or_pr(IssueOrPRNumber(number)).id for number in numbers
+        ]
+    except IssueOrPRNotFoundError as exc:
+        click.echo(f"ghmem unroute: {exc}", err=True)
+        raise SystemExit(1) from exc
+    for item_id in item_ids:
+        event: RoutingEvent = {"type": "unroute", "data": {"item_id": item_id}}
+        store.record_routing_event(routing, event)
+    click.echo(f"Unrouted {len(item_ids)} item(s)")
+
+
+@main.command()
 def sync() -> None:
     """Fetch issues, PRs, discussions, and commits into the fetch ledger.
 
