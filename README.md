@@ -5,18 +5,28 @@ GitHub PR/issue/discussion history into a local corpus so that
 agentic sessions can query it instead of re-fetching from the
 GitHub API on every run.
 
-The living design is `docs/ghmem-design.md` at the repository root,
-and it is the source of truth — this file describes what is built, not
-what is intended.
+The living design is `docs/ghmem-design.md`, in the repository's
+`docs/` directory, and it is the source of truth — this file describes
+what is built, not what is intended. It names the detail it carries:
+command contracts in `docs/ghmem-harness.md`, the argument behind each
+mechanism in `docs/ghmem-decisions.md`, refused designs in
+`docs/ghmem-rejected.md`. `docs/ghmem-changelog.md` indexes
+the dated record of each change to that design.
 
 ## What exists today
 
-The corpus subproject is complete: fetching from GitHub, an
-append-only event ledger, the SQLite mirror rebuilt from it, and the
-read commands over that mirror (`show`, `discussion`, `heat`,
-`status`). The dispatch subproject — the metered `triage`/`route`
-session loop that hands items to triage agents — is in progress; the
-store already carries its routing tables and its write seam.
+The whole pipeline runs. `sync` fetches issues, PRs, discussions and
+commits from GitHub into an append-only event ledger; `rebuild`
+replays both ledgers into the SQLite mirror; the read commands
+(`show`, `discussion`, `heat`, `status`) query that mirror; and the
+dispatch loop is complete — `triage`/`route` meter corpus items to
+triage agents, `topic`/`close` hand a routed topic to a synthesis
+agent, and `index` regenerates the topic index over the result.
+`requeue` and `unroute` are its two correction paths.
+
+What is outstanding is coverage, not machinery: most of the corpus is
+still untriaged, and most topics still hold a single item.
+`ghmem status` reports where that stands.
 
 ## Storage model
 
@@ -53,16 +63,77 @@ the triage queue. Running it twice in a row reenters nothing the
 second time. Because it writes to `routing.jsonl`, run it between
 orchestration runs, not mid-session.
 
+`ghmem requeue` — free every item a crashed session dispatched but
+never routed, so it rejoins the triage queue. Like `rebuild` it writes
+to `routing.jsonl`, so it belongs before an orchestration run starts
+any triage session, never mid-session: serving a stranded item while a
+session still holds it recreates the exact state this command clears.
+It requeues, prints the count, and serves nothing.
+
 `ghmem show <number>` / `ghmem discussion <number>` — render one
 thread as compact markdown. Issues/PRs and discussions have disjoint
 number sequences, hence two commands: `5` can name both. Exits 1 if
 the number is not in the corpus.
 
-`ghmem status` — corpus coverage: item counts, known topics, the
-dirty subset, and the sync cursor position.
+`ghmem status` — corpus coverage. One counts line
+(`total triaged routed no_signal pending dispatched`), then the known
+topics, the dirty subset awaiting synthesis, and one cursor line per
+sync connection.
 
 `ghmem heat` — rank the corpus by heat, hottest first, as CSV on
 stdout.
+
+`ghmem triage` — mint a session token and print its first packet on
+stdout. The token rides in the packet header; every item after the
+first arrives from `ghmem route`, not from a second `triage` call. An
+empty or fully-routed queue is not a failure: the terminal message
+(`triage complete: 0 pending`, `batch complete: budget exhausted`,
+`batch complete: all candidates taken`) goes to stderr and the exit
+status is still 0. The `triage complete:` prefix means the corpus is
+done and no further session is worth spawning; `batch complete:` means
+only that this worker stops.
+
+`ghmem route <token> <number> <verdict>` — record one verdict, then
+serve the next packet in the same call. The note arrives on stdin,
+fed by a heredoc whose delimiter is quoted; there is no argument form,
+because a note is prose and a quoting mistake corrupts it silently. A
+note is required for every verdict, `no-signal` included, and it must
+be a single line. A rejected verdict — no note, a multi-line note, or
+a NUMBER not currently dispatched to TOKEN — prints to stderr, exits
+1, and leaves the ledger untouched. Otherwise it behaves exactly like
+`triage`: a packet or a terminal message, exit 0 either way.
+
+`ghmem unroute <number>...` — withdraw each number's verdict, clearing
+both its route and its outstanding dispatch so it is served afresh.
+This is the path for a verdict reached *wrongly*; a verdict the corpus
+has merely moved past is `rebuild`'s job. Nothing is edited out of
+`routing.jsonl` — the superseded `route` event stays there, session
+and note included. Every number is resolved against the corpus before
+any event is appended, so a typo at the end of a long batch leaves no
+half-applied correction, and a number carrying no verdict is not an
+error, which makes re-running the same batch a no-op. It takes no
+session token, and an item it frees rejoins the queue rather than
+becoming routable on the spot.
+
+`ghmem topic <name>` — assemble one topic's synthesis context behind a
+freshly minted snapshot token: a `snapshot: <token>` header, an item
+index hottest-first, and every routed item's full thread. The token is
+what `ghmem close` later compares against, so a synthesis pass reads
+the context and closes with the token that came with it. A name with
+no routed items exits 1 with the ledger untouched.
+
+`ghmem close <token>` — record that token's synthesis as complete and
+regenerate `docs/design/INDEX.md`. A compare-and-set against the
+snapshot: if the topic changed since the snapshot was taken, nothing
+is written and `stale: …` goes to stderr with exit 0; re-run
+`ghmem topic` to pick up the change. A token naming no snapshot at all
+is an error: stderr, exit 1, ledger untouched.
+
+`ghmem index` — regenerate `docs/design/INDEX.md` from the topic docs'
+frontmatter and the routing mirror. `close` already does this, so
+calling it directly is for after a topic doc is edited by hand. It
+creates `docs/design/` if it does not exist; an empty index is a valid
+state, not an error.
 
 ### `ghmem heat` CSV contract
 
@@ -83,10 +154,16 @@ Every metric is scoped to the whole thread, not to the body alone.
 Ties in `score` break by `number` ascending, so the output is
 deterministic.
 
-The weights behind `score` live in `ghmem.heat.HEAT_WEIGHTS` and are
-**provisional** — they are calibrated against the real corpus in the
-validation subproject. Consumers should treat the per-metric columns,
-not `score`, as the stable part of this contract.
+The weights behind `score` live in `ghmem.heat.HEAT_WEIGHTS`. They
+were calibrated on 2026-07-25 against 198 read-only signal labels and
+**retained**: no fitted vector ranked better than the original, and
+the fitted vector lost to it under cross-validation. Only `comments`
+has a coefficient that calibration could resolve — the other four sit
+inside their own minimum detectable effect — so consumers should still
+treat the per-metric columns, not `score`, as the stable part of this
+contract. `docs/ghmem-heat-weights.md` records the reasoning, and
+reweighting reorders topic-name minting, which `record_verdict` makes
+permanent.
 
 ## Development
 

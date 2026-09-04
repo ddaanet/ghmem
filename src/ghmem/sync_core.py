@@ -14,11 +14,11 @@ pieces, gathered here:
   independently.
 
 The `_Wire` hierarchy types what GraphQL sends back, never what gets
-appended — that is ingest.py's `_Raw*` family. Every node is projected
-through `_raw_data` and passed through `ingest.validate_raw_node`
-before `_append_validated` writes it, so a reshaping bug raises
-`msgspec.ValidationError` at the offending call instead of reaching the
-ledger.
+appended — that is raw_nodes.py's `_Raw*` family. Every node is
+projected through `_raw_data` and passed through
+`ingest.validate_raw_node` before `_append_validated` writes it, so a
+reshaping bug raises `msgspec.ValidationError` at the offending call
+instead of reaching the ledger.
 """
 
 from collections import Counter
@@ -151,7 +151,7 @@ def _raw_data[F: msgspec.Struct](
 
     `fields` is the contract-shaped base of `node`'s wire struct, so
     projecting onto it drops the nested connections the driver drains
-    separately and keeps exactly the keys `ingest.py`'s matching
+    separately and keeps exactly the keys `raw_nodes.py`'s matching
     `_Raw*` struct declares. Encoding rather than hand-copying is what
     keeps the two in step: `rename="camel"` applies on the way out, so
     the wire struct's own field list *is* the emitted key list, and a

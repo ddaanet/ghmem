@@ -6,9 +6,10 @@ that will not silently discard input that arrived mid-synthesis
 (`close`). Second and final slice of Part C; the first, C1, landed the
 `build_index` that a successful `close` regenerates `INDEX.md` through.
 
-Parent spec: `docs/ghmem-design.md`, §Architecture (the `topic`,
-`close` command bullets and the snapshot-token compare-and-set) and
-§Agents (the synthesize agent's re-assemble-on-stale retry). C1 spec:
+Parent spec: `docs/ghmem-design.md`, §Architecture — the `topic` and
+`close` command contracts and the snapshot-token compare-and-set in
+`docs/ghmem-harness.md` §Commands, the synthesize agent's
+re-assemble-on-stale retry under §3 Agentic layer. C1 spec:
 `2026-07-23-ghmem-c1-index-design.md`. This slice implements everything
 Part C sketched but C1 deferred: the two commands, the `SnapshotEvent`
 and `CloseEvent` routing-ledger members, and a new `Snapshot` table.

@@ -6,9 +6,10 @@ slices carved out of Part C; C2 (`topic` + `close`, the snapshot-token
 machinery) is specced separately and depends on the `build_index` this
 slice lands.
 
-Parent spec: `docs/ghmem-design.md`, §Architecture and §Artifact.
-This slice implements the `ghmem index` bullet (parent §1) and the
-`INDEX.md` bullet (parent §2). It settles four questions the parent
+Parent spec: `docs/ghmem-design.md`, §Architecture and its §2
+Artifact. This slice implements the `ghmem index` contract
+(`docs/ghmem-harness.md` §Commands) and the `INDEX.md` bullet
+(parent §2). It settles four questions the parent
 left open, each grounded in a scan of the live corpus rather than
 assumption.
 

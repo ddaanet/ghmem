@@ -3,13 +3,13 @@
 SQLite here is a regenerable cache of the append-only ledgers, never
 the source of truth: `Store.rebuild_from_ledgers` always drops and
 recreates the schema, then replays every ledger event from scratch.
-The raw-node parsing and replay live in `ingest.py`; the schema and
-row identity live in `models.py`'s declarative entities. This module
-is the corpus read half — `Store` and its ORM `select()` queries over
-the regenerable corpus tables. The triage-state tables (`Dispatch`,
-`Route`, `Topic`), authored by the dispatch commands and carrying
-their own concurrency story, live in `dispatch_store.py`; `Store`
-delegates to both.
+The raw-node parsing lives in `raw_nodes.py` and the replay driver in
+`ingest.rebuild_from_ledgers`; the schema and row identity live in
+`models.py`'s declarative entities. This module is the corpus read
+half — `Store` and its ORM `select()` queries over the regenerable
+corpus tables. The triage-state tables (`Dispatch`, `Route`, `Topic`),
+authored by the dispatch commands and carrying their own concurrency
+story, live in `dispatch_store.py`; `Store` delegates to both.
 
 Query results are detached ORM instances: all columns are
 materialized before the session closes, so reading them afterwards is

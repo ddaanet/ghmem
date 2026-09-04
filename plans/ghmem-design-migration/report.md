@@ -2,7 +2,7 @@
 
 `git mv docs/superpowers/specs/2026-07-09-ghmem-design.md
 docs/ghmem-design.md`, then restructured in place. No stub at the old
-path. Nothing committed.
+path. Landed as `f3d1276`.
 
 ## Section mapping
 
@@ -134,36 +134,60 @@ reducer writes SQLite and is replayed.
 
 ## Line counts
 
+Measured on the files as they landed in `f3d1276`; both have been
+edited since, so re-measure rather than quoting these figures forward.
+
 - `docs/ghmem-design.md` — **656 lines**, against the 400-line soft
   reviewability budget. Reported rather than shaved: the overage is
-  content, not padding. No line exceeds 72 characters.
+  content, not padding. Prose is hard-wrapped to the repo's ~72-column
+  convention, with a handful of lines a few columns over and none over
+  80.
 - `docs/ghmem-changelog.md` — 123 lines.
 
 The source was 517 lines with no FR/NFR sections and no coverage of
 `rebuild`, `requeue`, `unroute`, the reenter path, the hook's real
 shape, the heredoc note protocol or the calibration result. The
 cleanest split seam, if one is wanted, is the two rationale sections —
-"Design decisions" (373–573) and "Rejected alternatives" (574–651) run
-280 lines together and would leave a ~380-line doc of requirements and
-architecture pointing at them. That is a call for my human partner,
-not one to take unasked: the whole point of the rationale sections is
-that they sit beside what they justify.
+"Design decisions" and "Rejected alternatives", which ran 280 lines
+together in `f3d1276` and would have left a ~380-line doc of
+requirements and architecture pointing at them. That is a call for my
+human partner, not one to take unasked: the whole point of the
+rationale sections is that they sit beside what they justify.
 
 ## Grep verification
 
 ```
-grep -rl "2026-07-09-ghmem-design" --include="*.md" . | grep -v "^./.git/"
+grep -rl "2026-07-09-ghmem-design" \
+  --include="*.md" docs tools memory
 ```
 
-Returns nothing. Thirteen files were patched, matching the list in the
-brief exactly: five plans and four specs under `docs/superpowers/`,
-`memory/ghmem-project.md`, `tools/ghmem/README.md`, and both
-`plans/unroute-event/` files. Nine carried the full path and four
-(`c1-index`, `c2-topic-close`, `agents`, `d-reentry` specs) carried a
-bare `2026-07-09-ghmem-design.md` sibling reference; both forms were
-rewritten to `docs/ghmem-design.md`. The two living consumers —
-`tools/ghmem/README.md` and `memory/ghmem-project.md` — had their
-sentence rewrapped around the shorter path; the frozen records got the
-path swap only.
+Returns nothing, exit status 1: no doc, no tool file and no memory
+file still names the old path.
 
-Nothing was committed, in the parent or in `memory/`.
+Widening the search to the whole tree does return hits, and every one
+is benign — the search is scoped above precisely because they are.
+`plans/unroute-event/classification.md:66–67` names the old path in a
+deliberate historical statement ("was X … and has since been migrated
+to Y"), and the rest are this report plus the artifacts that discuss
+the migration (the deliverable-review reports, the session's
+`.claude/handoff-task.md`). None is a reference a reader would try to
+follow.
+
+Eleven reference lines were patched, across ten files: ten lines in
+the nine files under `docs/superpowers/`
+(`2026-07-24-ghmem-agents-design.md` carries two of them), plus one in
+`tools/ghmem/README.md`. Eight carried the full path and three
+(`c1-index`, `c2-topic-close`, `d-reentry` specs) carried a bare
+`2026-07-09-ghmem-design.md` sibling reference; both forms were
+rewritten to `docs/ghmem-design.md`. `tools/ghmem/README.md`, as a
+living consumer, had its sentence rewrapped around the shorter path;
+the frozen records got the path swap only.
+
+Two files named in the brief were *not* patched here.
+`memory/ghmem-project.md` does name the new path, but that arrived in
+the memory submodule's own commit `0188098`, which rewrote the file
+whole; `f3d1276` bumps no gitlink. Both `plans/unroute-event/` files
+were left alone, `classification.md` deliberately so.
+
+The parent commit is `f3d1276`; the memory submodule's own reduction
+of `ghmem-project.md` is `0188098` there.

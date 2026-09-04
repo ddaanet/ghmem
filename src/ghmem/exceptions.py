@@ -4,18 +4,19 @@
 `DiscussionNotFoundError` are the SQLite-mirror lookup misses.
 `RateLimitError`, `AuthError` and `DiffFetchError` belong to the GitHub
 sync client (`github.py`) — none is a lookup miss, so none subclasses
-`LookupError`. `UnknownRoutingEventError` belongs to ledger replay
-(`ingest.py`): a bad event tag is bad input, hence `ValueError`.
+`LookupError`. `UnknownRoutingEventError` belongs to the routing
+reducer (`routing_reduce.py`): a bad event tag is bad input, hence
+`ValueError`.
 `TriageSessionError` belongs to the triage session loop
 (`triage.py`): a `route` request inconsistent with current routing
 state is bad input too. `TopicNotRoutedError` belongs to topic
 synthesis (`topic.py`): assembling a topic with no routed items is bad
 input too. `UnknownSnapshotError` belongs to topic close
 (`dispatch_store.py`): closing a token with no matching `Snapshot` row
-is bad input too. `InvalidItemUpdatedAtError` belongs to ledger replay
-(`ingest.py`), alongside `UnknownRoutingEventError`: a `route` event's
-`item_updated_at` that doesn't parse, or parses naive, is bad input
-too.
+is bad input too. `InvalidItemUpdatedAtError` belongs to the routing
+reducer (`routing_reduce.py`), alongside `UnknownRoutingEventError`: a
+`route` event's `item_updated_at` that doesn't parse, or parses naive,
+is bad input too.
 """
 
 from datetime import datetime
@@ -89,10 +90,10 @@ class UnknownRoutingEventError(ValueError):
 class InvalidItemUpdatedAtError(ValueError):
     """Raised when a `route` event's `item_updated_at` can't be trusted.
 
-    `ingest.py`'s parse guard raises this for either of two shapes:
-    a string `datetime.fromisoformat` rejects outright, or one it
-    parses but returns naive (no tzinfo) — a hand-appended `route`
-    event (see `RouteData.item_updated_at`'s docstring) is the
+    `routing_reduce._parse_item_updated_at` raises this for either of
+    two shapes: a string `datetime.fromisoformat` rejects outright, or
+    one it parses but returns naive (no tzinfo) — a hand-appended
+    `route` event (see `RouteData.item_updated_at`'s docstring) is the
     realistic source of both. Left unguarded, either reaches
     `Route.item_updated_at`, where it silently breaks `stale_routes`'
     textual SQL comparison and raises an uncaught `TypeError` from
@@ -144,7 +145,7 @@ class TriageSessionError(ValueError):
 
     Rejecting a second `route` for an already-routed number is a
     deliberate B1 policy, not a side effect of the ownership lookup:
-    `ingest.apply_routing_event` already supports latest-wins
+    `routing_reduce.apply_routing_event` already supports latest-wins
     re-routing on replay, but wiring a live re-route through
     `record_verdict` is out of scope until a later part asks for it.
 

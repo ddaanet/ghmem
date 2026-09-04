@@ -122,8 +122,8 @@ def test_unroute_rejects_an_unknown_number_before_appending(
     at the end of a long list cannot leave a half-applied correction.
 
     When: `ghmem unroute 1 99` is invoked and no item #99 exists
-    Then: exit 1, an error naming #99, no unroute line in the ledger,
-      and #1 still routed
+    Then: exit 1, the same not-found line `show` and `discussion`
+      print, no unroute line in the ledger, and #1 still routed
     """
     corpus = _corpus(tmp_path)
     before = (corpus / "routing.jsonl").read_text()
@@ -131,7 +131,7 @@ def test_unroute_rejects_an_unknown_number_before_appending(
     code, output = _run(monkeypatch, corpus, ["unroute", "1", "99"])
 
     assert code == 1
-    assert "99" in output
+    assert "ghmem unroute: no issue or pull request numbered #99" in output
     assert (corpus / "routing.jsonl").read_text() == before
     store = Store.open(corpus / "cache.sqlite")
     assert store.route_for(GraphQLId("I_1")) is not None

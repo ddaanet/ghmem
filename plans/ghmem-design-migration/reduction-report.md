@@ -2,7 +2,7 @@
 
 ## Result
 
-**3,999 bytes** (was 117,046 — 1,890 lines down to 88). The whole file
+**3,999 bytes** (was 117,073 — 1,890 lines down to 90). The whole file
 sits inside the 4,096-byte recall window, so nothing is unreachable and
 no split was needed.
 
@@ -45,14 +45,27 @@ modes; within each group the more frequently met symptom comes first.
 
 ### Owned by `docs/ghmem-design.md`
 
+The largest single cut is the command surface — the semantics, exit
+codes and terminal strings of all twelve commands:
+
+| commands | cut | grepped for | found at |
+| --- | --- | --- | --- |
+| `sync`, `rebuild`, `show`, `discussion`, `heat`, `status`, `index` | what each reads and emits, and its exit status | `ghmem rebuild`, `ghmem heat` | Architecture §1 |
+| `triage`, `route`, `requeue` | the session loop, the note protocol, the terminal strings | `batch complete`, `triage complete`, `ghmem route` | Architecture §1 |
+| `topic`, `close`, `unroute` | snapshot/close-out and the withdrawal path | `ghmem close`, `ghmem unroute` | Architecture §1 |
+
+The rest of what `docs/ghmem-design.md` took over. Citations are by
+section and heading rather than line number: the doc is edited on
+every slice, so a line number in this table would be a pointer that
+rots on the next commit.
+
 | Cut | Grepped for | Found at |
 | --- | --- | --- |
-| Command surface: `sync`/`show`/`discussion`/`heat`/`triage`/`route`/`requeue`/`status`/`topic`/`close`/`index`/`unroute` semantics, exit codes, terminal strings | `batch complete`, `triage complete`, `ghmem route`, `ghmem close`, `ghmem unroute` | Architecture §1, lines 155–277 |
-| Two-ledger storage model, which ledger is regenerable, SQLite as derived cache, SQLAlchemy 2.0 declarative as the access layer | `regenerable`, `SQLAlchemy` | NFR5; Architecture "**Storage.**" para, lines 264–277 |
-| Note required on every verdict incl. `no-signal`; note arrives on stdin only; a quoting mistake corrupts a note silently | `only on stdin`, `no-signal` | FR3; Design decisions "The routing note arrives on stdin", lines 456–465 |
-| The allowlist is a positive character class; quoted-heredoc shape; delimiter held to letters/digits/underscores; deny-patterns rejected | `positive character class`, `heredoc`, `delimiter` | NFR3; Design decisions lines 444–455; Rejected alternatives "A deny-pattern hook" |
+| Two-ledger storage model, which ledger is regenerable, SQLite as derived cache, SQLAlchemy 2.0 declarative as the access layer | `regenerable`, `SQLAlchemy` | NFR5; Architecture, the "**Storage.**" paragraph |
+| Note required on every verdict incl. `no-signal`; note arrives on stdin only; a quoting mistake corrupts a note silently | `only on stdin`, `no-signal` | FR3; Design decisions, "The routing note arrives on stdin" |
+| The allowlist is a positive character class; quoted-heredoc shape; delimiter held to letters/digits/underscores; deny-patterns rejected | `positive character class`, `heredoc`, `delimiter` | NFR3; Design decisions, the containment-hook paragraph; Rejected alternatives, "A deny-pattern hook" |
 | Companion skill rejected as context noise / silent-skip risk | `companion procedure skill` | Rejected alternatives, "A companion procedure skill for the agents" |
-| Procedure text inline in agent definitions; `.claude/agents/` file-watched so no restart for a definition edit | `file-watched` | Architecture §3 line 314 and Design decisions line 433 |
+| Procedure text inline in agent definitions; `.claude/agents/` file-watched so no restart for a definition edit | `file-watched` | Architecture §3, and the Design-decisions paragraph on the agent definitions |
 | Model tiering (Sonnet triage / Opus synthesis); one topic per synthesis spawn | `Model tiering`, `One topic per synthesis spawn` | Design decisions |
 | Character-metered batch budgets, CLI-side, never model-honored | `a model cannot be trusted to count` | NFR4; "Triage agents pull their own items" |
 | Heat weights kept unchanged after calibration; calibration must normalize scale before tuning weights; reweighting reorders permanent topic-name minting | `normalize each metric's scale`, `record_verdict makes permanent` | NFR7; "Formula constants are calibrated, never hip-shot" |

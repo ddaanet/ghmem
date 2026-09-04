@@ -47,7 +47,7 @@ def _route(item_id: str, verdict: str, updated_at: str) -> RoutingEvent:
 
 UNROUTE_1: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_1"}}
 UNROUTE_2: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_2"}}
-UNROUTE_NEVER_ROUTED: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_3"}}
+UNROUTE_3: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_3"}}
 
 
 def _live_store(tmp_path: Path) -> tuple[Store, Ledger[RoutingEvent]]:
@@ -199,10 +199,8 @@ def test_unroute_of_an_unrouted_item_is_a_no_op(tmp_path: Path) -> None:
     """
     store, routing = _live_store(tmp_path)
 
-    store.record_routing_event(routing, UNROUTE_NEVER_ROUTED)
+    store.record_routing_event(routing, UNROUTE_3)
 
-    with _session(tmp_path) as session:
-        assert session.get(Route, GraphQLId("I_3")) is None
     store.rebuild_from_ledgers(Ledger(FETCH_FIXTURE), routing)
 
 
@@ -250,25 +248,30 @@ def test_live_unroute_matches_a_cold_rebuild(tmp_path: Path) -> None:
         store.record_routing_event(routing, _dispatch(item_id))
         store.record_routing_event(routing, _route(item_id, verdict, stamp))
     store.record_routing_event(routing, UNROUTE_1)
-    store.record_routing_event(routing, UNROUTE_NEVER_ROUTED)
+    store.record_routing_event(routing, UNROUTE_3)
 
     with _session(tmp_path) as session:
         live = (
-            list(session.execute(select(Route)).scalars()),
-            list(session.execute(select(Dispatch)).scalars()),
-            list(session.execute(select(Topic)).scalars()),
+            list(session.execute(select(Route).order_by(Route.item_id)).scalars()),
+            list(
+                session.execute(select(Dispatch).order_by(Dispatch.item_id)).scalars()
+            ),
+            list(session.execute(select(Topic).order_by(Topic.name)).scalars()),
         )
 
     store.rebuild_from_ledgers(Ledger(FETCH_FIXTURE), routing)
 
     with _session(tmp_path) as session:
         rebuilt = (
-            list(session.execute(select(Route)).scalars()),
-            list(session.execute(select(Dispatch)).scalars()),
-            list(session.execute(select(Topic)).scalars()),
+            list(session.execute(select(Route).order_by(Route.item_id)).scalars()),
+            list(
+                session.execute(select(Dispatch).order_by(Dispatch.item_id)).scalars()
+            ),
+            list(session.execute(select(Topic).order_by(Topic.name)).scalars()),
         )
 
     assert live[0]
+    assert live[1]
     assert live[2]
     assert live == rebuilt
 

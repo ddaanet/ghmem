@@ -1,9 +1,9 @@
 # ghmem changelog
 
 One entry per dated record of a change to ghmem's design. The living
-design is `docs/ghmem-design.md`; each entry below points at the spec
-or plan written at the time, which stays frozen as the write-time
-record of its own reasoning.
+design is `docs/ghmem-design.md`; each entry below points at the spec,
+plan or commit written at the time, which stays frozen as the
+write-time record of its own reasoning.
 
 ## 2026-07-09 — design approved, split into four subprojects
 
@@ -74,50 +74,42 @@ human reviews the plan itself.
   event for every route the corpus has moved past.
   `docs/superpowers/specs/2026-08-11-ghmem-d-reentry-design.md`,
   `docs/superpowers/plans/2026-08-11-ghmem-d-reentry.md`
+- **2026-09-02 — the triage packet carries the topic list.** Every
+  packet names every topic minted so far on a `topics:` line, and the
+  line sits inside the budgeted body rather than the free header, so
+  an oversized first item's diff allowance is computed over a floor
+  that already carries it. The triage agent had been told to check a
+  list no packet ever carried, and two concurrent sessions duly minted
+  two fresh clipboard topic names beside a `clipboard-behavior` that
+  already existed. No separate spec or plan: commit `92d1283` is the
+  write-time record, and it also records why the
+  delta-since-last-serve form was deferred.
+- **2026-09-02 — the `unroute` event.** `ghmem unroute NUMBER...`
+  withdraws a verdict that was reached *wrongly*, where `rebuild`'s
+  `reenter` covers one the corpus has merely moved past. A new
+  `unroute` member of the routing-event union carries the item's id;
+  its reducer branch deletes the item's `Route` row along with its
+  `Dispatch` row, and deletes a `Topic` row the withdrawal leaves
+  empty. `plans/unroute-event/requirements.md`
 
-## 2026-09-02 — the `unroute` event
-
-`ghmem unroute NUMBER...` withdraws a verdict that was reached
-*wrongly*, where `reenter` covers one the corpus has merely moved
-past. A new `unroute` member of the routing-event union carries the
-item's id, and its reducer branch deletes both the item's `Route` row
-and its `Dispatch` row.
-
-Deleting the route is what distinguishes it from `reenter`, which
-deletes only the dispatch. Three independent freshness gates each
-exclude an item carrying a fresh route — the untriaged-heat query
-never serves it, `stale_routes` never reenters it, and
-`record_verdict` raises `already_routed` on it — and with no route row
-at all each gate passes on the absence rather than on a relaxed
-comparison. No existing guard was weakened.
-
-Decisions taken with it:
-
-- **Positional issue/PR numbers, variadic, at least one required.**
-  The command names items the way `show`, `triage` and `route` do. A
-  batch's session identity is a property of the correction job, not of
-  the command; a `--session` selector stays additive if a second
-  caller ever appears.
-- **The reducer deletes a `Topic` row the unroute leaves empty.** A
-  topic row exists exactly while some route carries its name, so
-  `status` stops listing an emptied topic and `topic.assemble` is
-  never dispatched for a name it would refuse. The step is scoped to
-  `unroute`; `route` keeps its behavior, since a re-routed item is
-  still in the corpus under another name and the emptied topic's doc
-  has a rewrite to receive. Nothing removes `docs/design/<name>.md`: a
-  filesystem delete inside a replayed reducer would make `rebuild`
-  destructive.
-- **No containment change.** `unroute` clears the dispatch along with
-  the route, so a worker cannot use it to escape a rejected verdict —
-  its only way back is the metered queue. Singling it out in a hook
-  that already permits `requeue` and `rebuild` would be theatre.
-- **Every verdict is treated alike, `no-signal` included.** Refusing
-  to unroute `no-signal` would make it the one verdict that can never
-  be corrected, and at 4 of 95 routes against a 36.5% calibrated base
-  rate it is the population most likely to need correcting.
-
-The batch it was built for: the 22 items routed by sessions `BcbBJeUg`
-and `MZlH9vbE`, triaged before the packet carried a topic list, are
-unrouted and re-triaged by workers that now see every topic minted so
-far. The corpus stood at 95 routes over 71 topics, 57 of them
-singletons, when the change was made.
+  The batch it was built for is the motivating case, not a landed
+  one: the 22 items routed by sessions `BcbBJeUg` (12) and `MZlH9vbE`
+  (10) were triaged before the packet carried a topic list, and are
+  to be unrouted and re-triaged by workers that see every topic
+  minted so far. The corpus stood at 95 routes over 71 topics, 57 of
+  them singletons, when the command landed. Whether the batch has
+  since run is a question for the ledger — `grep -c '"unroute"'
+  corpus/routing.jsonl` from the repository root answered `0` when
+  this entry was written.
+- **2026-09-03 — `docs/ghmem-design.md` becomes the living design
+  doc.** The design left
+  `docs/superpowers/specs/2026-07-09-ghmem-design.md`, a dated
+  slice-spec name in a directory whose other entries freeze after
+  their slice, so its being corrected on every slice read as an
+  anomaly rather than the rule. This file took over indexing the
+  frozen slice records it used to absorb. The doc was restructured
+  into requirements, architecture, decisions and rejected
+  alternatives; ten places where it had drifted from the code were
+  corrected; and FR1–FR9 and NFR1–NFR10 were newly authored, the
+  source having had no requirements section at all.
+  `plans/ghmem-design-migration/report.md`

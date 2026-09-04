@@ -8,9 +8,10 @@ triage was writing by hand for exactly this case. It does not touch the
 separate, still-manual tool for correcting a verdict that was wrong on
 content that never changed — see Motivation.
 
-Parent spec: `docs/ghmem-design.md` §Architecture (the `route`
-reducer branch, latest-wins `Route`, "re-routing marks both old and new
-topics dirty") and §Error handling. B1 policy reference:
+Parent spec: `docs/ghmem-design.md` §Architecture — the `route`
+command contract, latest-wins `Route` and "re-routing marks both old
+and new topics dirty" in `docs/ghmem-harness.md` §Commands, and §4
+Failure handling. B1 policy reference:
 `2026-07-21-ghmem-dispatch-triage.md` (`record_verdict` rejects a
 live re-route as `already_routed` — deliberate, and explicitly scoped as
 "out of scope until a later part asks for it"). This is that part — for

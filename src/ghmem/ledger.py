@@ -83,7 +83,7 @@ type RawNodeType = Literal[
 ]
 """The `FetchEvent["type"]` tags whose `data` is a raw GraphQL node.
 
-The one enumeration of the raw-node kinds. `ingest.py`'s `_RawNode`
+The one enumeration of the raw-node kinds. `raw_nodes.py`'s `_RawNode`
 subclasses annotate `_event_type` with this, so a struct claiming a tag
 this list doesn't have is a type error. The converse is not checked: a
 tag listed here with no struct to parse it stays a `KeyError` raised by
@@ -96,7 +96,7 @@ class RawNodeEvent(TypedDict):
     """A raw GraphQL node, as fetched, tagged by which kind it is.
 
     The ledger deliberately does not type `data` beyond `JsonObject`:
-    the shape of a raw node is `ingest.py`'s contract (its `_Raw*`
+    the shape of a raw node is `raw_nodes.py`'s contract (its `_Raw*`
     structs), not this module's, and duplicating it here would be a
     second declaration to keep in step for no added checking.
     """
@@ -211,9 +211,10 @@ class RouteData(TypedDict):
     (`stale_routes`, `untriaged_heat_scores` — `_ISODateTime` stores
     `.isoformat()` in a `Text` column, so the comparison is a string
     sort, not a temporal one), and as a `datetime` in Python
-    (`record_verdict`'s B1 guard). `ingest.py`'s parse guard rejects a
-    naive or unparseable value with `InvalidItemUpdatedAtError` rather
-    than storing it.
+    (`record_verdict`'s B1 guard). The parse guard in
+    `routing_reduce._parse_item_updated_at` rejects a naive or
+    unparseable value with `InvalidItemUpdatedAtError` rather than
+    storing it.
     """
 
     session: str

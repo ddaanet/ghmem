@@ -5,7 +5,7 @@ from dataclasses import astuple, fields
 
 import click
 
-from ghmem.aliases import DiscussionNumber, IssueOrPRNumber
+from ghmem.aliases import DiscussionNumber, GraphQLId, IssueOrPRNumber
 from ghmem.exceptions import (
     DiscussionNotFoundError,
     IssueOrPRNotFoundError,
@@ -115,13 +115,16 @@ def unroute(numbers: tuple[int, ...]) -> None:
     """
     store = Store.open(sqlite_path())
     routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
-    try:
-        item_ids = [
-            store.get_issue_or_pr(IssueOrPRNumber(number)).id for number in numbers
-        ]
-    except IssueOrPRNotFoundError as exc:
-        click.echo(f"ghmem unroute: {exc}", err=True)
-        raise SystemExit(1) from exc
+    item_ids: list[GraphQLId] = []
+    for number in numbers:
+        try:
+            item_ids.append(store.get_issue_or_pr(IssueOrPRNumber(number)).id)
+        except IssueOrPRNotFoundError as exc:
+            click.echo(
+                f"ghmem unroute: no issue or pull request numbered #{number}",
+                err=True,
+            )
+            raise SystemExit(1) from exc
     for item_id in item_ids:
         event: RoutingEvent = {"type": "unroute", "data": {"item_id": item_id}}
         store.record_routing_event(routing, event)

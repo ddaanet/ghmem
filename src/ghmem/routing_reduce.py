@@ -254,6 +254,15 @@ def _release_topic(session: Session, name: str) -> None:
     delete inside it would make a rebuild destructive; a synthesized
     doc also remains true prose about items that really were routed
     there, and `ghmem index` keeps listing it from disk.
+
+    `Snapshot` rows outlive the dropped `Topic` too, and are left
+    alone for a different reason: `close_topic`
+    (`dispatch_store.py`) is a compare-and-set against the topic's
+    *live* digest, recomputed at close time. An emptied topic hashes
+    an empty routed set, which cannot match the digest stored when
+    the snapshot was taken, so a token outstanding over a dropped
+    topic is declined — `cleared=False`, nothing written, nothing
+    appended — rather than honoured against a name no route carries.
     """
     # The caller's `session.delete` is still pending here; SQLAlchemy's
     # autoflush emits it before this query, so the count excludes the

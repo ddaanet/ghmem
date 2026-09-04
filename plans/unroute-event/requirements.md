@@ -148,10 +148,22 @@ called done.
 **C-1: `ledger.py` must be edited in the same change**
 
 An event kind added to the reducer but not to the `RoutingEvent`
-TypedDict union is runtime-complete and type-incomplete, and
-`just green` cannot see the gap: the read path launders through a
-`cast` in `Ledger.__iter__`. This cost an Important finding once
-already, on the discussions slice.
+TypedDict union is runtime-complete and type-incomplete. Add the
+member to the union in the same change as the reducer branch.
+
+What the gate sees depends on the call shape. The **read** path is
+unchecked: `Ledger.__iter__` launders every line through a `cast`, so
+a replayed event of a kind the union does not name type-checks
+regardless. This cost an Important finding once already, on the
+discussions slice.
+
+The **write** path is checked wherever a caller annotates its event
+literal `RoutingEvent` — `cli.py`'s `event: RoutingEvent` is the live
+example. Omit the union member and mypy fails on the assignment
+(`Type of TypedDict is ambiguous, none of (…) matches cleanly`), so
+`just green` goes red without pytest noticing anything. A slice whose
+new event kind is only ever replayed, never written through such an
+annotated literal, gets no such warning.
 
 **C-2: The event must also be registered in `_ROUTING_BY_TYPE`**
 

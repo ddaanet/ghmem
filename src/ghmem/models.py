@@ -6,8 +6,9 @@ column annotations) and the object `Store` query methods return —
 value `__eq__`/`__repr__`, so callers compare results the same way
 they would a plain dataclass.
 
-`ingest.py` owns turning raw GraphQL JSON into these entities and
-replaying them into SQLite; this module only owns what they *are*.
+`raw_nodes.py` owns turning raw GraphQL JSON into these entities and
+`ingest.py` replays them into SQLite; this module only owns what they
+*are*.
 
 Every column holding a parent's id is indexed. The heat query
 correlates one subquery per metric per item, so an unindexed parent
@@ -133,7 +134,7 @@ def _camel_to_snake(name: str) -> str:
 class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     """Declarative base: every entity is also a dataclass (value `__eq__`).
 
-    `kw_only=True` matches how every raw-node parser in `ingest.py`
+    `kw_only=True` matches how every raw-node parser in `raw_nodes.py`
     already constructs these (all-keyword) and sidesteps dataclass
     field-ordering rules where required and nullable columns
     interleave.
