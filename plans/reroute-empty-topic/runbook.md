@@ -43,7 +43,19 @@ emptied-then-re-minted case stays **green under the unchanged get-then-add
 before the recreate; slice 4 is named for what it actually discriminates. The
 outline's red set otherwise reproduced exactly — 5 failed, 273 passed — and
 slice 1 adds two further tests that red against unchanged code for the same
-reason, so the red batch is seven tests, not five.
+reason.
+
+**Revised at execution: slice 1 touches seven tests but reds six.** The probe's
+"5 failed" counts the *original* tests failing once the change is applied,
+which is what makes them need editing; it is not a count of *retargeted* tests
+that red against unchanged code. Six of the seven do.
+`test_routing_replay.py::test_route_creates_topic_marked_dirty` does not: it
+asserts only that `"wrapping"` exists and is dirty, which holds under old and
+new code alike, since the join-side dirtying it reads is untouched here. Its
+retarget is still required — the original `"softwrap"` assertion breaks once
+the change lands — but it is fixture coupling, exactly as its own bullet says,
+and pins no part of this contract. The bullet was right and only this summary
+was wrong.
 
 ## Requirements mapping
 
@@ -298,6 +310,18 @@ reason, so the red batch is seven tests, not five.
      justification. The cross-process mint race the upsert also closes is
      closed by construction and is not testable without threads; record that
      rather than attempting it.
+
+     **Revised at execution: expect this mutation may not red.** Slice 1's code
+     review traced the emitted SQL and found that in the reducer's own call
+     path the pending `Topic` `DELETE` is already flushed before the upsert is
+     reached — by `session.merge`'s autoflush at the top of the *next*
+     `_apply_route_event`. That is the same intervening-autoflush reason the
+     recall checkpoint found the old get-then-add stayed green. So a
+     connection-issued upsert may survive this scenario too. Run it and report
+     what happens; do not assume a red. If it does not red, this test claims
+     coverage it does not have, and the honest outcomes are to find a scenario
+     that does discriminate or to drop the test rather than keep a green that
+     names the upsert — a decision for my human partner, not the executor.
 
 ## Phase 2: gate, docs, and the landing check (type: inline)
 
