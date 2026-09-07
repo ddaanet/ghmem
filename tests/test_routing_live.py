@@ -208,6 +208,40 @@ def test_status_dirty_set_stays_assemblable_after_a_reroute(
         assemble(store, routing, name)
 
 
+def test_reroute_keeps_a_topic_that_keeps_items(tmp_path: Path) -> None:
+    """A topic that keeps a sibling survives, dirty.
+
+    A regression guard: `_release_topic`'s `remaining` branch is already
+    covered from the `unroute` side by
+    `test_unroute_dirties_a_topic_that_keeps_items`; this is the sole
+    coverage that the `route` branch reaches it too. The topic is
+    cleaned first — a Topic row is born dirty, so asserting `dirty is
+    True` against a fresh row would pass with the dirtying step
+    removed.
+
+    When: items #1 and #2 are routed to "softwrap", the topic is marked
+      clean, then #1 is re-routed to "wrapping"
+    Then: "softwrap" survives and is dirty again
+    """
+    store, routing = _live_store(tmp_path)
+    store.record_routing_event(
+        routing, _route("I_1", "softwrap", "2026-01-01T00:00:00Z")
+    )
+    store.record_routing_event(
+        routing, _route("I_2", "softwrap", "2026-01-02T00:00:00Z")
+    )
+    with _session(tmp_path) as session:
+        session.get(Topic, "softwrap").dirty = False  # type: ignore[union-attr]
+        session.commit()
+
+    store.record_routing_event(
+        routing, _route("I_1", "wrapping", "2026-01-01T00:00:00Z")
+    )
+
+    with _session(tmp_path) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
+
+
 def test_route_to_no_signal_drops_the_emptied_topic(tmp_path: Path) -> None:
     """Routing a topic's last item to NO_SIGNAL drops the topic too.
 
