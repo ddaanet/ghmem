@@ -61,6 +61,19 @@ check is what distinguishes a live re-route from a reentered item's
 re-triage. Clearing the route reaches the same goal without touching
 that distinction.
 
+**Leaving a re-routed topic's emptied row dirty.** A re-routed item is
+still in the corpus under another name, so the topic it left has a
+rewrite to receive, and the dirty row it keeps is what carries that
+rewrite to a synthesis worker — the argument for treating a re-route
+unlike a withdrawal. Overruled: `dirty` means "needs re-synthesis" and
+is what `status` dispatches synthesis workers from, so an empty dirty
+row is not a marker but a worker sent at a topic no route names, which
+`topic.assemble` refuses with `TopicNotRoutedError` — precisely the
+breakage the emptied-topic rule exists to remove. Marking the orphaned
+doc instead needs a third topic state distinguishing "synthesize me"
+from "delete me", a larger design than this, and the orphan sweep it
+would serve does not exist.
+
 **Dispatch timeouts for crash recovery.** A timeout races a
 slow-but-live session. Explicit reclaim between orchestration runs
 cannot.
