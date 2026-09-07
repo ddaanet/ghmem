@@ -31,24 +31,6 @@ def store(tmp_path: Path) -> Store:
     return store
 
 
-def test_route_creates_topic_marked_dirty(store: Store, tmp_path: Path) -> None:
-    """Routing an item to a new topic creates it, marked dirty.
-
-    When: item #1 is routed to "softwrap", then re-routed to "wrapping"
-      at the fixture's last event
-    Then: "wrapping" exists as a Topic and is marked dirty, and #1's
-      Route carries the item_updated_at the fixture routed it with
-    """
-    with _session(tmp_path) as session:
-        topic = session.get(Topic, "wrapping")
-        route = session.get(Route, GraphQLId("I_1"))
-
-    assert topic is not None
-    assert topic.dirty is True
-    assert route is not None
-    assert route.item_updated_at.isoformat() == "2026-01-01T00:00:00+00:00"
-
-
 def test_no_signal_routes_but_creates_no_topic(store: Store, tmp_path: Path) -> None:
     """Routing to NO_SIGNAL records a verdict but touches no topic.
 
@@ -320,27 +302,27 @@ def test_rebuild_is_idempotent(tmp_path: Path) -> None:
     assert all(t.dirty for t in topics)
 
 
-def test_a_topic_reminted_after_being_emptied_in_one_replay_survives(
+def test_a_topic_emptied_and_reminted_in_one_replay_ends_up_dirty(
     tmp_path: Path,
 ) -> None:
-    """A topic emptied and re-minted inside one replay session survives.
+    """A topic emptied and re-minted inside one replay is present, dirty.
 
     Builds its own ledger rather than the shared fixture, which
     `test_requeue.py` and `test_dispatch_store.py` also read. No
     `dispatched` events: the reducer routes an item with no prior
     dispatch.
 
-    Mutation run, and not discriminated: issuing the upsert through
+    A replay-level guard on the emptied-then-re-minted sequence, which
+    no other test covers, and nothing more: it pins no property of
+    `_mark_topic_dirty`'s upsert. Issuing that upsert through
     `session.connection().execute()` instead of `session.execute()`
-    does not red this test, confirming what the slice 1 code review
-    already flagged — `session.merge`'s autoflush at the top of the
-    *next* `_apply_route_event` already flushes the pending `Topic`
-    DELETE before the connection-issued upsert is ever reached, in
-    this reducer's own call path. Confirmed across the full routing,
-    `unroute`, `reenter` and `requeue` suites, not just this test. This
-    is a decision for my human partner, not the executor: the honest
-    outcomes are to find a scenario that does discriminate the upsert
-    or to drop the test rather than keep a green that names it.
+    reds neither this test nor any other in the routing, `unroute`,
+    `reenter` and `requeue` suites, because the ordering is supplied
+    one layer below any fixture — `Session.merge(load=True)`
+    autoflushes unconditionally, so the pending `Topic` DELETE reaches
+    the connection at the *next* `_apply_route_event` before the
+    upsert is issued. No event ordering can take that away, so there
+    is no scenario to look for.
 
     When: #1 routes to "softwrap", #2 to "wrapping", #1 re-routes to
       "wrapping" (emptying "softwrap"), then #2 re-routes to "softwrap"

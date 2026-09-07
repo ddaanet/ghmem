@@ -222,7 +222,7 @@ def test_reroute_keeps_a_topic_that_keeps_items(tmp_path: Path) -> None:
     Mutation run: making the route-side release skip `_mark_topic_dirty`
     on `_release_topic`'s `remaining` branch reds this test alone —
     `test_same_topic_reroute_keeps_the_topic_and_the_route`,
-    `test_a_topic_reminted_after_being_emptied_in_one_replay_survives`,
+    `test_a_topic_emptied_and_reminted_in_one_replay_ends_up_dirty`,
     and `test_unroute_dirties_a_topic_that_keeps_items` all stay green
     under it.
 
@@ -258,17 +258,17 @@ def test_same_topic_reroute_keeps_the_topic_and_the_route(tmp_path: Path) -> Non
     note than the first, so the merge is observable rather than a
     replayed no-op.
 
-    Mutation run, and not discriminated: rewriting the release as a
-    delete-then-recreate — tried both as `_release_topic`'s own
-    Topic-row handling and as the Route replacement in
-    `_apply_route_event`, mirroring `_apply_unroute_event`'s delete of
-    its own Route row — reds neither this test nor any other test in
-    the routing suites. SQLAlchemy's unit of work collapses a delete
-    and a re-add of the same primary key within one flush into a
-    single UPDATE, emitting no DELETE and no INSERT at all, so under
-    either reading there is nothing left to collide or wipe. Recorded
-    honestly rather than engineered into a red; the mutation the
-    runbook named for this test does not discriminate it as written.
+    The Route assertion is coverage, not a discriminator, and is kept
+    on that footing. The mutation planned to justify it — rewriting
+    the release as a delete-then-recreate, tried both as
+    `_release_topic`'s own Topic-row handling and as the Route
+    replacement in `_apply_route_event`, mirroring
+    `_apply_unroute_event`'s delete of its own Route row — reds
+    neither this test nor any other in the routing suites, because
+    SQLAlchemy's unit of work collapses a delete and a re-add of the
+    same primary key within one flush into a single UPDATE, emitting
+    no DELETE and no INSERT at all. There is nothing left to collide
+    or wipe, so that justification is retired rather than restated.
 
     When: #1 is routed to "softwrap", the topic is marked clean, then a
       second "route" event sends #1 to "softwrap" again from a
