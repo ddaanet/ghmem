@@ -17,6 +17,7 @@ from typing import Final
 
 import msgspec
 from sqlalchemy import func, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId
@@ -53,15 +54,12 @@ def apply_routing_event(session: Session, event: RoutingEvent) -> None:
 
     `"dispatched"` upserts a `Dispatch` row by item id.
 
-    `"route"` replaces the item's `Route` row (latest-wins) and dirties
-    whichever topics it touches:
-
-    - the topic the item is leaving, if it had a real (non-`NO_SIGNAL`)
-      verdict before;
-    - the topic it's joining, if the new verdict isn't `NO_SIGNAL`.
-
-    A re-route therefore dirties both the topic it left and the one it
-    joins.
+    `"route"` replaces the item's `Route` row (latest-wins), dirties
+    the topic it's joining if the new verdict isn't `NO_SIGNAL`, and
+    releases the topic it's leaving if it had a real (non-`NO_SIGNAL`)
+    verdict before — the same release `"unroute"` performs below, so a
+    re-route that empties its old topic drops that row rather than
+    leaving it dirty.
 
     `"requeue"` deletes the item's `Dispatch` row, freeing it to be
     served again. Deleting an already-absent row is a no-op, not an
@@ -123,11 +121,10 @@ def _apply_dispatched_event(session: Session, data: DispatchedData) -> None:
 
 
 def _apply_route_event(session: Session, data: RouteData) -> None:
-    """Replace an item's verdict, dirtying the topics it leaves and joins."""
+    """Replace an item's verdict, releasing the topic it leaves."""
     item_id = GraphQLId(data["item_id"])
     previous = session.get(Route, item_id)
-    if previous is not None and previous.verdict != NO_SIGNAL:
-        _mark_topic_dirty(session, previous.verdict)
+    left = previous.verdict if previous is not None else None
     session.merge(
         Route(
             item_id=item_id,
@@ -139,6 +136,8 @@ def _apply_route_event(session: Session, data: RouteData) -> None:
     )
     if data["verdict"] != NO_SIGNAL:
         _mark_topic_dirty(session, data["verdict"])
+    if left is not None and left != NO_SIGNAL:
+        _release_topic(session, left)
 
 
 def _apply_requeue_event(session: Session, data: RequeueData) -> None:
@@ -240,20 +239,13 @@ def _release_topic(session: Session, name: str) -> None:
     An emptied row left behind would sit in `status`'s dirty set as a
     name `topic.assemble` then refuses with `TopicNotRoutedError`,
     stalling the documented synthesis loop on a name the corpus itself
-    handed out.
-
-    Scoped to `"unroute"`. A re-route can empty its leaving topic too,
-    but there the item is still in the corpus under another name, so
-    the emptied topic's doc has a rewrite to receive and the dirty row
-    is what carries that; withdrawing the verdict outright leaves the
-    name standing for nothing. Whether the two should converge is an
-    open question, not something this branch settles quietly.
+    handed out. Withdrawal and re-route both empty a topic this way,
+    and both release it here.
 
     Nothing here touches `docs/design/<name>.md`. This reducer is
     replayed wholesale by `rebuild_from_ledgers`, so a filesystem
-    delete inside it would make a rebuild destructive; a synthesized
-    doc also remains true prose about items that really were routed
-    there, and `ghmem index` keeps listing it from disk.
+    delete inside it would make a rebuild destructive, and `ghmem
+    index` keeps listing the orphaned doc from disk.
 
     `Snapshot` rows outlive the dropped `Topic` too, and are left
     alone for a different reason: `close_topic`
@@ -264,9 +256,16 @@ def _release_topic(session: Session, name: str) -> None:
     topic is declined — `cleared=False`, nothing written, nothing
     appended — rather than honoured against a name no route carries.
     """
-    # The caller's `session.delete` is still pending here; SQLAlchemy's
-    # autoflush emits it before this query, so the count excludes the
-    # route just withdrawn.
+    # The caller's pending write on the route being withdrawn or
+    # replaced — a `delete` under `unroute`, an `update` under `route`
+    # — is still unflushed here. SQLAlchemy's autoflush emits it before
+    # this query, so the count excludes that route regardless of which
+    # write it was. That autoflush is also where SQLite's writer lock
+    # is taken, so the COUNT and the DELETE below land on the same side
+    # of it: a worker routing another item into this topic cannot
+    # commit between them. Either the count sees the sibling and
+    # dirties, or the topic is dropped and the sibling's route re-mints
+    # it — never a lost update.
     remaining = session.scalar(
         select(func.count()).select_from(Route).where(Route.verdict == name)
     )
@@ -279,12 +278,27 @@ def _release_topic(session: Session, name: str) -> None:
 
 
 def _mark_topic_dirty(session: Session, name: str) -> None:
-    """Get-or-create the `Topic` named `name`, then mark it dirty."""
-    topic = session.get(Topic, name)
-    if topic is None:
-        session.add(Topic(name=name, dirty=True))
-    else:
-        topic.dirty = True
+    """Get-or-create the `Topic` named `name`, then mark it dirty.
+
+    A conditional upsert rather than a get-then-add, for the reason
+    `reserve_dispatch`'s docstring (`dispatch_store.py`) gives: the
+    `sqlite3` driver opens a transaction before a write but not before
+    a read, so two workers routing different items into the same
+    not-yet-existing topic could both read `None` and race the
+    `INSERT`. Issued through the reducer's own `session.execute()`
+    rather than the connection directly, because its autoflush is
+    load-bearing here too — `rebuild_from_ledgers` replays the whole
+    routing ledger in one `Session`, so a topic emptied at one event
+    and re-minted at a later one is a within-session delete-then-
+    recreate, and the pending `DELETE` must flush before this upsert
+    or it wipes the row just recreated.
+    """
+    stmt = (
+        sqlite_insert(Topic)
+        .values(name=name, dirty=True)
+        .on_conflict_do_update(index_elements=["name"], set_={"dirty": True})
+    )
+    session.execute(stmt)
 
 
 def validate_routing_event(event: RoutingEvent) -> None:

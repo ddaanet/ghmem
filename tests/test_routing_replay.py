@@ -34,12 +34,13 @@ def store(tmp_path: Path) -> Store:
 def test_route_creates_topic_marked_dirty(store: Store, tmp_path: Path) -> None:
     """Routing an item to a new topic creates it, marked dirty.
 
-    When: item #1 is routed to "softwrap"
-    Then: "softwrap" exists as a Topic and is marked dirty, and #1's
+    When: item #1 is routed to "softwrap", then re-routed to "wrapping"
+      at the fixture's last event
+    Then: "wrapping" exists as a Topic and is marked dirty, and #1's
       Route carries the item_updated_at the fixture routed it with
     """
     with _session(tmp_path) as session:
-        topic = session.get(Topic, "softwrap")
+        topic = session.get(Topic, "wrapping")
         route = session.get(Route, GraphQLId("I_1"))
 
     assert topic is not None
@@ -69,30 +70,21 @@ def test_no_signal_routes_but_creates_no_topic(store: Store, tmp_path: Path) -> 
     assert topic is None
 
 
-def test_reroute_replaces_the_verdict_and_dirties_both_topics(
+def test_reroute_replaces_the_verdict_and_drops_the_emptied_topic(
     store: Store, tmp_path: Path
 ) -> None:
-    """A re-route is latest-wins, and leaves both topics dirty.
-
-    The *old*-topic half of the reducer is NOT proven here, and cannot
-    be from a rebuild: replay starts from a dropped schema, so the
-    topic an item leaves was necessarily created dirty by the route
-    that first put it there. Deleting the reducer's old-topic dirtying
-    keeps this test green — verified by mutation. Only a path that can
-    clean a topic between two events (Part C's synthesis, or the live
-    apply seam) can distinguish the two, so the assertion below is
-    deliberately the weaker "both are dirty", not evidence of why.
+    """A re-route is latest-wins, and drops the topic it empties.
 
     When: item #1 routes to "softwrap", then re-routes to "wrapping"
-    Then: its whole Route row is the second event's, and both topics
-      exist and are dirty
+    Then: its whole Route row is the second event's, "softwrap" no
+      longer exists, and "wrapping" exists and is dirty
     """
     with _session(tmp_path) as session:
         softwrap = session.get(Topic, "softwrap")
         wrapping = session.get(Topic, "wrapping")
         route = session.get(Route, GraphQLId("I_1"))
 
-    assert softwrap == Topic(name="softwrap", dirty=True)
+    assert softwrap is None
     assert wrapping == Topic(name="wrapping", dirty=True)
     assert route == Route(
         item_id=GraphQLId("I_1"),
@@ -324,5 +316,5 @@ def test_rebuild_is_idempotent(tmp_path: Path) -> None:
 
     assert len(routes) == 2  # #1 (wrapping) and #2 (no-signal)
     assert len(dispatches) == 3
-    assert {t.name for t in topics} == {"softwrap", "wrapping"}
+    assert {t.name for t in topics} == {"wrapping"}
     assert all(t.dirty for t in topics)

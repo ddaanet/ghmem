@@ -141,7 +141,9 @@ NO_SIGNAL: Final[str] = "no-signal"
 """The reserved verdict meaning "reviewed, nothing worth routing".
 
 A real topic name may never equal this — it marks an item as triaged
-without creating or dirtying any `Topic` row.
+without creating or dirtying any `Topic` row. Routing an item *to* it
+still releases the topic the item leaves, dropping that row if the
+item was its last.
 """
 
 

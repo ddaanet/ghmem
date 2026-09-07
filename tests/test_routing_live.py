@@ -9,9 +9,17 @@ from sqlalchemy import select
 
 from ghmem.aliases import GraphQLId
 from ghmem.exceptions import UnknownRoutingEventError
-from ghmem.ledger import FetchEvent, Ledger, RouteEvent, RoutingEvent
+from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RouteEvent, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
-from tests.routing_helpers import FETCH_FIXTURE, _live_store, _session
+from ghmem.status import build_status
+from ghmem.topic import assemble
+from tests.routing_helpers import (
+    FETCH_FIXTURE,
+    _dispatch,
+    _live_store,
+    _route,
+    _session,
+)
 
 DISPATCH_1: RoutingEvent = {
     "type": "dispatched",
@@ -137,32 +145,88 @@ def test_live_writes_match_a_cold_rebuild(tmp_path: Path) -> None:
     routes, dispatches, topics = live
     assert len(routes) == 1
     assert len(dispatches) == 1
-    assert {t.name for t in topics} == {"softwrap", "wrapping"}
+    assert {t.name for t in topics} == {"wrapping"}
     assert live == rebuilt
 
 
-def test_reroute_dirties_the_topic_it_leaves(tmp_path: Path) -> None:
-    """Re-routing away from a clean topic dirties it again.
+def test_reroute_of_the_last_item_drops_the_topic_row(tmp_path: Path) -> None:
+    """Re-routing a topic's last item away drops its Topic row.
 
-    Only reachable live: a rebuild starts from a dropped schema, so the
-    topic an item leaves was always created dirty by the route that put
-    it there, and dropping the reducer's old-topic dirtying changes
-    nothing observable. Cleaning "softwrap" here stands in for the
-    synthesis that will clear it in Part C.
+    A Topic row exists exactly while some Route names it, whichever
+    event empties it: `unroute`'s withdrawal and a re-route away are
+    one rule. This is the live counterpart of `test_routing_replay.py`'s
+    `test_reroute_replaces_the_verdict_and_drops_the_emptied_topic` —
+    the same rule reached one event at a time through
+    `record_routing_event` rather than through a whole-ledger replay.
 
-    When: item #1 is routed to "softwrap", that topic is marked clean,
-      and #1 is then re-routed to "wrapping"
-    Then: "softwrap" is dirty again — it needs re-synthesis without the
-      item that had been its content
+    When: item #1 is routed to "softwrap" alone, then re-routed to
+      "wrapping"
+    Then: "softwrap" no longer exists, and "wrapping" exists and is
+      dirty
     """
     store, routing = _live_store(tmp_path)
     store.record_routing_event(routing, ROUTE_SOFTWRAP)
-    with _session(tmp_path) as session:
-        session.get(Topic, "softwrap").dirty = False  # type: ignore[union-attr]
-        session.commit()
 
     store.record_routing_event(routing, ROUTE_WRAPPING)
 
     with _session(tmp_path) as session:
-        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
+        assert session.get(Topic, "softwrap") is None
         assert session.get(Topic, "wrapping") == Topic(name="wrapping", dirty=True)
+
+
+def test_status_dirty_set_stays_assemblable_after_a_reroute(
+    tmp_path: Path,
+) -> None:
+    """Every name `status` reports dirty can still be assembled.
+
+    FR-4 end to end: an emptied topic left in the dirty set would make
+    the documented status-then-synthesize loop raise
+    `TopicNotRoutedError` on a name the corpus itself handed out.
+
+    When: #1 is routed alone to "softwrap", #2 and #3 to "wrapping",
+      then #1 is re-routed to "wrapping"
+    Then: `build_status`'s dirty set is exactly ("wrapping",) and
+      assembling each name in it raises nothing
+    """
+    store, routing = _live_store(tmp_path)
+    for item_id, verdict, stamp in (
+        ("I_1", "softwrap", "2026-01-01T00:00:00Z"),
+        ("I_2", "wrapping", "2026-01-02T00:00:00Z"),
+        ("I_3", "wrapping", "2026-01-03T00:00:00Z"),
+    ):
+        store.record_routing_event(routing, _dispatch(item_id))
+        store.record_routing_event(routing, _route(item_id, verdict, stamp))
+
+    store.record_routing_event(
+        routing, _route("I_1", "wrapping", "2026-01-01T00:00:00Z")
+    )
+
+    summary = build_status(store, Ledger(FETCH_FIXTURE))
+    assert summary.dirty == ("wrapping",)
+    assert summary.topics == ("wrapping",)
+    for name in summary.dirty:
+        assemble(store, routing, name)
+
+
+def test_route_to_no_signal_drops_the_emptied_topic(tmp_path: Path) -> None:
+    """Routing a topic's last item to NO_SIGNAL drops the topic too.
+
+    The change is not confined to movement between topics: NO_SIGNAL
+    mints no `Topic` of its own, but a route to it still releases the
+    topic the item leaves.
+
+    When: item #1 is routed to "softwrap" alone, then re-routed to
+      NO_SIGNAL
+    Then: "softwrap" no longer exists, and NO_SIGNAL still names no
+      topic
+    """
+    store, routing = _live_store(tmp_path)
+    store.record_routing_event(routing, ROUTE_SOFTWRAP)
+
+    store.record_routing_event(
+        routing, _route("I_1", NO_SIGNAL, "2026-01-01T00:00:00Z")
+    )
+
+    with _session(tmp_path) as session:
+        assert session.get(Topic, "softwrap") is None
+        assert session.get(Topic, NO_SIGNAL) is None
