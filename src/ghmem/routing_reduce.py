@@ -256,12 +256,14 @@ def _release_topic(session: Session, name: str) -> None:
     topic is declined — `cleared=False`, nothing written, nothing
     appended — rather than honoured against a name no route carries.
     """
-    # The caller's pending write on the route being withdrawn or
-    # replaced — a `delete` under `unroute`, an `update` under `route`
-    # — is still unflushed here. SQLAlchemy's autoflush emits it before
-    # this query, so the count excludes that route regardless of which
-    # write it was. That autoflush is also where SQLite's writer lock
-    # is taken, so the COUNT and the DELETE below land on the same side
+    # The caller's write on the route being withdrawn or replaced — a
+    # `delete` under `unroute`, an `update` under `route` — reaches the
+    # database before this query either way, emitted by SQLAlchemy's
+    # autoflush: at the join-side `_mark_topic_dirty`'s
+    # `session.execute` where a re-route has one, and at this query
+    # otherwise. So the count excludes that route regardless of which
+    # write it was. SQLite's writer lock is held from that write
+    # onwards, so the COUNT and the DELETE below land on the same side
     # of it: a worker routing another item into this topic cannot
     # commit between them. Either the count sees the sibling and
     # dirties, or the topic is dropped and the sibling's route re-mints
