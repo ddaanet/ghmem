@@ -113,3 +113,42 @@ human reviews the plan itself.
   corrected; and FR1–FR9 and NFR1–NFR10 were newly authored, the
   source having had no requirements section at all.
   `plans/ghmem-design-migration/report.md`
+- **2026-09-07 — `route` deletes a topic it empties.** The reducer's
+  `route` branch now releases the topic the item leaves, converging on
+  `unroute`: it captures the pre-merge verdict, replaces the `Route`,
+  and then dirties the departed topic if another route still names it
+  or drops its `Topic` row if none does. The invariant that a `Topic`
+  row exists exactly while some `Route` carries its name as a verdict
+  other than `no-signal` therefore holds unconditionally, where it
+  used to hold on the `unroute` path alone and left an empty dirty row
+  reachable — a name `status` would dispatch a synthesis worker at and
+  `topic.assemble` would then refuse with `TopicNotRoutedError`.
+
+  The one-line framing hides two consequences worth stating. A route
+  to `no-signal` from a topic's last item drops that topic too:
+  `no-signal` names no topic, so nothing re-mints it. And a same-topic
+  re-route — reachable only through re-entry, since `record_verdict`
+  refuses a second live verdict — dirties rather than drops, because
+  the replaced route still names the topic once the merge has flushed.
+
+  `_mark_topic_dirty` became a conditional upsert in the same change.
+  A get-then-add leaves a cross-process mint race open, and that
+  window used to close permanently once a topic existed; a topic that
+  can now be emptied and dropped reopens it every time one is, so the
+  fix belongs with the rule that drops it rather than after.
+
+  The sibling docs moved with it: `docs/ghmem-decisions.md` retitles
+  the invariant to **Emptying a topic deletes its `Topic` row** and
+  gains two entries, one of them backfilling the reservation decision
+  behind `reserve_dispatch` that the docs had recorded nowhere;
+  `docs/ghmem-design.md` drops the Open question this settles and
+  gives FR7 a topic-lifecycle clause; `docs/ghmem-rejected.md` records
+  the overruled argument for leaving a re-routed topic's emptied row
+  dirty. The cost taken on knowingly is an orphaned
+  `docs/design/<name>.md` — nothing detects one, and the sweep that
+  would is a named follow-up rather than part of this change.
+
+  The live mirror was checked against the new rule at write time and
+  already agreed: 95 routes over 71 topics, 57 of them singletons, and
+  no `Topic` row that no `Route` names — so no `rebuild` was needed.
+  `plans/reroute-empty-topic/runbook.md`
