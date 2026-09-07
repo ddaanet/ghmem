@@ -242,6 +242,52 @@ def test_reroute_keeps_a_topic_that_keeps_items(tmp_path: Path) -> None:
         assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
 
 
+def test_same_topic_reroute_keeps_the_topic_and_the_route(tmp_path: Path) -> None:
+    """A same-topic re-route keeps both the topic and the Route row.
+
+    Also a guard, and the only coverage this path has: `record_verdict`
+    refuses a live re-route, so a same-topic re-route is reachable only
+    through re-entry. The second event carries a different session and
+    note than the first, so the merge is observable rather than a
+    replayed no-op.
+
+    When: #1 is routed to "softwrap", the topic is marked clean, then a
+      second "route" event sends #1 to "softwrap" again from a
+      different session with a different note
+    Then: "softwrap" is still dirty, and the Route row matches the
+      second event in full
+    """
+    store, routing = _live_store(tmp_path)
+    store.record_routing_event(
+        routing, _route("I_1", "softwrap", "2026-01-01T00:00:00Z")
+    )
+    with _session(tmp_path) as session:
+        session.get(Topic, "softwrap").dirty = False  # type: ignore[union-attr]
+        session.commit()
+
+    second: RouteEvent = {
+        "type": "route",
+        "data": {
+            "session": "s2",
+            "item_id": "I_1",
+            "verdict": "softwrap",
+            "note": "still about softwrap",
+            "item_updated_at": "2026-01-02T00:00:00Z",
+        },
+    }
+    store.record_routing_event(routing, second)
+
+    with _session(tmp_path) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
+        assert session.get(Route, GraphQLId("I_1")) == Route(
+            item_id=GraphQLId("I_1"),
+            verdict="softwrap",
+            note="still about softwrap",
+            session="s2",
+            item_updated_at=datetime.fromisoformat("2026-01-02T00:00:00Z"),
+        )
+
+
 def test_route_to_no_signal_drops_the_emptied_topic(tmp_path: Path) -> None:
     """Routing a topic's last item to NO_SIGNAL drops the topic too.
 
