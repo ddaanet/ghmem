@@ -87,9 +87,9 @@ appends a `reenter` event for every item whose GitHub thread has moved
 past its recorded verdict, so the next cycle re-judges it. `ghmem
 requeue` is not a verdict correction — it frees items a crashed
 session dispatched but never routed. A correction that leaves a topic
-with no route naming it deletes that topic's `Topic` row, whichever of
-the three mechanisms reached it. Rationale: **Freshness is stamped on
-the route**, **Emptying a topic deletes its `Topic` row**
+with no route naming it deletes that topic's `Topic` row, whichever
+mechanism reached it. Rationale: **Freshness is stamped on the
+route**, **Emptying a topic deletes its `Topic` row**
 (`docs/ghmem-decisions.md`); refused: **Refusing to unroute a
 `no-signal` verdict**, **Relaxing `record_verdict` to accept a live
 re-route** (`docs/ghmem-rejected.md`).

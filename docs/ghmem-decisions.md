@@ -122,21 +122,21 @@ otherwise sit in `status`'s dirty set as a name `ghmem topic` then
 refuses with `TopicNotRoutedError`, stalling the synthesis loop on a
 name the corpus itself handed out. The invariant "a `Topic` row exists
 exactly while some `Route` carries its name as a verdict other than
-`no-signal`" therefore holds unconditionally: withdrawing the last
-verdict, re-routing it to another topic, and re-routing it to
-`no-signal` all empty a topic, and all release it. Nothing removes
-`docs/design/<name>.md` — the reducer writes SQLite and is replayed by
-`rebuild`, so a filesystem delete inside it would make replay
-destructive.
+`no-signal`" therefore holds unconditionally: withdrawing a topic's
+last verdict, re-routing that item to another topic, and routing it to
+`no-signal` all leave the topic empty, and all release it. Nothing
+removes `docs/design/<name>.md` — the reducer writes SQLite and is
+replayed by `rebuild`, so a filesystem delete inside it would make
+replay destructive.
 
-The cost this knowingly takes on is an orphaned doc. A topic emptied
-by a re-route leaves `docs/design/<name>.md` on disk, `ghmem index`
-still lists it, and no dirty row carries the rewrite the moved item
-would have earned it — strictly worse than the `unroute` case this
-generalizes, where the item returns to the queue carrying no verdict,
-so the doc is merely unaccompanied and a later re-triage may re-mint
-the topic. No surface reports either state: `build_status` reads the
-store and the fetch ledger, never the filesystem.
+The cost this rule knowingly takes on is an orphaned doc. A topic
+emptied by a re-route leaves `docs/design/<name>.md` on disk, `ghmem
+index` still lists it, and no dirty row carries the rewrite the moved
+item would have earned it — strictly worse than the `unroute` case
+this generalizes, where the item returns to the queue carrying no
+verdict, so the doc is merely unaccompanied and a later re-triage may
+re-mint the topic. No surface reports either state: `build_status`
+reads the store and the fetch ledger, never the filesystem.
 
 **A live reservation is one conditional insert, never a
 read-then-write.** `Dispatch` is keyed on `item_id` alone, so two

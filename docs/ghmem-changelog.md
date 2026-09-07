@@ -120,9 +120,10 @@ human reviews the plan itself.
   or drops its `Topic` row if none does. The invariant that a `Topic`
   row exists exactly while some `Route` carries its name as a verdict
   other than `no-signal` therefore holds unconditionally, where it
-  used to hold on the `unroute` path alone and left an empty dirty row
-  reachable — a name `status` would dispatch a synthesis worker at and
-  `topic.assemble` would then refuse with `TopicNotRoutedError`.
+  used to hold on the `unroute` path alone and leave an empty dirty
+  row reachable — a name `status` would dispatch a synthesis worker
+  at and `topic.assemble` would then refuse with
+  `TopicNotRoutedError`.
 
   The one-line framing hides two consequences worth stating. A route
   to `no-signal` from a topic's last item drops that topic too:
