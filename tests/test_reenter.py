@@ -2,16 +2,12 @@
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ghmem.aliases import GraphQLId
-from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, ReenterEvent, RoutingEvent
+from ghmem.ledger import NO_SIGNAL, Ledger, ReenterEvent, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
-from ghmem.store import Store
-
-DB_NAME = "cache.sqlite"
-FETCH_FIXTURE = Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
+from tests.routing_helpers import FETCH_FIXTURE, _live_store, _session
 
 DISPATCH_1: RoutingEvent = {
     "type": "dispatched",
@@ -56,20 +52,6 @@ ROUTE_NO_SIGNAL: RoutingEvent = {
 REENTER_1: ReenterEvent = {"type": "reenter", "data": {"item_id": "I_1"}}
 REENTER_2: ReenterEvent = {"type": "reenter", "data": {"item_id": "I_2"}}
 REENTER_NEVER_ROUTED: ReenterEvent = {"type": "reenter", "data": {"item_id": "I_3"}}
-
-
-def _live_store(tmp_path: Path) -> tuple[Store, Ledger[RoutingEvent]]:
-    """Return a store seeded with the fetch fixture and an empty routing log."""
-    store = Store.open(tmp_path / DB_NAME)
-    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
-    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
-    store.rebuild_from_ledgers(fetch, routing)
-    return store, routing
-
-
-def _session(tmp_path: Path) -> Session:
-    """Open a second session onto the same SQLite file the store uses."""
-    return Session(create_engine(f"sqlite:///{tmp_path / DB_NAME}"))
 
 
 def test_reenter_frees_the_dispatch_row(tmp_path: Path) -> None:

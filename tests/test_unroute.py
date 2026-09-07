@@ -2,66 +2,25 @@
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ghmem.aliases import GraphQLId
 from ghmem.heat import HEAT_WEIGHTS
-from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent, UnrouteEvent
+from ghmem.ledger import NO_SIGNAL, Ledger, UnrouteEvent
 from ghmem.models import Dispatch, Route, Topic
 from ghmem.status import build_status
-from ghmem.store import Store
 from ghmem.topic import assemble
-
-DB_NAME = "cache.sqlite"
-FETCH_FIXTURE = Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
-
-
-def _dispatch(item_id: str) -> RoutingEvent:
-    """Return a `dispatched` event handing `item_id` to session "s1"."""
-    return {
-        "type": "dispatched",
-        "data": {
-            "session": "s1",
-            "item_id": item_id,
-            "packet_chars": 100,
-            "fit": "fit",
-            "diff_valve_dropped": 0,
-        },
-    }
-
-
-def _route(item_id: str, verdict: str, updated_at: str) -> RoutingEvent:
-    """Return a `route` event sending `item_id` to `verdict`."""
-    return {
-        "type": "route",
-        "data": {
-            "session": "s1",
-            "item_id": item_id,
-            "verdict": verdict,
-            "note": "a note",
-            "item_updated_at": updated_at,
-        },
-    }
-
+from tests.routing_helpers import (
+    FETCH_FIXTURE,
+    _dispatch,
+    _live_store,
+    _route,
+    _session,
+)
 
 UNROUTE_1: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_1"}}
 UNROUTE_2: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_2"}}
 UNROUTE_3: UnrouteEvent = {"type": "unroute", "data": {"item_id": "I_3"}}
-
-
-def _live_store(tmp_path: Path) -> tuple[Store, Ledger[RoutingEvent]]:
-    """Return a store seeded with the fetch fixture and an empty routing log."""
-    store = Store.open(tmp_path / DB_NAME)
-    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
-    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
-    store.rebuild_from_ledgers(fetch, routing)
-    return store, routing
-
-
-def _session(tmp_path: Path) -> Session:
-    """Open a second session onto the same SQLite file the store uses."""
-    return Session(create_engine(f"sqlite:///{tmp_path / DB_NAME}"))
 
 
 def test_unroute_deletes_the_route_row(tmp_path: Path) -> None:

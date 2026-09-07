@@ -5,17 +5,13 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ghmem.aliases import GraphQLId
 from ghmem.exceptions import UnknownRoutingEventError
 from ghmem.ledger import FetchEvent, Ledger, RouteEvent, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
-from ghmem.store import Store
-
-DB_NAME = "cache.sqlite"
-FETCH_FIXTURE = Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
+from tests.routing_helpers import FETCH_FIXTURE, _live_store, _session
 
 DISPATCH_1: RoutingEvent = {
     "type": "dispatched",
@@ -47,20 +43,6 @@ ROUTE_WRAPPING: RouteEvent = {
         "item_updated_at": "2026-01-01T00:00:00Z",
     },
 }
-
-
-def _live_store(tmp_path: Path) -> tuple[Store, Ledger[RoutingEvent]]:
-    """Return a store seeded with the fetch fixture and an empty routing log."""
-    store = Store.open(tmp_path / DB_NAME)
-    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
-    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
-    store.rebuild_from_ledgers(fetch, routing)
-    return store, routing
-
-
-def _session(tmp_path: Path) -> Session:
-    """Open a second session onto the same SQLite file the store uses."""
-    return Session(create_engine(f"sqlite:///{tmp_path / DB_NAME}"))
 
 
 def test_a_rejected_event_never_reaches_the_ledger(tmp_path: Path) -> None:

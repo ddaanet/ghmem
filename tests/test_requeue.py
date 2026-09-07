@@ -9,12 +9,10 @@ from sqlalchemy.orm import Session
 
 from ghmem.aliases import GraphQLId
 from ghmem.cli import main
-from ghmem.ledger import FetchEvent, Ledger, RequeueEvent, RoutingEvent
+from ghmem.ledger import Ledger, RequeueEvent, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
-from ghmem.store import Store
+from tests.routing_helpers import DB_NAME, FETCH_FIXTURE, _live_store, _session
 
-DB_NAME = "cache.sqlite"
-FETCH_FIXTURE = Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
 ROUTING_FIXTURE = Path(__file__).parent / "fixtures" / "routing_events.jsonl"
 
 DISPATCH_1: RoutingEvent = {
@@ -59,20 +57,6 @@ REQUEUE_NEVER_DISPATCHED: RequeueEvent = {
     "type": "requeue",
     "data": {"session": "s9", "item_id": "I_2"},
 }
-
-
-def _live_store(tmp_path: Path) -> tuple[Store, Ledger[RoutingEvent]]:
-    """Return a store seeded with the fetch fixture and an empty routing log."""
-    store = Store.open(tmp_path / DB_NAME)
-    fetch: Ledger[FetchEvent] = Ledger(FETCH_FIXTURE)
-    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "routing.jsonl")
-    store.rebuild_from_ledgers(fetch, routing)
-    return store, routing
-
-
-def _session(tmp_path: Path) -> Session:
-    """Open a second session onto the same SQLite file the store uses."""
-    return Session(create_engine(f"sqlite:///{tmp_path / DB_NAME}"))
 
 
 def _corpus_session(corpus: Path) -> Session:

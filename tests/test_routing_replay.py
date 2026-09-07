@@ -9,17 +9,15 @@ from pathlib import Path
 
 import msgspec
 import pytest
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from ghmem.aliases import GraphQLId
 from ghmem.exceptions import InvalidItemUpdatedAtError, UnknownRoutingEventError
 from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
 from ghmem.store import Store
+from tests.routing_helpers import DB_NAME, FETCH_FIXTURE, _session
 
-DB_NAME = "cache.sqlite"
-FETCH_FIXTURE = Path(__file__).parent / "fixtures" / "routing_fetch.jsonl"
 ROUTING_FIXTURE = Path(__file__).parent / "fixtures" / "routing_events.jsonl"
 
 
@@ -31,16 +29,6 @@ def store(tmp_path: Path) -> Store:
     routing: Ledger[RoutingEvent] = Ledger(ROUTING_FIXTURE)
     store.rebuild_from_ledgers(fetch, routing)
     return store
-
-
-def _session(tmp_path: Path) -> Session:
-    """Open a second session onto the same SQLite file the store uses.
-
-    `Store` doesn't expose `Route`/`Dispatch`/`Topic` queries yet (that's
-    Task 4) — this reopens the same on-disk database directly so tests
-    can assert via plain `select`/`session.get`.
-    """
-    return Session(create_engine(f"sqlite:///{tmp_path / DB_NAME}"))
 
 
 def test_route_creates_topic_marked_dirty(store: Store, tmp_path: Path) -> None:
