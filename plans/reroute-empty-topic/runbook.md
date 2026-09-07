@@ -4,29 +4,34 @@ Design: `plans/reroute-empty-topic/outline.md`. Recall:
 `plans/reroute-empty-topic/recall-artifact.md`. Requirements are
 `docs/ghmem-design.md`'s FR4, FR6, FR7, NFR5 and NFR8 — this job authors none
 of its own. All paths below are relative to the repository root; the Python
-package lives under `tools/ghmem/`. Still past NFR9's 400-line budget after a
-consolidation pass, and stated rather than absorbed: the change is one atomic
-reducer edit whose evidence is one red batch, so splitting the runbook would
-separate that batch from the implementation it validates.
+package lives under `tools/ghmem/`. 526 lines against NFR9's 400-line budget,
+stated rather than absorbed: Phase 2's doc edits each restate a rule whose
+reasoning lives in Item 1.1, so a split would put the reader in two files
+chasing one argument across the boundary, and a bounded overage on a cohesive
+document is the cheaper read. Every line is wrapped at 80 but the requirements
+table's rows, so the count is honest rather than crammed.
+
+**Precondition: `plans/routing-test-helpers/` must have landed.** It extracts
+`tools/ghmem/tests/routing_helpers.py`, which every new test here imports. It
+was split out because it is a pure reorganization with no dependency on
+anything below — NFR9 exempts it outright — and running it first is what stops
+this job adding a fourth `_live_store` copy and a second copy of the builders.
 
 ## Settled here, against the outline
 
-**Where the new `route` tests live.** Add `_dispatch(item_id)` and
-`_route(item_id, verdict, updated_at)` builders to
-`tools/ghmem/tests/test_routing_live.py`, mirroring `test_unroute.py:20-45`:
-the new tests are `route` tests and belong in the live file, which lacks only a
-multi-item builder. Both builders have consumers — slice 1's FR4/FR6 test
-mirrors `test_unroute.py:279` and dispatches each item before routing it, and
-slices 1 and 2 route several items in one test; slice 4's test builds its own
-ledger in `test_routing_replay.py`. Extracting a shared `routing_helpers.py` —
-the repo's convention, and five routing test files already duplicate
-`_live_store`/`_session` over the same `routing_fetch.jsonl` — is rejected *for
-this change*: three of the five (`test_reenter.py`, `test_requeue.py`, and
-`test_unroute.py` itself, the builders' source) sit outside this job's
-boundaries, so a partial extraction leaves the duplication standing while adding
-an import layer. Carried under Out of scope. The module constants `DISPATCH_1`,
-`ROUTE_SOFTWRAP` and `ROUTE_WRAPPING` stay — three existing tests read them, and
-replacing them is churn.
+**Where the new `route` tests live.** In `tests/test_routing_live.py`, except
+slice 4's, which belongs in `tests/test_routing_replay.py` — the new tests are
+`route` tests and the live file is where `route` behaviour is pinned. All of
+them import their scaffolding from `tests/routing_helpers.py`, which the
+precondition job creates: `DB_NAME`, `FETCH_FIXTURE`, `_live_store`, `_session`
+and the `_dispatch(item_id)` / `_route(item_id, verdict, updated_at)` builders.
+Three consumers are in this job — slice 1's FR4/FR6 test mirrors
+`test_unroute.py:279` and dispatches each item before routing it, slices 1 and
+2 route several items in one test, and slice 4 builds its own ledger in
+`test_routing_replay.py`, which has no builders of its own today. The module
+constants `DISPATCH_1`, `ROUTE_SOFTWRAP` and `ROUTE_WRAPPING` stay in
+`test_routing_live.py` — three existing tests read them, and replacing them is
+churn.
 
 **FR7 gains a topic-lifecycle clause, and no other requirement does.** Reasoning
 with the edit, in Item 2.3.
@@ -60,7 +65,9 @@ reason, so the red batch is seven tests, not five.
   Three edits to the module, plus one docstring clause in
   `tools/ghmem/src/ghmem/ledger.py`. Headroom against the gate's 400-line cap
   (`scripts/check_line_limits.sh`, over `src` and `tests`): `routing_reduce.py`
-  is at 337 lines and `tests/test_routing_replay.py` at 340, about 55 each.
+  is at 337 lines, 63 clear. `tests/test_routing_replay.py` was at 340 before
+  the extraction, which gives back about 12 — measure it rather than working
+  from the pre-extraction figure.
 
   - `_apply_route_event` — capture the pre-merge verdict as `left` before
     `session.merge`, then call `_release_topic(session, left)` **after** the
@@ -77,8 +84,9 @@ reason, so the red batch is seven tests, not five.
     fixed only so two executors write the same code. The summary line becomes
     `Replace an item's verdict, releasing the topic it leaves.` — 64 characters
     counting the indent and the opening `"""`, inside the 80-character ceiling
-    docformatter's 81–88 dead zone imposes, and the only summary line that
-    changes.
+    docformatter's 81–88 dead zone imposes. `_mark_topic_dirty`'s summary
+    (`Get-or-create the `Topic` named `name`, then mark it dirty.`) stays: it
+    states the outcome, which the upsert preserves.
   - `_release_topic` — delete the paragraph beginning "Scoped to `"unroute"`" in
     full, open-question sentence included, and state the rule as covering
     withdrawal and re-route alike. Reword the autoflush comment: the caller's
@@ -105,7 +113,8 @@ reason, so the red batch is seven tests, not five.
     one `Session`, so a topic emptied at one event and re-minted at a later one
     is a within-session delete-then-recreate, and the pending `DELETE` must
     flush before the recreate or it wipes the new row.
-  - `tools/ghmem/src/ghmem/ledger.py` — `NO_SIGNAL`'s docstring (`:139-143`)
+  - `tools/ghmem/src/ghmem/ledger.py` — `NO_SIGNAL` is at `:140` and its
+    docstring runs `:141-145`. It
     says the reserved verdict "marks an item as triaged without creating or
     dirtying any `Topic` row". Literally still true, misleading from here on:
     slice 1's no-signal case is a `route` to `NO_SIGNAL` that *deletes* one. Add
@@ -142,7 +151,11 @@ reason, so the red batch is seven tests, not five.
   `_release_topic` call produces every one of these observables — so splitting
   it finer would manufacture a second "red" that is already green. Slices 2–4
   are regression guards written *after* that green: none reds against unchanged
-  code, none gets a red phase, stated per slice and not an omission.
+  code, so none gets a red phase, stated per slice and not an omission. Each
+  instead names the mutation it discriminates, and **must be run against it** —
+  apply the mutation, confirm that slice's test reds and the other two do not,
+  revert, record the result beside the test. An unrun discrimination claim of
+  exactly this shape was already wrong once here.
 
   1. **An emptied topic is dropped — whether emptied by a re-route away or by a
      route to `no-signal`.** The red batch: the five probe-confirmed assertions,
@@ -178,20 +191,28 @@ reason, so the red batch is seven tests, not five.
        `session.get(Topic, "wrapping") == Topic(name="wrapping", dirty=True)`,
        and the `Route` row equal in full to the fixture's second event: verdict
        `"wrapping"`, note `"actually about wrapping"`, session `"s2"`,
-       `item_updated_at` `2026-01-01T00:00:00+00:00`. Delete the docstring
+       `item_updated_at` `2026-01-01T00:00:00+00:00` — which the test already
+       asserts, so that half needs no edit. Rewrite the docstring **whole**,
+       not paragraph by paragraph: the summary ("A re-route is latest-wins, and
+       leaves both topics dirty.") and the `Then:` line ("both topics exist and
+       are dirty") each state the behaviour this change replaces. Delete the
        paragraph beginning
        "The *old*-topic half of the reducer is NOT proven here" **in full**
        rather than rewording it: it documents a limitation this change removes,
-       and a rebuild can now distinguish the two.
+       and a rebuild can now distinguish the two. State the surviving rule
+       positively — no "this used to say".
      - `tests/test_routing_live.py::test_reroute_dirties_the_topic_it_leaves` →
        replaced by `test_reroute_of_the_last_item_drops_the_topic_row`, the live
        counterpart asserting the same `"softwrap"`-gone/`"wrapping"`-dirty pair:
        route `I_1` to `"softwrap"`, then re-route it to `"wrapping"`, both
        through `store.record_routing_event`. Drop the `dirty = False` cleaning
        step — it defeated the born-dirty trap for a `dirty is True` assertion
-       and guards nothing against `is None`. Delete the docstring's second
-       paragraph, whose claim that "dropping the reducer's old-topic dirtying
-       changes nothing observable" this change falsifies.
+       and guards nothing against `is None`. Rewrite the docstring **whole**:
+       the summary ("Re-routing away from a clean topic dirties it again."),
+       the `When:` line describing the cleaning step being deleted, and the
+       `Then:` line ("'softwrap' is dirty again") are all falsified, as is the
+       second paragraph's claim that "dropping the reducer's old-topic dirtying
+       changes nothing observable". State the surviving rule positively.
      - `tests/test_routing_replay.py::test_route_creates_topic_marked_dirty` —
        retarget the topic assertion to `"wrapping"` and rewrite the docstring,
        which names "softwrap" in both its `When:` and its `Then:`. This is
@@ -202,14 +223,14 @@ reason, so the red batch is seven tests, not five.
        original route.
      - `tests/test_routing_replay.py::test_rebuild_is_idempotent` **and**
        `tests/test_routing_live.py::test_live_writes_match_a_cold_rebuild` — the
-       same two edits to each: expected set becomes `{"wrapping"}`, **and add**
-       `assert session.get(Topic, "softwrap") is None`. In the cold-rebuild test
-       that assertion is taken inside the first `_session` block, alongside the
-       `live` tuple capture and before the rebuild. In both, the hardcoded set
-       is the only thing keeping a comparison of two derived states —
-       idempotence in one, `live == rebuilt` in the other — from passing
-       vacuously, and it shrinks from two elements to one; the added assertion
-       turns that loss into positive evidence for the drop.
+       one edit to each: the hardcoded expected set becomes `{"wrapping"}`.
+       Both compare that set with `==` against the whole `Topic` table, so it
+       already entails `"softwrap"` being gone — do **not** add a separate
+       `session.get(Topic, "softwrap") is None`, which would only restate the
+       line above it. In both, the set is the only thing keeping a comparison
+       of two derived states — idempotence in one, `live == rebuilt` in the
+       other — from passing vacuously; it shrinks from two elements to one and
+       stays non-empty, which is what that guard needs.
 
   2. **A topic that keeps a sibling survives, dirty.** A regression guard, named
      as one — no red phase, written after slice 1's green. New in
@@ -220,12 +241,16 @@ reason, so the red batch is seven tests, not five.
      cleaning step is load-bearing here and stays: a `Topic` row is born dirty,
      so asserting `dirty is True` against a fresh row would pass with the
      dirtying step removed — the note already at
-     `tests/test_unroute.py:109-111`. It discriminates nothing an existing test
-     does not: green under unchanged code, because on the surviving-sibling path
-     old and new are observationally identical, and mutating `_release_topic` to
-     delete unconditionally reds `test_unroute_dirties_a_topic_that_keeps_items`
-     too. What it adds is narrower and still worth pinning — that the *`route`*
-     branch reaches `_release_topic`'s `remaining` branch at all.
+     `tests/test_unroute.py:109-111`. It is green under unchanged code — on the
+     surviving-sibling path old and new are observationally identical — but it
+     is not redundant. Slice 1 deletes `test_reroute_dirties_the_topic_it_leaves`
+     and nothing in slice 1 exercises the `route` branch with a surviving
+     sibling, so after this change this is the sole coverage of that path: that
+     the *`route`* branch reaches `_release_topic`'s `remaining` branch at all.
+     Mutation: make the route-side release skip `_mark_topic_dirty` on
+     `_release_topic`'s `remaining` branch. That reds this test alone —
+     `test_unroute_dirties_a_topic_that_keeps_items` covers the `unroute`
+     branch, not this one.
 
   3. **A same-topic re-route keeps both the topic and the `Route` row.** Also a
      guard, no red phase, and the only coverage this path has: `record_verdict`
@@ -244,7 +269,8 @@ reason, so the red batch is seven tests, not five.
      `memory/ddaanet/green-is-not-evidence.md`'s sense. The `Route` row moves
      under the failure this slice catches: a release written as the
      delete-then-recreate `_apply_unroute_event` uses, where the pending
-     `DELETE` can wipe or collide with the row the merge just wrote.
+     `DELETE` can wipe or collide with the row the merge just wrote. Mutation:
+     write the release that way.
 
   4. **A topic emptied and re-minted inside one replay session survives.** The
      upsert's autoflush guard, and a guard only — no red phase, probe-confirmed
@@ -252,27 +278,24 @@ reason, so the red batch is seven tests, not five.
      `tests/test_routing_replay.py`:
      `test_a_topic_reminted_after_being_emptied_in_one_replay_survives`.
 
-     That file has no event builders and must not take the shared fixture
-     (`routing_events.jsonl` is read by `test_routing_replay.py`,
-     `test_requeue.py` and `test_dispatch_store.py`), and the placement decision
-     above covers `test_routing_live.py` only. So build the ledger in the test:
+     It must not take the shared fixture (`routing_events.jsonl` is read by
+     `test_routing_replay.py`, `test_requeue.py` and `test_dispatch_store.py`),
+     so it builds its own ledger:
      `Ledger[RoutingEvent](tmp_path / "reroute_routing.jsonl")` and `append`
-     four inline `route` events — `I_1` to `"softwrap"`; `I_2` to `"wrapping"`;
+     four `route` events built with the shared `_route` builder — `I_1` to
+     `"softwrap"`; `I_2` to `"wrapping"`;
      `I_1` to `"wrapping"`, which empties `"softwrap"`; `I_2` to `"softwrap"`,
      which re-mints it. No `dispatched` events: the reducer routes an item with
-     no prior dispatch, as `test_reroute_dirties_the_topic_it_leaves` already
-     relies on. Then `Store.open(tmp_path / DB_NAME)` and one
+     no prior dispatch. Then `Store.open(tmp_path / DB_NAME)` and one
      `rebuild_from_ledgers` call against `Ledger(FETCH_FIXTURE)`, and assert
      `session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)` and
      `session.get(Topic, "wrapping") == Topic(name="wrapping", dirty=True)`.
 
      What it discriminates is an upsert issued without autoflush — on the
      connection rather than through `session.execute()` — where the pending
-     `DELETE` flushes after the `INSERT` and wipes the re-minted row. That is
-     the test's whole justification, so **run it**: apply the non-autoflushing
-     variant, confirm this test alone reds, revert, and record the result beside
-     the test. An unrun discrimination claim of exactly this shape was already
-     wrong once here. The cross-process mint race the upsert also closes is
+     `DELETE` flushes after the `INSERT` and wipes the re-minted row. Mutation:
+     issue the upsert on the connection instead. That is the test's whole
+     justification. The cross-process mint race the upsert also closes is
      closed by construction and is not testable without threads; record that
      rather than attempting it.
 
@@ -289,12 +312,18 @@ reason, so the red batch is seven tests, not five.
   changes what runs under all of them, and their suites (`test_unroute.py`,
   `test_reenter.py`, `test_requeue.py`, `test_cli_close.py`) must come back
   green unchanged: any edit needed to keep them green is a signal that behaviour
-  moved where this job said it would not. The two plausible fixture casualties
-  are expected green unchanged too — `test_status.py` reads its own
-  `status_routing.jsonl`, which carries no re-route, and
-  `test_dispatch_store.py` reads the shared `routing_events.jsonl` but asserts
-  only `dispatched_unrouted() == [I_3]`, which no topic row feeds. Either going
-  red means the change reached past what the probe measured.
+  moved where this job said it would not. Three files read the shared
+  `routing_events.jsonl` — the ledger whose last event is the re-route — and
+  all three are expected green unchanged. `test_routing_replay.py` is the one
+  slice 1 retargets. `test_dispatch_store.py` asserts only
+  `dispatched_unrouted() == [I_3]` and carries no `Topic` reference at all.
+  `test_requeue.py` does assert on `Topic` rows, but in
+  `test_requeue_live_matches_a_rebuild`, which builds its own single-route
+  ledger through `_live_store`; the test that actually replays the shared
+  fixture, through the `corpus` fixture and `ghmem rebuild`, asserts only on
+  `Dispatch` rows. `test_status.py` is outside that set — it reads its own
+  `status_routing.jsonl`, which carries no re-route. Any of them going red means
+  the change reached past what the probe measured.
 
   `just green` is cached against the interpreter and tool versions and every
   file under `justfile`, `pyproject.toml`, `uv.lock`, `scripts/`, `src/`,
@@ -303,11 +332,12 @@ reason, so the red batch is seven tests, not five.
   doc edits are outside those inputs, which is why the gate runs here rather
   than last.
 
-- Item 2.2: `docs/ghmem-decisions.md` — generalize the emptied-topic decision
-  and add a separate one for the upsert. Requirements: FR7, NFR5.
+- Item 2.2: `docs/ghmem-decisions.md` — generalize the emptied-topic decision,
+  backfill `reserve_dispatch`'s, and add one for the upsert. Requirements: FR7,
+  NFR5.
   Depends on: Item 1.1
 
-  Two edits, one item: all edits to one prose artifact land together.
+  Three edits, one item: all edits to one prose artifact land together.
 
   Retitle the entry at `:120` from **Unrouting a topic's last item deletes the
   `Topic` row.** to **Emptying a topic deletes its `Topic` row.** and generalize
@@ -327,6 +357,29 @@ reason, so the red batch is seven tests, not five.
   surface reports it: `build_status` reads only the store and the fetch ledger,
   never the filesystem.
 
+  Backfill an entry for `reserve_dispatch`'s reservation, which the docs record
+  nowhere: `ghmem-decisions.md`, `ghmem-design.md` and `ghmem-rejected.md` carry
+  no mention of an upsert, `ON CONFLICT` or `reserve_dispatch`, so the reasoning
+  lives only in that function's docstring (`dispatch_store.py:98-125`) and the
+  entry below has nothing to point at. Place it **before** the upsert entry, so
+  the reader meets the original race before its generalization. Title it for the
+  decision rather than the function — the entry below is already "a conditional
+  upsert", and two entries titled that way read as duplicates — on the axis of
+  *a live reservation is one conditional insert, never a read-then-write*. Its
+  content: `Dispatch` is keyed on `item_id` alone, so two triage sessions can
+  race for one item and the loser must *learn* it lost rather than silently
+  overwrite the winner; a read-then-write cannot enforce that, because the
+  `sqlite3` driver opens a transaction before a write but not before a read;
+  `INSERT ... ON CONFLICT (item_id) DO NOTHING` collapses the check and the
+  write into SQLite's single-writer transaction, leaving no window between
+  "checked" and "written". The design-significant part is the asymmetry: the
+  insert is conditional here while `apply_routing_event`'s `dispatched` branch
+  is an unconditional `session.merge`, because replay re-applies events that
+  already happened and must never decline one on a technicality, whereas the
+  live path *is* the technicality. Close on the ledger append sitting between
+  the insert and the commit inside the same transaction, so the writer lock
+  serializes it as a side effect of the insert.
+
   Add a **separate** entry titled **`_mark_topic_dirty` is a conditional
   upsert.**; folding it into the one above buries a change that closes a
   pre-existing cross-process race and is design-significant on its own. Its
@@ -338,11 +391,14 @@ reason, so the red batch is seven tests, not five.
   opaque `IntegrityError` rather than a `TriageSessionError`. That window closed
   permanently once a topic existed; after this change a topic can be emptied and
   dropped, so it reopens every time, which is why the fix belongs here rather
-  than after. Same reasoning as `reserve_dispatch`, pointed at not restated.
+  than after. Same reasoning as the `reserve_dispatch` entry above, pointed at
+  not restated.
 
   Interfaces:
   - Retitled decision, cited verbatim by Item 2.3's FR7 Rationale line — bold,
     with `Topic` in backticks: Emptying a topic deletes its `Topic` row.
+  - Backfilled decision for `reserve_dispatch`, cited by the entry below it —
+    bold, titled on the decision rather than the function name.
   - New decision, referred to by Item 2.5's changelog entry — bold, with the
     function name in backticks: `_mark_topic_dirty` is a conditional upsert.
 
@@ -355,17 +411,20 @@ reason, so the red batch is seven tests, not five.
   truncate it. Its dated observation that the mirror holds zero empty `Topic`
   rows across 95 routes goes with it rather than being restamped: situational
   state does not belong in a design doc, and refreshing the figure only
-  schedules the same correction again. The `## Open questions` heading and the
-  NFR10 bullet stay.
+  schedules the same correction again. The `## Open questions` heading stays,
+  as do both remaining bullets — NFR10's ground-truth gate, and the three
+  provisional constant families (NFR7).
 
   In FR7 (`:82-93`), add one clause after the `ghmem requeue` sentence stating
   that a correction which empties a topic deletes its `Topic` row, whichever
   mechanism reached it, and repoint the Rationale cross-reference from
   **Unrouting a topic's last item deletes the `Topic` row** to the retitled
   **Emptying a topic deletes its `Topic` row**. That cross-reference is the only
-  citation of the old title outside the dropped bullet; the hits under
-  `plans/ghmem-design-migration/reports/` are frozen write-time records and are
-  not updated, and `tools/ghmem/tests/test_unroute.py:136` only echoes the old
+  citation of the old title outside the dropped bullet. Every remaining hit
+  sits under `plans/` — in `ghmem-design-migration/`, its `reduction-report.md`
+  as well as three files under `reports/`, and in this job's own
+  `reroute-empty-topic/` — and all are frozen write-time records, not updated.
+  `tools/ghmem/tests/test_unroute.py:136` only echoes the old
   wording as a test docstring describing `unroute`'s own behaviour, which this
   change does not touch — leave it. The clause is needed because FR7 as written
   says what each correction mechanism does to the *verdict* and nothing about
@@ -406,9 +465,13 @@ reason, so the red batch is seven tests, not five.
   topic's last item drops it too and that a same-topic re-route dirties rather
   than drops; and the conditional upsert, in the same change because a topic
   that can be dropped reopens the mint race a get-then-add leaves open. Name
-  what moved in the sibling docs — the Open question dropped from
-  `docs/ghmem-design.md`, the overruled argument now in `docs/ghmem-rejected.md`
-  — and close with `plans/reroute-empty-topic/outline.md` as the frozen record.
+  what moved in the sibling docs — the retitled invariant and two new entries in
+  `docs/ghmem-decisions.md`, one of them backfilling `reserve_dispatch`'s
+  reservation; the Open question dropped from `docs/ghmem-design.md`; the
+  overruled argument now in `docs/ghmem-rejected.md` — and close with
+  `plans/reroute-empty-topic/runbook.md` as the frozen record. Not the outline:
+  this runbook overturns one of its claims, so citing the outline would point at
+  the falsified version with nothing naming the correction.
   A corpus reading is permitted in this file, dated by construction unlike the
   design doc, but take it at write time rather than copying the outline's.
 
@@ -417,7 +480,10 @@ reason, so the red batch is seven tests, not five.
   Depends on: Item 1.1
 
   The mirror was derived under the old reducer, so it can hold empty `Topic`
-  rows the new rule forbids. There is no `sqlite3` binary on this box, so the
+  rows the new rule forbids. The query checks that direction only — `Topic` rows
+  no `Route` names — which is the only half the old reducer could have violated;
+  a clean result says nothing about the converse. There is no `sqlite3` binary
+  on this box, so the
   query runs through the stdlib module; `mode=ro` is what keeps it a read
   against the live mirror. Verbatim, from the repository root — the runbook's
   one code block, because it is a command to run rather than code to copy:
@@ -449,8 +515,9 @@ reason, so the red batch is seven tests, not five.
 - **`Snapshot` rows** — untouched, and load-bearing for the orphan sweep as the
   durable record of a synthesized doc.
 - **Any ledger schema change.**
-- **Extracting `tools/ghmem/tests/routing_helpers.py`** across the five routing
-  test files, per the placement decision above.
+- **Extracting `tools/ghmem/tests/routing_helpers.py`** — split out into
+  `plans/routing-test-helpers/`, which this job requires to have landed. Its
+  own Out of scope carries the four files that share only `FETCH_FIXTURE`.
 - **`docs/ghmem-harness.md`.** Its `ghmem route` entry says the command "marks
   the topic dirty", which stays true of the topic the item *joins*, and the doc
   carries no topic-lifecycle clause on `ghmem unroute` either — that lifecycle
