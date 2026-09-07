@@ -86,9 +86,11 @@ reached wrongly, returning the item to the queue; `ghmem rebuild`
 appends a `reenter` event for every item whose GitHub thread has moved
 past its recorded verdict, so the next cycle re-judges it. `ghmem
 requeue` is not a verdict correction — it frees items a crashed
-session dispatched but never routed. Rationale: **Freshness is stamped
-on the route**, **Unrouting a topic's last item deletes the `Topic`
-row** (`docs/ghmem-decisions.md`); refused: **Refusing to unroute a
+session dispatched but never routed. A correction that leaves a topic
+with no route naming it deletes that topic's `Topic` row, whichever of
+the three mechanisms reached it. Rationale: **Freshness is stamped on
+the route**, **Emptying a topic deletes its `Topic` row**
+(`docs/ghmem-decisions.md`); refused: **Refusing to unroute a
 `no-signal` verdict**, **Relaxing `record_verdict` to accept a live
 re-route** (`docs/ghmem-rejected.md`).
 
@@ -247,21 +249,6 @@ Accepted trade-offs and known constraints of the current design.
 Live and unresolved; recorded here so that no branch settles one
 quietly.
 
-- **Should `route` converge on `unroute`'s emptied-topic behaviour?**
-  `unroute` deletes a `Topic` row its withdrawal leaves empty;
-  re-routing a topic's last item does not, so an empty dirty row is
-  reachable and a synthesis worker dispatched from `status`'s dirty
-  list would hit `TopicNotRoutedError` on it — the exact breakage the
-  `unroute` step exists to prevent. Against converging: a re-routed
-  item is still in the corpus under another name, so the emptied
-  topic's doc has a rewrite to receive and the dirty row carries it,
-  where a withdrawn verdict leaves the name standing for nothing.
-  Three tests in `test_routing_replay.py` and two in
-  `test_routing_live.py` pin the current `route` behaviour, so
-  converging overturns a tested contract. Latent, not active: the
-  mirror holds zero empty `Topic` rows across 95 routes (2026-09-03).
-  Rationale as it stands: **Unrouting a topic's last item deletes the
-  `Topic` row** (`docs/ghmem-decisions.md`).
 - **NFR10's ground-truth gate has not run.** No wrap topic doc exists
   under `docs/design/` and the changelog records no validation slice,
   while 95 items are routed and five topic docs are synthesized. The
