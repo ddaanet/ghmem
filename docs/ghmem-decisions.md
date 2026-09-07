@@ -117,20 +117,55 @@ tell an item the corpus has moved past from one that is simply routed.
 That distinction is what makes re-entry automatic, and what keeps
 `reenter` and `unroute` from collapsing into one event.
 
-**Unrouting a topic's last item deletes the `Topic` row.** An emptied
-topic would otherwise sit in `status`'s dirty set as a name `ghmem
-topic` then refuses with `TopicNotRoutedError`, stalling the synthesis
-loop on a name the corpus itself handed out. The step is scoped to
-`unroute`: a re-routed item is still in the corpus under another name,
-so the emptied topic's doc has a rewrite to receive, while a withdrawn
-verdict leaves the name standing for nothing. The invariant "a `Topic`
-row exists exactly while some route names it" therefore holds on the
-`unroute` path alone — re-routing a topic's last item still leaves an
-empty dirty row, and that state is reachable (Open questions). Nothing
-removes `docs/design/<name>.md` — the reducer writes SQLite and is
-replayed by `rebuild`, so a filesystem delete inside it would make
-replay destructive, and a synthesized doc is prose about items that
-really were routed there.
+**Emptying a topic deletes its `Topic` row.** An emptied topic would
+otherwise sit in `status`'s dirty set as a name `ghmem topic` then
+refuses with `TopicNotRoutedError`, stalling the synthesis loop on a
+name the corpus itself handed out. The invariant "a `Topic` row exists
+exactly while some `Route` carries its name as a verdict other than
+`no-signal`" therefore holds unconditionally: withdrawing the last
+verdict, re-routing it to another topic, and re-routing it to
+`no-signal` all empty a topic, and all release it. Nothing removes
+`docs/design/<name>.md` — the reducer writes SQLite and is replayed by
+`rebuild`, so a filesystem delete inside it would make replay
+destructive.
+
+The cost this knowingly takes on is an orphaned doc. A topic emptied
+by a re-route leaves `docs/design/<name>.md` on disk, `ghmem index`
+still lists it, and no dirty row carries the rewrite the moved item
+would have earned it — strictly worse than the `unroute` case this
+generalizes, where the item returns to the queue carrying no verdict,
+so the doc is merely unaccompanied and a later re-triage may re-mint
+the topic. No surface reports either state: `build_status` reads the
+store and the fetch ledger, never the filesystem.
+
+**A live reservation is one conditional insert, never a
+read-then-write.** `Dispatch` is keyed on `item_id` alone, so two
+triage sessions can race for the same item, and the loser must *learn*
+it lost rather than silently overwrite the winner. A read-then-write
+cannot enforce that: the `sqlite3` driver opens a transaction before a
+write but not before a read, so both sessions can read "free" and both
+write. `INSERT ... ON CONFLICT (item_id) DO NOTHING` collapses the
+check and the write into SQLite's single-writer transaction, leaving
+no window between "checked" and "written". The design-significant part
+is the asymmetry: the insert is conditional on the live path while
+`apply_routing_event`'s `dispatched` branch is an unconditional
+`session.merge`, because replay re-applies events that already
+happened and must never decline one on a technicality, whereas the
+live path *is* the technicality. The ledger append sits between the
+insert and the commit inside the same transaction, so SQLite's writer
+lock serializes it as a side effect of the insert.
+
+**`_mark_topic_dirty` is a conditional upsert.** Same reasoning as the
+reservation above, pointed at rather than restated: a get-then-add
+lets two workers routing different items into the same
+not-yet-existing topic both read `None`, both queue the `INSERT`, and
+the loser fail the primary key on flush. Because the reducer runs
+before the ledger append, the loser's verdict never lands at all,
+dying with an opaque `IntegrityError` rather than a
+`TriageSessionError`. That window used to close permanently once a
+topic existed; now that a topic can be emptied and dropped, it reopens
+every time one is, which is why the fix belongs with the rule above
+rather than after it.
 
 **Calibration normalizes before it weights.** A calibration that does
 not normalize each metric's scale before it touches a weight tunes the
