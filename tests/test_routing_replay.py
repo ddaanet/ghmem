@@ -16,7 +16,7 @@ from ghmem.exceptions import InvalidItemUpdatedAtError, UnknownRoutingEventError
 from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
 from ghmem.store import Store
-from tests.routing_helpers import DB_NAME, FETCH_FIXTURE, _session
+from tests.routing_helpers import DB_NAME, FETCH_FIXTURE, _route, _session
 
 ROUTING_FIXTURE = Path(__file__).parent / "fixtures" / "routing_events.jsonl"
 
@@ -318,3 +318,36 @@ def test_rebuild_is_idempotent(tmp_path: Path) -> None:
     assert len(dispatches) == 3
     assert {t.name for t in topics} == {"wrapping"}
     assert all(t.dirty for t in topics)
+
+
+def test_a_topic_reminted_after_being_emptied_in_one_replay_survives(
+    tmp_path: Path,
+) -> None:
+    """A topic emptied and re-minted inside one replay session survives.
+
+    Builds its own ledger rather than the shared fixture, which
+    `test_requeue.py` and `test_dispatch_store.py` also read. No
+    `dispatched` events: the reducer routes an item with no prior
+    dispatch.
+
+    When: #1 routes to "softwrap", #2 to "wrapping", #1 re-routes to
+      "wrapping" (emptying "softwrap"), then #2 re-routes to "softwrap"
+      (re-minting it) — replayed in one `rebuild_from_ledgers` call
+    Then: both "softwrap" and "wrapping" exist and are dirty
+    """
+    routing_path = tmp_path / "reroute_routing.jsonl"
+    routing: Ledger[RoutingEvent] = Ledger(routing_path)
+    for event in (
+        _route("I_1", "softwrap", "2026-01-01T00:00:00Z"),
+        _route("I_2", "wrapping", "2026-01-02T00:00:00Z"),
+        _route("I_1", "wrapping", "2026-01-03T00:00:00Z"),
+        _route("I_2", "softwrap", "2026-01-04T00:00:00Z"),
+    ):
+        routing.append(event)
+
+    store = Store.open(tmp_path / DB_NAME)
+    store.rebuild_from_ledgers(Ledger(FETCH_FIXTURE), routing)
+
+    with _session(tmp_path) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
+        assert session.get(Topic, "wrapping") == Topic(name="wrapping", dirty=True)
