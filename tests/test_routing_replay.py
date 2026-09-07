@@ -330,6 +330,18 @@ def test_a_topic_reminted_after_being_emptied_in_one_replay_survives(
     `dispatched` events: the reducer routes an item with no prior
     dispatch.
 
+    Mutation run, and not discriminated: issuing the upsert through
+    `session.connection().execute()` instead of `session.execute()`
+    does not red this test, confirming what the slice 1 code review
+    already flagged — `session.merge`'s autoflush at the top of the
+    *next* `_apply_route_event` already flushes the pending `Topic`
+    DELETE before the connection-issued upsert is ever reached, in
+    this reducer's own call path. Confirmed across the full routing,
+    `unroute`, `reenter` and `requeue` suites, not just this test. This
+    is a decision for my human partner, not the executor: the honest
+    outcomes are to find a scenario that does discriminate the upsert
+    or to drop the test rather than keep a green that names it.
+
     When: #1 routes to "softwrap", #2 to "wrapping", #1 re-routes to
       "wrapping" (emptying "softwrap"), then #2 re-routes to "softwrap"
       (re-minting it) — replayed in one `rebuild_from_ledgers` call

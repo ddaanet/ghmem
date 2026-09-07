@@ -219,6 +219,13 @@ def test_reroute_keeps_a_topic_that_keeps_items(tmp_path: Path) -> None:
     True` against a fresh row would pass with the dirtying step
     removed.
 
+    Mutation run: making the route-side release skip `_mark_topic_dirty`
+    on `_release_topic`'s `remaining` branch reds this test alone —
+    `test_same_topic_reroute_keeps_the_topic_and_the_route`,
+    `test_a_topic_reminted_after_being_emptied_in_one_replay_survives`,
+    and `test_unroute_dirties_a_topic_that_keeps_items` all stay green
+    under it.
+
     When: items #1 and #2 are routed to "softwrap", the topic is marked
       clean, then #1 is re-routed to "wrapping"
     Then: "softwrap" survives and is dirty again
@@ -250,6 +257,17 @@ def test_same_topic_reroute_keeps_the_topic_and_the_route(tmp_path: Path) -> Non
     through re-entry. The second event carries a different session and
     note than the first, so the merge is observable rather than a
     replayed no-op.
+
+    Mutation run, and not discriminated: rewriting the release as a
+    delete-then-recreate — tried both as `_release_topic`'s own
+    Topic-row handling and as the Route replacement in
+    `_apply_route_event`, mirroring `_apply_unroute_event`'s delete of
+    its own Route row — reds neither this test nor any other test in
+    the routing suites. SQLAlchemy orders the delete before the insert
+    for the same primary key within one flush either way, so no
+    collision or wipe was observed under either reading. Recorded
+    honestly rather than engineered into a red; the mutation the
+    runbook named for this test does not discriminate it as written.
 
     When: #1 is routed to "softwrap", the topic is marked clean, then a
       second "route" event sends #1 to "softwrap" again from a
