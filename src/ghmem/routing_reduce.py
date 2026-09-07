@@ -287,13 +287,22 @@ def _mark_topic_dirty(session: Session, name: str) -> None:
     `sqlite3` driver opens a transaction before a write but not before
     a read, so two workers routing different items into the same
     not-yet-existing topic could both read `None` and race the
-    `INSERT`. Issued through the reducer's own `session.execute()`
-    rather than the connection directly, because its autoflush is
-    load-bearing here too — `rebuild_from_ledgers` replays the whole
-    routing ledger in one `Session`, so a topic emptied at one event
-    and re-minted at a later one is a within-session delete-then-
-    recreate, and the pending `DELETE` must flush before this upsert
-    or it wipes the row just recreated.
+    `INSERT`.
+
+    Issued through the reducer's own `session.execute()` rather than
+    the connection directly, so its autoflush emits a pending `Topic`
+    `DELETE` ahead of the insert: `rebuild_from_ledgers` replays the
+    whole routing ledger in one `Session`, so a topic emptied at one
+    event and re-minted at a later one is a within-session delete-
+    then-recreate, and an insert that reached the connection ahead of
+    that flush would be undone by the `DELETE` landing behind it.
+
+    A guard rather than the thing holding this path up, on the
+    evidence: every route into a topic already flushes before
+    reaching here, at `session.merge`'s unconditional autoflush in
+    `_apply_route_event` or at `_release_topic`'s `COUNT`. Issuing
+    the same statement on the connection was measured against every
+    branch that reaches this helper and lost no row.
     """
     stmt = (
         sqlite_insert(Topic)

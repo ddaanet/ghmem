@@ -263,9 +263,10 @@ def test_same_topic_reroute_keeps_the_topic_and_the_route(tmp_path: Path) -> Non
     Topic-row handling and as the Route replacement in
     `_apply_route_event`, mirroring `_apply_unroute_event`'s delete of
     its own Route row — reds neither this test nor any other test in
-    the routing suites. SQLAlchemy orders the delete before the insert
-    for the same primary key within one flush either way, so no
-    collision or wipe was observed under either reading. Recorded
+    the routing suites. SQLAlchemy's unit of work collapses a delete
+    and a re-add of the same primary key within one flush into a
+    single UPDATE, emitting no DELETE and no INSERT at all, so under
+    either reading there is nothing left to collide or wipe. Recorded
     honestly rather than engineered into a red; the mutation the
     runbook named for this test does not discriminate it as written.
 
