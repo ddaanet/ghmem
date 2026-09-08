@@ -167,6 +167,21 @@ topic existed; now that a topic can be emptied and dropped, it reopens
 every time one is, which is why the fix belongs with the rule above
 rather than after it.
 
+The statement carries `RETURNING` with `populate_existing`, which is
+not decoration. A Core upsert writes past the ORM: the row goes dirty
+in the database while an identity-mapped `Topic` still reads clean and
+counts as unmodified, so the `close` that later assigns `dirty = False`
+to that instance emits no `UPDATE` and the topic stays dirty forever,
+with `status` dispatching a synthesis worker at it on every run.
+`rebuild` replays the whole ledger in one session, so a route, a close,
+a second route and a second close over one topic reach exactly that.
+Without the refresh it is invisible only because the identity map holds
+weak references and the instance is usually collected in between —
+garbage collection, not a guarantee. This is the cost of having no
+dialect-agnostic ORM upsert to reach for: every ORM form of the write
+is the read-then-write the entry above rules out, so the reducer takes
+the Core statement and pays for ORM coherence explicitly.
+
 **Calibration normalizes before it weights.** A calibration that does
 not normalize each metric's scale before it touches a weight tunes the
 wrong knob: a weight does not set a metric's influence when the

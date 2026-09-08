@@ -289,27 +289,37 @@ def _mark_topic_dirty(session: Session, name: str) -> None:
     not-yet-existing topic could both read `None` and race the
     `INSERT`.
 
-    Issued through the reducer's own `session.execute()` rather than
-    the connection directly, so its autoflush emits a pending `Topic`
-    `DELETE` ahead of the insert: `rebuild_from_ledgers` replays the
-    whole routing ledger in one `Session`, so a topic emptied at one
-    event and re-minted at a later one is a within-session delete-
-    then-recreate, and an insert that reached the connection ahead of
-    that flush would be undone by the `DELETE` landing behind it.
+    `RETURNING` with `populate_existing` is what keeps that Core write
+    from desynchronizing the ORM. A bare upsert leaves an
+    identity-mapped `Topic` reading its old `dirty`, and persistent-
+    clean with it, so `_apply_close_event`'s `topic.dirty = False`
+    against that instance is a no-op change and emits no `UPDATE`:
+    the close silently fails to clear a topic the row says is dirty.
+    `rebuild_from_ledgers` replays the whole ledger in one `Session`,
+    so route-close-route-close over one topic reaches exactly that.
+    Without the refresh it survives only because the identity map is
+    weak and the instance is usually collected in between — garbage
+    collection, not a guarantee, and it breaks the moment any caller
+    holds the row (`test_a_reminted_topic_clears_on_a_later_close`).
 
-    A guard rather than the thing holding this path up, on the
-    evidence: every route into a topic already flushes before
-    reaching here, at `session.merge`'s unconditional autoflush in
-    `_apply_route_event` or at `_release_topic`'s `COUNT`. Issuing
-    the same statement on the connection was measured against every
-    branch that reaches this helper and lost no row.
+    Issued on the session rather than the connection for a second and
+    weaker reason: its autoflush emits a pending `Topic` `DELETE`
+    ahead of the insert, so a topic emptied at one event and re-minted
+    at a later one is not undone by the delete landing behind. That
+    one is a guard, on the evidence — every route into a topic already
+    flushes at `session.merge`'s unconditional autoflush in
+    `_apply_route_event` or at `_release_topic`'s `COUNT`, and the
+    connection-issued form was measured against every branch that
+    reaches this helper and lost no row.
     """
     stmt = (
         sqlite_insert(Topic)
         .values(name=name, dirty=True)
         .on_conflict_do_update(index_elements=["name"], set_={"dirty": True})
+        .returning(Topic)
+        .execution_options(populate_existing=True)
     )
-    session.execute(stmt)
+    session.scalars(stmt).one()
 
 
 def validate_routing_event(event: RoutingEvent) -> None:

@@ -6,6 +6,7 @@ than a whole ledger replayed — is covered by `test_routing_live.py`.
 
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import msgspec
 import pytest
@@ -16,7 +17,13 @@ from ghmem.exceptions import InvalidItemUpdatedAtError, UnknownRoutingEventError
 from ghmem.ledger import NO_SIGNAL, FetchEvent, Ledger, RoutingEvent
 from ghmem.models import Dispatch, Route, Topic
 from ghmem.store import Store
-from tests.routing_helpers import DB_NAME, FETCH_FIXTURE, _route, _session
+from tests.routing_helpers import (
+    DB_NAME,
+    FETCH_FIXTURE,
+    _pinned_topics,
+    _route,
+    _session,
+)
 
 ROUTING_FIXTURE = Path(__file__).parent / "fixtures" / "routing_events.jsonl"
 
@@ -345,3 +352,44 @@ def test_a_topic_emptied_and_reminted_in_one_replay_ends_up_dirty(
     with _session(tmp_path) as session:
         assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=True)
         assert session.get(Topic, "wrapping") == Topic(name="wrapping", dirty=True)
+
+
+def test_a_reminted_topic_clears_on_a_later_close(tmp_path: Path) -> None:
+    """A close still clears a topic a later route had dirtied again.
+
+    The reducer writes `Topic` through a Core upsert and reads it back
+    through the ORM in `_apply_close_event`, in one `Session` for a
+    whole replay, so the two views have to agree. `RETURNING` with
+    `populate_existing` is what makes them: without it the upsert
+    leaves an identity-mapped row reading its old `dirty` and
+    persistent-clean with it, so the second close is a no-op change
+    emitting no `UPDATE` and the topic stays dirty forever.
+
+    `_pinned_topics` is load-bearing: the identity map is weak, so
+    unpinned the stale instance is collected between events and the
+    next `session.get` re-reads the true row — green whatever the
+    upsert does. Mutation run: dropping the two clauses reds this test
+    alone across the routing, `unroute`, `reenter` and `requeue`
+    suites; dropping the pinning too makes it green under the defect.
+
+    When: #1 routes to "softwrap", "softwrap" closes, #2 routes to
+      "softwrap" (dirtying it again), then "softwrap" closes once more
+      — replayed in one `rebuild_from_ledgers` call, holding every
+      `Topic` the ORM loads
+    Then: "softwrap" exists and is clean
+    """
+    routing: Ledger[RoutingEvent] = Ledger(tmp_path / "reclose_routing.jsonl")
+    for entry in (
+        _route("I_1", "softwrap", "2026-01-01T00:00:00Z"),
+        {"type": "close", "data": {"token": "t1", "topic": "softwrap"}},
+        _route("I_2", "softwrap", "2026-01-02T00:00:00Z"),
+        {"type": "close", "data": {"token": "t2", "topic": "softwrap"}},
+    ):
+        routing.append(cast("RoutingEvent", entry))
+
+    store = Store.open(tmp_path / DB_NAME)
+    with _pinned_topics():
+        store.rebuild_from_ledgers(Ledger(FETCH_FIXTURE), routing)
+
+    with _session(tmp_path) as session:
+        assert session.get(Topic, "softwrap") == Topic(name="softwrap", dirty=False)

@@ -233,6 +233,17 @@ was wrong.
        `route.item_updated_at.isoformat() == "2026-01-01T00:00:00+00:00"`,
        survives untouched — the fixture's re-route carries the same stamp as the
        original route.
+
+       **Settled after the TDD audit: retargeted, then deleted.** Once
+       retargeted it is fully subsumed by
+       `test_reroute_replaces_the_verdict_and_drops_the_emptied_topic` in the
+       same file — same `store` fixture, and every clause of the first entailed
+       by the second, including that `item_updated_at`, so no single fault can
+       red one while the other passes. Reasoning in
+       `reports/phase-1-corrector.md` §2, which found the subsumption and
+       declined to act on it as a scope call; the deletion is in `f2c68c7`.
+       Before slice 1 it was not subsumed: it pinned `"softwrap"`, which the
+       other test does not name positively.
      - `tests/test_routing_replay.py::test_rebuild_is_idempotent` **and**
        `tests/test_routing_live.py::test_live_writes_match_a_cold_rebuild` — the
        one edit to each: the hardcoded expected set becomes `{"wrapping"}`.
@@ -284,6 +295,16 @@ was wrong.
      `DELETE` can wipe or collide with the row the merge just wrote. Mutation:
      write the release that way.
 
+     **Settled after the TDD audit: test kept, discrimination claim retired.**
+     The mutation was run both ways — as `_release_topic`'s own `Topic`-row
+     handling and as the `Route` replacement in `_apply_route_event` — and reds
+     nothing anywhere, because SQLAlchemy's unit of work collapses a same-PK
+     delete and re-add within one flush into a single `UPDATE`, emitting no
+     `DELETE` and no `INSERT`. The defect the mutation meant to inject is not
+     constructible through the ORM, so the `Route` assertion stands as coverage
+     rather than as a discriminator, and the docstring says so. See
+     `memory/sqlalchemy-uow-hides-mutations.md`.
+
   4. **A topic emptied and re-minted inside one replay session survives.** The
      upsert's autoflush guard, and a guard only — no red phase, probe-confirmed
      green under unchanged code, so **not** evidence for the upsert. New in
@@ -322,6 +343,31 @@ was wrong.
      coverage it does not have, and the honest outcomes are to find a scenario
      that does discriminate or to drop the test rather than keep a green that
      names the upsert — a decision for my human partner, not the executor.
+
+     **Settled after the TDD audit: test kept and renamed, upsert claim
+     dropped.** The connection-issued mutation reds nothing: `merge(load=True)`
+     autoflushes unconditionally, so the pending `Topic` `DELETE` reaches the
+     connection at the next `_apply_route_event` before the upsert is issued,
+     and no event ordering takes that away. Renamed
+     `test_a_topic_emptied_and_reminted_in_one_replay_ends_up_dirty` and kept
+     for the replay coverage it genuinely has, with the docstring saying it
+     pins no property of the upsert.
+
+     **Reopened by the deliverable review, and the upsert changed.** The call
+     form the item prescribes has a consequence this runbook did not consider:
+     a bare Core upsert leaves an identity-mapped `Topic` stale, so
+     `_apply_close_event`'s later `topic.dirty = False` against that instance
+     emits no `UPDATE` and a synthesized topic stays dirty forever. It is
+     invisible only because the identity map is weak and the instance is
+     usually collected between events. `_mark_topic_dirty` now ends
+     `.returning(Topic).execution_options(populate_existing=True)` with
+     `session.scalars(stmt).one()`, and
+     `test_routing_replay.py::test_a_reminted_topic_clears_on_a_later_close`
+     guards it over a route-close-route-close ledger with every loaded `Topic`
+     pinned. Both halves mutation-run: dropping the two clauses reds that test
+     alone across the routing, `unroute`, `reenter` and `requeue` suites, and
+     dropping the pinning makes it green under the defect. See
+     `reports/deliverable-review.md` Major 1.
 
 ## Phase 2: gate, docs, and the landing check (type: inline)
 
