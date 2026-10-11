@@ -49,6 +49,26 @@ def design_dir() -> Path:
     return directory
 
 
+def packet_dir() -> Path:
+    """Return the scratch directory for served triage packets, creating it.
+
+    Honors ``$GHMEM_PACKET_DIR``; otherwise
+    ``<git-toplevel>/tools/ghmem/tmp/packets``, inside the gitignored
+    ``tmp/`` scratch tree the gate's own sentinels already use. One file
+    per live session token, overwritten on each `serve_next` call — a
+    triage agent routes an item immediately after reading its packet,
+    so only the latest copy is ever needed.
+    """
+    override = os.environ.get("GHMEM_PACKET_DIR")
+    directory = (
+        Path(override)
+        if override
+        else _git_toplevel() / "tools" / "ghmem" / "tmp" / "packets"
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 def fetch_ledger_path() -> Path:
     """Return the path to the fetch event ledger."""
     return corpus_dir() / "fetch.jsonl"

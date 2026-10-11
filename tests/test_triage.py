@@ -45,7 +45,7 @@ def test_fresh_session_serves_the_hottest_item(tmp_path: Path) -> None:
     hottest = _ranked_numbers(tmp_path)[0]
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.message is None
     assert result.packet is not None
@@ -70,7 +70,7 @@ def test_record_verdict_then_serve_next_yields_the_next_item(tmp_path: Path) -> 
     first, second, _third = _ranked_numbers(tmp_path)
     token = triage.mint_session()
 
-    first_result = triage.serve_next(store, routing, token)
+    first_result = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert first_result.packet is not None
     assert f"item: {first}" in first_result.packet
 
@@ -92,7 +92,7 @@ def test_record_verdict_then_serve_next_yields_the_next_item(tmp_path: Path) -> 
         },
     }
 
-    second_result = triage.serve_next(store, routing, token)
+    second_result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert second_result.packet is not None
     assert f"item: {second}" in second_result.packet
@@ -115,9 +115,9 @@ def test_item_cap_ends_the_batch(
     _first, second, third = _ranked_numbers(tmp_path)
     token = triage.mint_session()
 
-    first_result = triage.serve_next(store, routing, token)
-    second_result = triage.serve_next(store, routing, token)
-    result = triage.serve_next(store, routing, token)
+    first_result = triage.serve_next(store, routing, token, tmp_path / "packets")
+    second_result = triage.serve_next(store, routing, token, tmp_path / "packets")
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert first_result.packet is not None
     assert second_result.packet is not None
@@ -145,10 +145,10 @@ def test_char_cap_ends_the_batch_mid_run(
     monkeypatch.setattr(triage, "BATCH_CHARS", first_packet_chars + 1)
     token = triage.mint_session()
 
-    first_result = triage.serve_next(store, routing, token)
+    first_result = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert first_result.packet is not None
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is None
     assert result.message == "batch complete: budget exhausted"
@@ -173,10 +173,10 @@ def test_char_cap_serves_a_packet_that_exactly_fills_the_budget(
     monkeypatch.setattr(triage, "BATCH_CHARS", first_packet_chars + second_packet_chars)
     token = triage.mint_session()
 
-    first_result = triage.serve_next(store, routing, token)
+    first_result = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert first_result.packet is not None
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert f"item: {second}" in result.packet
@@ -196,7 +196,7 @@ def test_first_item_served_even_when_it_exceeds_the_char_cap(
     monkeypatch.setattr(triage, "BATCH_CHARS", 1)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert result.message is None
@@ -214,11 +214,11 @@ def test_empty_queue_returns_triage_complete(tmp_path: Path) -> None:
     numbers = _ranked_numbers(tmp_path)
     token = triage.mint_session()
     for number in numbers:
-        served = triage.serve_next(store, routing, token)
+        served = triage.serve_next(store, routing, token, tmp_path / "packets")
         assert served.packet is not None
         triage.record_verdict(store, routing, token, number, "some-topic", "reasoning")
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is None
     assert result.message == "triage complete: 0 pending"
@@ -241,7 +241,7 @@ def test_all_candidates_raced_away_returns_batch_complete(
     monkeypatch.setattr(store, "reserve_dispatch", lambda *_args, **_kwargs: False)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is None
     assert result.message == "batch complete: all candidates taken"
@@ -272,7 +272,7 @@ def test_race_lost_to_concurrent_reservation_serves_the_next_candidate(
     monkeypatch.setattr(store, "reserve_dispatch", fake_reserve)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert f"item: {second}" in result.packet
@@ -364,7 +364,7 @@ def test_reenter_lifecycle_end_to_end(tmp_path: Path) -> None:
         )
 
     token = triage.mint_session()
-    served = triage.serve_next(store, routing, token)
+    served = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert served.packet is not None
     assert "item: 1" in served.packet
 

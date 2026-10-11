@@ -30,6 +30,7 @@ def corpus(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     corpus.mkdir()
     (corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
     monkeypatch.setenv("GHMEM_CORPUS_DIR", str(corpus))
+    monkeypatch.setenv("GHMEM_PACKET_DIR", str(tmp_path / "packets"))
     assert CliRunner().invoke(main, ["rebuild"]).exit_code == 0
     return corpus
 

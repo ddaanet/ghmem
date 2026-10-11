@@ -16,9 +16,11 @@ this module's only job on that front is to retry the next candidate
 when a reservation is lost, never to re-derive the race-freedom itself.
 """
 
+import re
 import secrets
 import string
 from dataclasses import dataclass
+from pathlib import Path
 
 from ghmem.aliases import IssueOrPRNumber
 from ghmem.budget import BATCH_CHARS, BATCH_ITEMS
@@ -78,7 +80,7 @@ def mint_session() -> str:
 
 
 def serve_next(
-    store: Store, routing: Ledger[RoutingEvent], session_token: str
+    store: Store, routing: Ledger[RoutingEvent], session_token: str, packet_dir: Path
 ) -> ServeResult:
     """Serve the next packet under `session_token`, or a terminal message.
 
@@ -87,6 +89,16 @@ def serve_next(
     `False` reservation means a concurrent session took the item
     first — move on and render the next candidate; a collision costs
     one wasted render, never a wasted triage.
+
+    `packet_dir` arrives as a parameter rather than being resolved here
+    from `paths.py`, matching how `store`/`routing` arrive already
+    opened: the CLI boundary resolves paths, this module only writes
+    through them. Every served packet is also written verbatim to
+    `packet_dir/<session_token>.txt`, overwriting that session's prior
+    packet — a `packet-file:` header line names it, so an agent whose
+    only tool is Bash can `Read` the file when the thread rendered
+    above was cut short by the tool's own output cap, something no
+    single Bash call can detect from inside itself.
 
     The item cap is checked once, before any rendering, since it needs
     no size; the char cap is checked per candidate, since only its
@@ -147,7 +159,10 @@ def serve_next(
             },
         }
         if store.reserve_dispatch(routing, event):
-            return ServeResult(packet=packet, message=None)
+            return ServeResult(
+                packet=_with_packet_file(packet, session_token, packet_dir),
+                message=None,
+            )
         # Lost the race for this candidate to a concurrent session.
         # `first_of_session` stays keyed to `items_used` from the top
         # of this call, so the next candidate is still exempt from
@@ -164,6 +179,22 @@ def serve_next(
     # would make a fully contended queue indistinguishable from a
     # finished one.
     return ServeResult(packet=None, message="batch complete: all candidates taken")
+
+
+def _with_packet_file(packet: str, session_token: str, packet_dir: Path) -> str:
+    """Write `packet` to `packet_dir`, then return it with a `packet-file:` line added.
+
+    Written before the line is spliced in, so the file holds exactly
+    what reached stdout minus this one line about itself. Spliced in as
+    the header's last line — right before the body's fixed `item: `
+    opener — rather than a fixed position, so it lands after whatever
+    optional `packet-note:` line this packet happens to carry instead
+    of displacing it or the `packet-chars:` line callers key on.
+    """
+    path = packet_dir / f"{session_token}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(packet)
+    return re.sub(r"(?m)^item: ", f"packet-file: {path}\nitem: ", packet, count=1)
 
 
 def _topic_line(store: Store) -> str:

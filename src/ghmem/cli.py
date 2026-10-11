@@ -22,6 +22,7 @@ from ghmem.models import HeatScore
 from ghmem.paths import (
     design_dir,
     fetch_ledger_path,
+    packet_dir,
     routing_ledger_path,
     sqlite_path,
 )
@@ -238,7 +239,7 @@ def triage() -> None:
     store = Store.open(sqlite_path())
     routing: Ledger[RoutingEvent] = Ledger(routing_ledger_path())
     token = mint_session()
-    _emit_served(serve_next(store, routing, token))
+    _emit_served(serve_next(store, routing, token, packet_dir()))
 
 
 @main.command()
@@ -270,7 +271,7 @@ def route(token: str, number: int, verdict: str) -> None:
     except TriageSessionError as exc:
         click.echo(f"ghmem route: {exc}", err=True)
         raise SystemExit(1) from exc
-    _emit_served(serve_next(store, routing, token))
+    _emit_served(serve_next(store, routing, token, packet_dir()))
 
 
 def _read_note() -> str:

@@ -114,7 +114,7 @@ def test_packet_within_budget_records_fit_and_carries_no_note(tmp_path: Path) ->
     store, routing = _diff_session(tmp_path, diff_lines=10)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert "packet-note:" not in result.packet
@@ -144,7 +144,7 @@ def test_dispatch_records_what_the_diff_valve_dropped(tmp_path: Path) -> None:
     expected = len(full) - len(kept)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     # Without this the fixture could sit under the valve and the
     # assertion below would pass on a hardcoded zero.
@@ -173,7 +173,7 @@ def test_packet_exactly_at_budget_is_fit_not_diff_cut(
     monkeypatch.setattr(triage, "BATCH_CHARS", full)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert "packet-note:" not in result.packet
@@ -203,7 +203,7 @@ def test_oversized_first_item_has_its_diff_cut_to_fit(
     monkeypatch.setattr(triage, "BATCH_CHARS", budget)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert result.message is None
@@ -236,7 +236,7 @@ def test_diff_cut_packet_fills_the_allowance_to_the_character(
     monkeypatch.setattr(triage, "BATCH_CHARS", budget)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     dispatched = _dispatched(routing)
@@ -262,7 +262,7 @@ def test_uncuttable_first_item_is_served_oversized_and_says_so(
     monkeypatch.setattr(triage, "BATCH_CHARS", budget)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert result.message is None
@@ -294,7 +294,7 @@ def test_zero_allowance_is_still_served_oversized_not_diff_cut(
     monkeypatch.setattr(triage, "BATCH_CHARS", floor)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     dispatched = _dispatched(routing)
@@ -314,7 +314,7 @@ def test_thread_text_is_never_cut_on_the_oversized_path(
     monkeypatch.setattr(triage, "BATCH_CHARS", 1)
     token = triage.mint_session()
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is not None
     assert PR_BODY_MARKER in result.packet
@@ -339,10 +339,10 @@ def test_a_later_item_never_enters_the_fit_path(
     monkeypatch.setattr(triage, "BATCH_CHARS", first_packet_chars + 1)
     token = triage.mint_session()
 
-    first_result = triage.serve_next(store, routing, token)
+    first_result = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert first_result.packet is not None
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is None
     assert result.message == "batch complete: budget exhausted"
@@ -375,10 +375,10 @@ def test_a_later_item_too_big_for_its_own_packet_stays_queued(
     monkeypatch.setattr(triage, "BATCH_CHARS", budget)
     token = triage.mint_session()
 
-    first_result = triage.serve_next(store, routing, token)
+    first_result = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert first_result.packet is not None
 
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, tmp_path / "packets")
 
     assert result.packet is None
     assert result.message == "batch complete: budget exhausted"

@@ -37,7 +37,7 @@ def test_verdict_without_note_raises(tmp_path: Path, verdict: str) -> None:
     store, routing = _store(tmp_path)
     hottest = _ranked_numbers(tmp_path)[0]
     token = triage.mint_session()
-    served = triage.serve_next(store, routing, token)
+    served = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert served.packet is not None
 
     with pytest.raises(TriageSessionError):
@@ -55,7 +55,7 @@ def test_number_dispatched_to_a_different_token_raises(tmp_path: Path) -> None:
     store, routing = _store(tmp_path)
     hottest = _ranked_numbers(tmp_path)[0]
     holder = triage.mint_session()
-    served = triage.serve_next(store, routing, holder)
+    served = triage.serve_next(store, routing, holder, tmp_path / "packets")
     assert served.packet is not None
     impostor = triage.mint_session()
 
@@ -79,7 +79,7 @@ def test_re_routing_an_already_routed_number_raises(tmp_path: Path) -> None:
     store, routing = _store(tmp_path)
     hottest = _ranked_numbers(tmp_path)[0]
     token = triage.mint_session()
-    served = triage.serve_next(store, routing, token)
+    served = triage.serve_next(store, routing, token, tmp_path / "packets")
     assert served.packet is not None
     triage.record_verdict(store, routing, token, hottest, "some-topic", "reasoning")
 

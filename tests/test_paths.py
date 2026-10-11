@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ghmem.paths import corpus_dir, design_dir
+from ghmem.paths import corpus_dir, design_dir, packet_dir
 
 
 def test_corpus_dir_env_override(
@@ -32,4 +32,19 @@ def test_design_dir_env_override_and_creation(
     monkeypatch.setenv("GHMEM_DESIGN_DIR", str(target))
 
     assert design_dir() == target
+    assert target.is_dir()
+
+
+def test_packet_dir_env_override_and_creation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """$GHMEM_PACKET_DIR overrides the location, and the dir is created.
+
+    When: GHMEM_PACKET_DIR names a directory that does not exist yet
+    Then: packet_dir() returns it and has created it on the way out
+    """
+    target = tmp_path / "packets"
+    monkeypatch.setenv("GHMEM_PACKET_DIR", str(target))
+
+    assert packet_dir() == target
     assert target.is_dir()

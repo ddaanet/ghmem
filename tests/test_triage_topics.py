@@ -73,9 +73,11 @@ def _diff_store(root: Path, corpus: Path) -> tuple[Store, Ledger[RoutingEvent]]:
     return store, routing
 
 
-def _serve(store: Store, routing: Ledger[RoutingEvent], token: str) -> str:
+def _serve(
+    store: Store, routing: Ledger[RoutingEvent], token: str, packet_dir: Path
+) -> str:
     """Serve one packet under `token`, failing on a terminal message."""
-    result = triage.serve_next(store, routing, token)
+    result = triage.serve_next(store, routing, token, packet_dir)
     assert result.packet is not None, result.message
     return result.packet
 
@@ -93,7 +95,7 @@ def test_fresh_corpus_serves_an_empty_topic_list(tmp_path: Path) -> None:
     """
     store, routing = _store(tmp_path)
 
-    packet = _serve(store, routing, triage.mint_session())
+    packet = _serve(store, routing, triage.mint_session(), tmp_path / "packets")
 
     assert _topics_line(packet) == "topics: (none)"
 
@@ -108,12 +110,12 @@ def test_packet_lists_every_known_topic(tmp_path: Path) -> None:
     store, routing = _store(tmp_path)
     token = triage.mint_session()
     for verdict in ("beta", "alpha"):
-        packet = _serve(store, routing, token)
+        packet = _serve(store, routing, token, tmp_path / "packets")
         triage.record_verdict(
             store, routing, token, _item_number(packet), verdict, "a note"
         )
 
-    packet = _serve(store, routing, token)
+    packet = _serve(store, routing, token, tmp_path / "packets")
 
     assert _topics_line(packet) == "topics: alpha, beta"
 
@@ -133,13 +135,13 @@ def test_topic_line_counts_against_packet_chars(tmp_path: Path) -> None:
       the added topic-line text
     """
     bare_store, bare_routing = _store(tmp_path / "bare")
-    bare = _serve(bare_store, bare_routing, triage.mint_session())
+    bare = _serve(bare_store, bare_routing, triage.mint_session(), tmp_path / "packets")
 
     store, routing = _store(tmp_path / "routed")
     with Session(_engine(tmp_path / "routed")) as session:
         session.add(Topic(name="clipboard-behavior", dirty=True))
         session.commit()
-    packet = _serve(store, routing, triage.mint_session())
+    packet = _serve(store, routing, triage.mint_session(), tmp_path / "packets")
 
     grew = len(_topics_line(packet)) - len(_topics_line(bare))
     assert _packet_chars(packet) - _packet_chars(bare) == grew
@@ -164,12 +166,14 @@ def test_oversized_first_item_accounts_for_topics_before_cutting_its_diff(
     corpus = tmp_path / "diff_fetch.jsonl"
     write_diff_corpus(corpus, diff_lines=_DIFF_LINES)
     measure, routing_measure = _diff_store(tmp_path / "measure", corpus)
-    full = _packet_chars(_serve(measure, routing_measure, triage.mint_session()))
+    full = _packet_chars(
+        _serve(measure, routing_measure, triage.mint_session(), tmp_path / "packets")
+    )
     budget = full - 200
     store, routing = _diff_store(tmp_path / "real", corpus)
     monkeypatch.setattr(triage, "BATCH_CHARS", budget)
 
-    packet = _serve(store, routing, triage.mint_session())
+    packet = _serve(store, routing, triage.mint_session(), tmp_path / "packets")
 
     assert _topics_line(packet) == "topics: alpha"
     assert _packet_chars(packet) <= budget
