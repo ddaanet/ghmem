@@ -153,3 +153,21 @@ human reviews the plan itself.
   already agreed: 95 routes over 71 topics, 57 of them singletons, and
   no `Topic` row that no `Route` names — so no `rebuild` was needed.
   `plans/reroute-empty-topic/runbook.md`
+
+- **2026-09-08 — the design doc stops recording corpus counts.** Every
+  drifting figure came out of `docs/ghmem-design.md`: FR1's corpus
+  scale, FR3's routed-item coverage, and the topic-singleton, routed
+  and synthesized counts in three Open questions. Each is a
+  measurement of mutable state in a document whose authority is being
+  current truth, so restamping it only schedules the same correction
+  again — FR1's previous stamp had already drifted ~4.5% on the PR
+  count before the migration's deliverable review caught it.
+
+  What replaces them is the mechanism and the command that reads it:
+  the store is the live figure for scale, `ghmem status` reports the
+  issue-and-PR total and the routed/`no-signal` split, and `ghmem
+  topic` shows a topic's items. Figures that *ground* an observation
+  stay — NFR7's heat calibration against 198 labels on 2026-07-25, and
+  the 36.5% `no-signal` base rate the open question is measured
+  against. Counts in this changelog stay too: an entry is dated and
+  of-a-moment by construction.

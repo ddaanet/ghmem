@@ -25,16 +25,14 @@ Its own change history is indexed in `docs/ghmem-changelog.md`.
 **FR1 — the corpus holds the whole decision record.** `ghmem sync`
 fetches every issue, pull request (body, comments, review threads,
 review comments, merge metadata, diff), discussion, and the master
-commit log into a local store. Scale, read off `corpus/cache.sqlite`
-on 2026-09-03: 2,575 issues (866 open), 1,302 PRs (899 merged, 237
-closed unmerged), 3,529 commits spanning 2016-03 to 2026-07, and 245
-discussions. Those figures grow with every `sync` and are here for order
-of magnitude; the corpus is the live source, and every other corpus
-count in this document carries the date it was measured. Every signal
-the pipeline needs is retrievable — closed-PR review threads (verified
-on wrapindent PR #3107), issue↔PR cross-references via the timeline
-API, reactions, and date-qualified search for incremental cursors.
-Rationale: **PR diffs are corpus data** (`docs/ghmem-decisions.md`).
+commit log into a local store. The store is the live figure for scale
+and this document records none: `corpus/cache.sqlite` grows with every
+`sync`, and `ghmem status` reports the issue-and-PR total against it.
+Every signal the pipeline needs is retrievable — closed-PR review
+threads (verified on wrapindent PR #3107), issue↔PR cross-references
+via the timeline API, reactions, and date-qualified search for
+incremental cursors. Rationale: **PR diffs are corpus data**
+(`docs/ghmem-decisions.md`).
 
 **FR2 — agents read the corpus, never GitHub.** `show`, `discussion`,
 `heat`, `status` and `topic` render from the local store, and an
@@ -52,10 +50,10 @@ verdict's note reappears in the item index `ghmem topic` emits. A
 `no-signal` note appears in no rendered output at all, since
 `routed_items` excludes `no-signal`; it lives on its ledger event and
 its `Route` row. Coverage of the whole corpus is FR9's end state, not
-a property that holds today: 95 of the corpus's 3,877 issues and PRs
-carry a verdict as of 2026-09-03. Rationale: **A note is prose, so it
-travels on stdin alone**, **Only about a third of closed PRs cleanly
-encode a design decision** (`docs/ghmem-decisions.md`).
+a property that holds today; `ghmem status` reports how far the
+verdicts have got. Rationale: **A note is prose, so it travels on
+stdin alone**, **Only about a third of closed PRs cleanly encode a
+design decision** (`docs/ghmem-decisions.md`).
 
 **FR4 — synthesis writes one living document per topic.** Each
 `docs/design/<topic>.md` carries YAML frontmatter with a `description:`
@@ -249,12 +247,12 @@ Accepted trade-offs and known constraints of the current design.
 Live and unresolved; recorded here so that no branch settles one
 quietly.
 
-- **NFR10's ground-truth gate has not run.** No wrap topic doc exists
-  under `docs/design/` and the changelog records no validation slice,
-  while 95 items are routed and five topic docs are synthesized. The
-  prompts carry no evidence of accuracy beyond their outputs reading
-  well. Either the gate runs, or NFR10 is rewritten to say what is
-  actually relied on.
+- **NFR10's ground-truth gate has not run.** No wrap topic doc
+  exists under `docs/design/` and the changelog records no validation
+  slice, while items keep being routed and topic docs keep being
+  synthesized. The prompts carry no evidence of accuracy beyond their
+  outputs reading well. Either the gate runs, or NFR10 is rewritten to
+  say what is actually relied on.
 - **Three constant families are still provisional** (NFR7): the
   standing thresholds (`OWNER_LOGIN`, `MERGE_THRESHOLD`,
   `ACCEPTED_PR_THRESHOLD`), the batch budget (`BATCH_ITEMS = 12`,
@@ -262,18 +260,25 @@ quietly.
   (`DIFF_BODY_MAX_CHARS = 25_000`). Each still carries `PROVISIONAL`
   in the source, and the pipeline's behaviour depends on all three.
 - **The `topic merge` event.** A topic-name-to-canonical mapping,
-  appended to the routing ledger and replayed by `rebuild`, is the
-  next lever on the singleton problem — 57 of 71 topics hold exactly
-  one item (2026-09-03). Serving the topic list in every triage packet
-  narrows the problem going forward but cannot close it: it does not
-  re-judge names already minted. Its semantics (what happens to the
-  merged name's doc, whether a merge is itself withdrawable) are
-  unsettled.
-- **The triage rubric's no-signal rate.** 4 of 95 routes came back
-  `no-signal` against a 36.5% base rate measured on the corpus, so
-  either the rubric has drifted toward routing everything or the
-  routed sample is unrepresentative. It is a judgement about prompt
-  content, independent of the mechanics around it.
+  appended to the routing ledger and replayed by `rebuild`, was the
+  next lever on the singleton problem. Unrouting the 57 singleton
+  routes dissolved that problem directly, so this is deferred — build
+  it only if the mint race the per-serve topic list narrows but cannot
+  close actually produces duplicates worth merging.
+- **The triage rubric's no-signal rate.** Settled by a two-pass eval
+  (`plans/triage-rubric-eval/findings.md`): raw no-signal-rate
+  comparison was the wrong metric (it can't distinguish over-routing
+  from under-harvesting), so the eval checked each failure mode
+  directly. Pass 1 found no manufactured routes among items that were
+  routed. Pass 2, a human-labelled blind slice against the calibration
+  pool, found a real recall gap — 3 of 16 sampled no-signal items were
+  human-labelled `signal`, including two high-confidence maintainer
+  rulings — confirming the under-harvesting failure `#1445` raised is
+  not an isolated miss, though the rate isn't pinned down at n=16. The
+  rubric revision (`.claude/agents/ghmem-triage.md`'s Judgment section)
+  stays as-is rather than reverting: the gap is a residual the
+  revision didn't fully close, not evidence the revision made things
+  worse.
 
 ## Architecture
 
