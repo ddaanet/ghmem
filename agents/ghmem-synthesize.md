@@ -8,11 +8,11 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "${CLAUDE_PROJECT_DIR}/tools/ghmem/hooks/scripts/ghmem-only.sh"
+          command: "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ghmem-only.sh"
     - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: "${CLAUDE_PROJECT_DIR}/tools/ghmem/hooks/scripts/scope-docs-design.sh"
+          command: "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope-docs-design.sh"
 ---
 
 # ghmem-synthesize

@@ -151,11 +151,14 @@ check-sentinel () {
 # dependencies, the tool configuration, the checks themselves, and the
 # sources they run over — `hooks` among them, since the bats suites run
 # over those scripts and a check whose inputs the hash does not cover
-# would go stale-green on the next hook edit. Names are hashed alongside
-# contents so a rename or a deletion counts as a change. `--others
-# --exclude-standard` picks up files not yet added to git — a brand-new
-# test file is exactly when a stale cached pass would hurt most — while
-# still leaving the ignored caches out.
+# would go stale-green on the next hook edit. `agents` and `.claude-plugin`
+# join them for the same reason: test_plugin_layout runs over the agents'
+# frontmatter and the manifest, and an agent frontmatter edit can break
+# containment (a hook path that no longer resolves exits 127, which reads as
+# "not a block"). Names are hashed alongside contents so a rename or a
+# deletion counts as a change. `--others --exclude-standard` picks up files
+# not yet added to git — a brand-new test file is exactly when a stale cached
+# pass would hurt most — while still leaving the ignored caches out.
 gate-inputs-hash () {
     {
         python3 --version
@@ -163,6 +166,7 @@ gate-inputs-hash () {
         bats --version
         git ls-files -z --cached --others --exclude-standard \
                 justfile pyproject.toml uv.lock scripts src tests hooks \
+                agents .claude-plugin \
             | sort -z \
             | while IFS= read -r -d '' file; do
                   printf '%s\n' "$file"

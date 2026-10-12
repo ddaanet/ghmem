@@ -1,0 +1,11 @@
+{
+  "name": "ghmem",
+  "version": "0.1.0",
+  "description": "Institutional-memory pipeline for a GitHub repository: a CLI plus contained triage and synthesis subagents.",
+  "author": {
+    "name": "David Allouche",
+    "email": "david@ddaa.net"
+  },
+  "homepage": "https://github.com/ddaanet/ghmem",
+  "repository": "https://github.com/ddaanet/ghmem"
+}
