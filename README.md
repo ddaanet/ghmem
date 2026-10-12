@@ -172,7 +172,7 @@ the fitted vector lost to it under cross-validation. Only `comments`
 has a coefficient that calibration could resolve — the other four sit
 inside their own minimum detectable effect — so consumers should still
 treat the per-metric columns, not `score`, as the stable part of this
-contract. `docs/ghmem-heat-weights.md` records the reasoning, and
+contract. The micro-craft repo records the fit and its reasoning, and
 reweighting reorders topic-name minting, which `record_verdict` makes
 permanent.
 

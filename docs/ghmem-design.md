@@ -154,8 +154,8 @@ Each weight and threshold ships provisional and stays provisional
 until an analysis over the real corpus is recorded against it. One
 family has had that analysis: the heat weights, calibrated 2026-07-25
 against 198 labels and **retained**, because no fitted vector ranked
-better and the fitted one lost under cross-validation
-(`docs/ghmem-heat-weights.md`). Three families have not; they are
+better and the fitted one lost under cross-validation (the fit is
+recorded in the micro-craft repo). Three families have not; they are
 listed in Open questions. Rationale: **Calibration normalizes before
 it weights** (`docs/ghmem-decisions.md`).
 
