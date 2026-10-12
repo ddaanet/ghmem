@@ -24,12 +24,12 @@ FIXTURE = Path(__file__).parent / "fixtures" / "queue_corpus.jsonl"
 
 
 @pytest.fixture
-def corpus(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def corpus(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, target_corpus: Path
+) -> Path:
     """Point $GHMEM_CORPUS_DIR at a rebuilt copy of the queue fixture."""
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
+    corpus = target_corpus
     (corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
-    monkeypatch.setenv("GHMEM_CORPUS_DIR", str(corpus))
     monkeypatch.setenv("GHMEM_PACKET_DIR", str(tmp_path / "packets"))
     assert CliRunner().invoke(main, ["rebuild"]).exit_code == 0
     return corpus

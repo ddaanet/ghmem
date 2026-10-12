@@ -174,6 +174,7 @@ def test_reroute_of_the_last_item_drops_the_topic_row(tmp_path: Path) -> None:
         assert session.get(Topic, "wrapping") == Topic(name="wrapping", dirty=True)
 
 
+@pytest.mark.usefixtures("target_corpus")
 def test_status_dirty_set_stays_assemblable_after_a_reroute(
     tmp_path: Path,
 ) -> None:

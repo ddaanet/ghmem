@@ -15,7 +15,7 @@ from ghmem.show import OrphanReplyWarning, render_discussion
 from ghmem.standing import build_standing
 from ghmem.sync_core import _last_cursor, _Sync
 from ghmem.sync_discussions import _DiscussionsQueryResponse, _sync_discussions
-from tests.sync_helpers import _ALL_PAGES, _ctx, _rebuild, _stub_graphql
+from tests.sync_helpers import _ALL_PAGES, TARGET, _ctx, _rebuild, _stub_graphql
 
 
 def test_discussions_appended_with_injected_discussion_id(
@@ -183,6 +183,7 @@ def test_discussion_comment_raw_node_carries_no_reaction_groups(
     assert "reactionGroups" not in comments["DC_1_R1"]
 
 
+@pytest.mark.usefixtures("target_corpus")
 def test_rendered_discussion_shows_its_reactions(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
@@ -206,6 +207,7 @@ def test_rendered_discussion_shows_its_reactions(
     assert "THUMBS_UP\N{MULTIPLICATION SIGN}3" in rendered
 
 
+@pytest.mark.usefixtures("target_corpus")
 def test_cross_page_reply_parent_appended_first(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
@@ -322,7 +324,7 @@ def test_discussion_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) ->
     )
 
     with pytest.raises(RateLimitError):
-        _sync_discussions(_Sync(interrupted_client, fetch, Counter()))
+        _sync_discussions(_Sync(interrupted_client, fetch, Counter(), TARGET))
 
     # Deliberately omits the page-1 key: if resume ever starts discussions
     # over from `after=None` instead of the persisted cursor, the stub
@@ -335,7 +337,7 @@ def test_discussion_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) ->
         resumed_client, "graphql", side_effect=_stub_graphql(resumed_pages)
     )
 
-    _sync_discussions(_Sync(resumed_client, fetch, Counter()))
+    _sync_discussions(_Sync(resumed_client, fetch, Counter(), TARGET))
 
     store = _rebuild(fetch, tmp_path)
     assert store.get_discussion(DiscussionNumber(100)).id == "D_1"

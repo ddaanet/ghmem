@@ -28,10 +28,8 @@ Where this departs from a literal GraphQL schema walk:
 from ghmem.aliases import Json, JsonObject
 from ghmem.exceptions import DiffFetchError
 from ghmem.sync_core import (
-    _OWNER,
     _PAGE_SIZE,
     _REACTION_GROUPS,
-    _REPO,
     _append_fetch_failed,
     _append_reactions,
     _append_validated,
@@ -56,6 +54,7 @@ from ghmem.sync_wire import (
     _ReviewCommentFields,
     _ReviewFields,
 )
+from ghmem.target import Target
 
 
 def _sync_issues(ctx: _Sync) -> None:
@@ -63,7 +62,7 @@ def _sync_issues(ctx: _Sync) -> None:
     pages = _paginate(
         ctx,
         "issues",
-        _ISSUES_PAGE_QUERY,
+        _issues_page_query(ctx.target),
         _IssuesQueryResponse,
         lambda response: response.repository.issues,
     )
@@ -112,12 +111,20 @@ _ITEM_FIELDS = _Query("""
 )
 """The `_ItemNode` selection common to an issue and a pull request.
 
-Shared by `_ISSUES_PAGE_QUERY` and `_PRS_PAGE_QUERY`, which decode into
+Shared by `_issues_page_query` and `_prs_page_query`, which decode into
 the same `_ItemNode`; the PR query appends the `... on PullRequest`
 fields on top.
 """
 
-_ISSUES_PAGE_QUERY = _Query("""
+
+def _issues_page_query(target: Target) -> str:
+    """Build the issues page query against `target`'s repository."""
+    return _ISSUES_PAGE_TEMPLATE.substitute(
+        owner=target.owner, repo=target.repo, item_fields=_ITEM_FIELDS
+    )
+
+
+_ISSUES_PAGE_TEMPLATE = _Query("""
 query($first: Int!, $after: String) {
   rateLimit { cost remaining resetAt }
   repository(owner: "%owner", name: "%repo") {
@@ -128,7 +135,7 @@ query($first: Int!, $after: String) {
     }
   }
 }
-""").substitute(owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS)
+""")
 
 
 def _sync_pull_requests(ctx: _Sync) -> None:
@@ -136,7 +143,7 @@ def _sync_pull_requests(ctx: _Sync) -> None:
     pages = _paginate(
         ctx,
         "pull_requests",
-        _PRS_PAGE_QUERY,
+        _prs_page_query(ctx.target),
         _PRsQueryResponse,
         lambda response: response.repository.pull_requests,
     )
@@ -144,7 +151,17 @@ def _sync_pull_requests(ctx: _Sync) -> None:
         _drain_items_page(ctx, "pull_requests", page, is_pr=True)
 
 
-_PRS_PAGE_QUERY = _Query("""
+def _prs_page_query(target: Target) -> str:
+    """Build the pull-requests page query against `target`'s repository."""
+    return _PRS_PAGE_TEMPLATE.substitute(
+        owner=target.owner,
+        repo=target.repo,
+        item_fields=_ITEM_FIELDS,
+        reaction_groups=_REACTION_GROUPS,
+    )
+
+
+_PRS_PAGE_TEMPLATE = _Query("""
 query($first: Int!, $after: String) {
   rateLimit { cost remaining resetAt }
   repository(owner: "%owner", name: "%repo") {
@@ -181,9 +198,7 @@ query($first: Int!, $after: String) {
     }
   }
 }
-""").substitute(
-    owner=_OWNER, repo=_REPO, item_fields=_ITEM_FIELDS, reaction_groups=_REACTION_GROUPS
-)
+""")
 
 
 def _drain_items_page(
@@ -347,7 +362,9 @@ def _append_pr_diff(ctx: _Sync, node: _ItemNode) -> None:
     file list and an empty body.
     """
     try:
-        diff_text, truncated = ctx.client.pr_diff_text(node.number)
+        diff_text, truncated = ctx.client.pr_diff_text(
+            ctx.target.owner, ctx.target.repo, node.number
+        )
     except DiffFetchError as error:
         _append_fetch_failed(ctx, node.id, str(error))
         return

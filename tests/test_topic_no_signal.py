@@ -64,6 +64,7 @@ def test_no_signal_is_not_a_topic(tmp_path: Path) -> None:
     assert all(e["type"] != "snapshot" for e in routing)
 
 
+@pytest.mark.usefixtures("target_corpus")
 def test_no_signal_routes_excluded_from_a_real_topic(tmp_path: Path) -> None:
     """A `NO_SIGNAL` route never leaks into another topic's assembly.
 

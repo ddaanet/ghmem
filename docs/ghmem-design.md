@@ -254,8 +254,8 @@ quietly.
   outputs reading well. Either the gate runs, or NFR10 is rewritten to
   say what is actually relied on.
 - **Three constant families are still provisional** (NFR7): the
-  standing thresholds (`OWNER_LOGIN`, `MERGE_THRESHOLD`,
-  `ACCEPTED_PR_THRESHOLD`), the batch budget (`BATCH_ITEMS = 12`,
+  standing thresholds (`MERGE_THRESHOLD`, `ACCEPTED_PR_THRESHOLD`),
+  the batch budget (`BATCH_ITEMS = 12`,
   `BATCH_CHARS = 200_000`) and the diff valve
   (`DIFF_BODY_MAX_CHARS = 25_000`). Each still carries `PROVISIONAL`
   in the source, and the pipeline's behaviour depends on all three.

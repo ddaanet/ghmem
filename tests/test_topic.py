@@ -20,6 +20,8 @@ from ghmem.standing import build_standing
 from ghmem.topic import assemble
 from tests.topic_helpers import FIXTURE, SHOW_FIXTURE, _engine, _route, _store, _token
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 
 def test_assemble_header_carries_the_minted_token(tmp_path: Path) -> None:
     """The output's first line names a freshly minted 8-char base62 token.

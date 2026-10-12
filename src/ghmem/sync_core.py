@@ -32,9 +32,8 @@ from ghmem.aliases import GraphQLId, Json, JsonObject
 from ghmem.github import GitHubClient
 from ghmem.ingest import validate_raw_node
 from ghmem.ledger import CursorData, FetchEvent, Ledger, RawNodeEvent
+from ghmem.target import Target
 
-_OWNER = "micro-editor"
-_REPO = "micro"
 _PAGE_SIZE = 50
 
 # --- Wire Structs shared across connections. ---
@@ -132,13 +131,19 @@ class _Query(Template):
 class _Sync(NamedTuple):
     """Per-call state threaded through every helper below.
 
-    Bundles the client, the fetch ledger, and the running per-kind counts into
-    one value, so no helper needs more than a handful of parameters.
+    Bundles the client, the fetch ledger, the running per-kind counts and the
+    target repository into one value, so no helper needs more than a handful
+    of parameters.
+
+    `target` is read once, by `sync()`, before the first request. The
+    repository-rooted queries are built from it per call rather than at
+    import, which is what lets a module be imported with no corpus at all.
     """
 
     client: GitHubClient
     fetch: Ledger[FetchEvent]
     counts: Counter[str]
+    target: Target
 
 
 # --- Raw-node reshaping: wire Struct -> ingest.py's `data` contract. ---

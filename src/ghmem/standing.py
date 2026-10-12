@@ -16,15 +16,14 @@ from datetime import date
 from enum import StrEnum, auto
 
 from ghmem.store import Store
+from ghmem.target import load_target
 
-OWNER_LOGIN = "zyedidia"  # PROVISIONAL — calibrated in subproject 4
 MERGE_THRESHOLD = 10  # PROVISIONAL — calibrated in subproject 4
 ACCEPTED_PR_THRESHOLD = 5  # PROVISIONAL — calibrated in subproject 4
 
 __all__ = [
     "ACCEPTED_PR_THRESHOLD",
     "MERGE_THRESHOLD",
-    "OWNER_LOGIN",
     "Standing",
     "StandingTable",
     "build_standing",
@@ -54,6 +53,10 @@ class StandingTable:
     `of`/`annotation` filter these lists by `<= when` in memory — the
     store is never re-queried after `build_standing`.
 
+    `owner_login` is the one login ranked OWNER outright, whatever the
+    evidence says. It comes from the corpus's `target.toml`, not from
+    the store.
+
     **Known approximation**: `commit_dates` is keyed by `Commit.author`,
     a bare GitActor display name, not a GitHub login — it can miss a
     contributor whose commit name differs from their login. Accepted-PR
@@ -64,10 +67,11 @@ class StandingTable:
     merges_credited: dict[str, list[date]]
     accepted_prs: dict[str, list[date]]
     commit_dates: dict[str, list[date]]
+    owner_login: str
 
     def of(self, user: str, when: date) -> Standing:
         """Return `user`'s standing as of `when` (inclusive)."""
-        if user == OWNER_LOGIN:
+        if user == self.owner_login:
             return Standing.OWNER
         if _count_upto(self.merges_credited.get(user, []), when) >= MERGE_THRESHOLD:
             return Standing.MAINTAINER
@@ -125,10 +129,15 @@ def build_standing(store: Store) -> StandingTable:
 
     Both store calls return results ordered ascending by date, so each per-user
     sublist stays sorted without a separate sort.
+
+    The owner's login is read from the corpus's `target.toml`. Raises
+    `TargetConfigError` if that file cannot supply it — before the store is
+    queried, so a misconfigured corpus fails fast.
     """
     merges_credited: dict[str, list[date]] = defaultdict(list)
     accepted_prs: dict[str, list[date]] = defaultdict(list)
     commit_dates: dict[str, list[date]] = defaultdict(list)
+    owner_login = load_target().owner_login
 
     for pr in store.merges_before(date.max):
         if pr.merged_at is None:
@@ -146,4 +155,5 @@ def build_standing(store: Store) -> StandingTable:
         merges_credited=dict(merges_credited),
         accepted_prs=dict(accepted_prs),
         commit_dates=dict(commit_dates),
+        owner_login=owner_login,
     )

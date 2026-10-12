@@ -9,7 +9,7 @@ from ghmem.github import GitHubClient
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.sync_commits import _sync_commits
 from ghmem.sync_core import _Sync
-from tests.sync_helpers import _ALL_PAGES, _ctx, _stub_graphql
+from tests.sync_helpers import _ALL_PAGES, TARGET, _ctx, _stub_graphql
 
 
 def test_commit_history_maps_oid_and_author_name(
@@ -101,7 +101,7 @@ def test_commit_catch_up_passes_since_not_cursor(
     graphql = mocker.patch.object(
         client, "graphql", side_effect=_stub_graphql(_ALL_PAGES)
     )
-    _sync_commits(_Sync(client, fetch, Counter()))
+    _sync_commits(_Sync(client, fetch, Counter(), TARGET))
 
     variables = graphql.call_args_list[0].args[1]
     assert variables["since"] == "2026-05-20T09:00:00Z"

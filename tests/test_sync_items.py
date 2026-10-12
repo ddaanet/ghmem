@@ -14,7 +14,7 @@ from ghmem.ledger import FetchEvent, Ledger
 from ghmem.sync_core import _append_validated, _last_cursor, _Sync
 from ghmem.sync_items import _sync_issues, _sync_pull_requests
 from ghmem.sync_wire import _IssuesQueryResponse, _PRsQueryResponse
-from tests.sync_helpers import _ALL_PAGES, _ctx, _rebuild, _stub_graphql
+from tests.sync_helpers import _ALL_PAGES, TARGET, _ctx, _rebuild, _stub_graphql
 
 
 def test_nested_comment_pagination(mocker: MockerFixture, tmp_path: Path) -> None:
@@ -54,7 +54,7 @@ def test_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) -> None:
     )
 
     with pytest.raises(RateLimitError):
-        _sync_issues(_Sync(interrupted_client, fetch, Counter()))
+        _sync_issues(_Sync(interrupted_client, fetch, Counter(), TARGET))
 
     # Deliberately omits the page-1 key: if resume ever starts issues
     # over from `after=None` instead of the persisted cursor, the stub
@@ -67,7 +67,7 @@ def test_resume_from_cursor(mocker: MockerFixture, tmp_path: Path) -> None:
         resumed_client, "graphql", side_effect=_stub_graphql(resumed_pages)
     )
 
-    _sync_issues(_Sync(resumed_client, fetch, Counter()))
+    _sync_issues(_Sync(resumed_client, fetch, Counter(), TARGET))
 
     store = _rebuild(fetch, tmp_path)
     assert store.get_issue_or_pr(IssueOrPRNumber(1)).id == "I_1"
@@ -82,7 +82,7 @@ def test_malformed_node_fails_before_append(tmp_path: Path) -> None:
     Then: it raises instead of appending, and the ledger stays empty
     """
     fetch: Ledger[FetchEvent] = Ledger(tmp_path / "fetch.jsonl")
-    ctx = _Sync(GitHubClient("tok"), fetch, Counter())
+    ctx = _Sync(GitHubClient("tok"), fetch, Counter(), TARGET)
 
     with pytest.raises(msgspec.ValidationError):
         _append_validated(ctx, {"type": "item", "data": {"id": "I_1"}})

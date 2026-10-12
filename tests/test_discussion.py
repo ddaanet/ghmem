@@ -15,6 +15,8 @@ from ghmem.show import OrphanReplyWarning, render_discussion
 from ghmem.standing import StandingTable, build_standing
 from ghmem.store import Store
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 FIXTURE = Path(__file__).parent / "fixtures" / "discussion_corpus.jsonl"
 
 
@@ -181,18 +183,13 @@ def test_unknown_number_raises(store: Store, standing_table: StandingTable) -> N
         render_discussion(store, standing_table, DiscussionNumber(999))
 
 
-def test_discussion_command_not_found_exits_1(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_discussion_command_not_found_exits_1(target_corpus: Path) -> None:
     """`ghmem discussion` on an unknown number exits 1 with a stderr message.
 
     When: the corpus has been rebuilt but the requested number is absent
     Then: the CLI exits 1 and prints the not-found message
     """
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
-    (corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
-    monkeypatch.setenv("GHMEM_CORPUS_DIR", str(corpus))
+    (target_corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
     runner = CliRunner()
     runner.invoke(main, ["rebuild"])
 

@@ -33,9 +33,6 @@ from githubkit.retry import RETRY_SERVER_ERROR
 from ghmem.aliases import IssueOrPRNumber, JsonObject
 from ghmem.exceptions import AuthError, DiffFetchError, RateLimitError
 
-_OWNER = "micro-editor"
-_REPO = "micro"
-
 _DIFF_ACCEPT = "application/vnd.github.v3.diff"
 
 _RATE_LIMIT_SAFETY_MARGIN = 100
@@ -102,8 +99,10 @@ class GitHubClient:
             raise RateLimitError(rate_limit.reset_at)
         return msgspec.convert(data, response, strict=True)
 
-    def pr_diff_text(self, number: IssueOrPRNumber) -> tuple[str, bool]:
-        """Fetch the unified diff text for PR `number` over REST.
+    def pr_diff_text(
+        self, owner: str, repo: str, number: IssueOrPRNumber
+    ) -> tuple[str, bool]:
+        """Fetch the unified diff text for `owner/repo`'s PR `number` over REST.
 
         Returns `(diff_text, truncated)`. `truncated` is `True` when
         GitHub refuses to generate an oversized diff. That refusal was
@@ -125,7 +124,7 @@ class GitHubClient:
         try:
             resp = self._gh.request(
                 "GET",
-                f"/repos/{_OWNER}/{_REPO}/pulls/{number}",
+                f"/repos/{owner}/{repo}/pulls/{number}",
                 headers={"Accept": _DIFF_ACCEPT},
             )
         except RequestFailed as exc:

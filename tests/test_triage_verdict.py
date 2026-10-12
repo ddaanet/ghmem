@@ -16,6 +16,8 @@ from ghmem.exceptions import TriageSessionError
 from ghmem.ledger import NO_SIGNAL
 from tests.triage_helpers import _ranked_numbers, _store
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 
 @pytest.mark.parametrize("verdict", ["topic", NO_SIGNAL])
 def test_verdict_without_note_raises(tmp_path: Path, verdict: str) -> None:

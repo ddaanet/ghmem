@@ -21,6 +21,8 @@ from tests.diff_fixtures import (
     write_diff_corpus,
 )
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 FIXTURE = Path(__file__).parent / "fixtures" / "show_corpus.jsonl"
 _DIFF_STORE_LINES = 200
 
@@ -349,18 +351,13 @@ def test_unknown_number_raises(store: Store, standing_table: StandingTable) -> N
         render(store, standing_table, IssueOrPRNumber(999))
 
 
-def test_cli_show_unknown_number_exits_nonzero(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_cli_show_unknown_number_exits_nonzero(target_corpus: Path) -> None:
     """`ghmem show` on an unknown number exits non-zero, without a traceback.
 
     When: the corpus has been rebuilt but the requested number is absent
     Then: the CLI exits non-zero and prints no traceback
     """
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
-    (corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
-    monkeypatch.setenv("GHMEM_CORPUS_DIR", str(corpus))
+    (target_corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
     runner = CliRunner()
     runner.invoke(main, ["rebuild"])
 

@@ -10,10 +10,13 @@ fallback for a thread the tool's own output cap cuts short.
 
 from pathlib import Path
 
+import pytest
+
 from ghmem import triage
 from tests.triage_helpers import _store
 
 
+@pytest.mark.usefixtures("target_corpus")
 def test_served_packet_is_also_written_to_the_packet_file(tmp_path: Path) -> None:
     """A served packet's full text lands on disk, named in its own header.
 

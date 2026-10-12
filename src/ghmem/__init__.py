@@ -1,4 +1,4 @@
-"""ghmem: institutional-memory pipeline for micro."""
+"""ghmem: institutional-memory pipeline for a GitHub repository."""
 
 from importlib.metadata import version
 

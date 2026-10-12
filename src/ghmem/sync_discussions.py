@@ -16,10 +16,8 @@ The wire Structs stay here beside the logic; the plumbing comes from
 
 from ghmem.aliases import DiscussionNumber, GraphQLId
 from ghmem.sync_core import (
-    _OWNER,
     _PAGE_SIZE,
     _REACTION_GROUPS,
-    _REPO,
     _append_fetch_failed,
     _append_reactions,
     _append_validated,
@@ -36,6 +34,7 @@ from ghmem.sync_core import (
     _Sync,
     _Wire,
 )
+from ghmem.target import Target
 
 
 def _sync_discussions(ctx: _Sync) -> None:
@@ -43,7 +42,7 @@ def _sync_discussions(ctx: _Sync) -> None:
     pages = _paginate(
         ctx,
         "discussions",
-        _DISCUSSIONS_PAGE_QUERY,
+        _discussions_page_query(ctx.target),
         _DiscussionsQueryResponse,
         lambda response: response.repository.discussions,
     )
@@ -78,7 +77,19 @@ Selected identically by the discussions page and by the comments
 follow-up, because both decode into `_DiscussionCommentNode`.
 """
 
-_DISCUSSIONS_PAGE_QUERY = _Query("""
+
+def _discussions_page_query(target: Target) -> str:
+    """Build the discussions page query against `target`'s repository."""
+    return _DISCUSSIONS_PAGE_TEMPLATE.substitute(
+        owner=target.owner,
+        repo=target.repo,
+        page_size=_PAGE_SIZE,
+        reaction_groups=_REACTION_GROUPS,
+        comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES,
+    )
+
+
+_DISCUSSIONS_PAGE_TEMPLATE = _Query("""
 query($first: Int!, $after: String) {
   rateLimit { cost remaining resetAt }
   repository(owner: "%owner", name: "%repo") {
@@ -105,13 +116,7 @@ query($first: Int!, $after: String) {
     }
   }
 }
-""").substitute(
-    owner=_OWNER,
-    repo=_REPO,
-    page_size=_PAGE_SIZE,
-    reaction_groups=_REACTION_GROUPS,
-    comments_with_replies=_DISCUSSION_COMMENTS_WITH_REPLIES,
-)
+""")
 
 
 def _drain_discussions_page(ctx: _Sync, page: _DiscussionsPage) -> None:

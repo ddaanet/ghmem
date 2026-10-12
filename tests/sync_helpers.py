@@ -35,6 +35,7 @@ from ghmem.sync_wire import (
     _ItemCommentsFollowUpResponse,
     _PRsQueryResponse,
 )
+from ghmem.target import Target
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "graphql_pages"
 
@@ -104,7 +105,16 @@ def _ctx(
     pages: dict[tuple[type, str | None], str],
 ) -> _Sync:
     """Build a `_Sync` context around a fully stubbed client."""
-    return _Sync(_client(mocker, pages), fetch, Counter())
+    return _Sync(_client(mocker, pages), fetch, Counter(), TARGET)
+
+
+TARGET = Target(owner="micro-editor", repo="micro", owner_login="zyedidia")
+"""The target the fixture corpora were captured from.
+
+Handed straight to `_Sync` by the driver tests, which therefore need no
+`target.toml`; written into one by conftest's `target_corpus` for the
+tests that go through `load_target`.
+"""
 
 
 def _rebuild(fetch: Ledger[FetchEvent], tmp_path: Path) -> Store:

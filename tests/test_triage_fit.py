@@ -33,6 +33,8 @@ from tests.triage_helpers import (
     _store,
 )
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 _DIFF_LINES = 500
 
 _VALVE_DIFF_LINES = DIFF_BODY_MAX_CHARS // LINE_WIDTH + 100

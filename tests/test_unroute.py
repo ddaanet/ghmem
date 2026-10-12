@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from ghmem.aliases import GraphQLId
@@ -235,6 +236,7 @@ def test_live_unroute_matches_a_cold_rebuild(tmp_path: Path) -> None:
     assert live == rebuilt
 
 
+@pytest.mark.usefixtures("target_corpus")
 def test_status_dirty_set_stays_assemblable_after_emptying_a_topic(
     tmp_path: Path,
 ) -> None:

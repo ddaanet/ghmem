@@ -48,6 +48,11 @@ Corpus data lives at the repository root (`../../corpus/`), not
 inside this tool tree — resolved via `ghmem.paths.corpus_dir()`,
 overridable with `$GHMEM_CORPUS_DIR`.
 
+Which repository a corpus mirrors is recorded beside it, in
+`target.toml` (`owner`, `repo`, and `owner_login` — the login standing
+ranks as owner). `sync` and the commands that render standing read it;
+a missing file or key is an error naming both, never a default.
+
 ## Commands
 
 `ghmem sync` — fetch issues, PRs, discussions and commits into

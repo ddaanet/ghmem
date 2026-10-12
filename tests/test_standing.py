@@ -15,6 +15,8 @@ from ghmem.standing import (
 )
 from ghmem.store import Store
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 FIXTURE = Path(__file__).parent / "fixtures" / "standing_corpus.jsonl"
 
 # The 10th (MERGE_THRESHOLD-th) PR credited to dmaluka in the fixture is
@@ -60,7 +62,7 @@ def test_joekar_maintainer(standing_table: StandingTable) -> None:
 def test_owner_is_owner(standing_table: StandingTable) -> None:
     """The repo owner is always OWNER, regardless of corpus evidence.
 
-    When: standing is queried for the OWNER_LOGIN user, who has no
+    When: standing is queried for the target's `owner_login`, who has no
       merges, PRs, or commits in the fixture corpus at all
     Then: standing is OWNER at any date
     """

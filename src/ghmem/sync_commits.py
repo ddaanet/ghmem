@@ -12,8 +12,6 @@ small enough to keep them local. The plumbing comes from `sync_core`.
 
 from ghmem.aliases import JsonObject
 from ghmem.sync_core import (
-    _OWNER,
-    _REPO,
     _append_validated,
     _last_hwm,
     _Page,
@@ -21,6 +19,7 @@ from ghmem.sync_core import (
     _Sync,
     _Wire,
 )
+from ghmem.target import Target
 
 _COMMIT_PAGE_SIZE = 100
 
@@ -54,10 +53,11 @@ def _sync_commits(ctx: _Sync) -> None:
     """
     since = _last_hwm(ctx.fetch, "commits")
     hwm = since or ""
+    query = _commit_history_query(ctx.target)
     after: str | None = None
     while True:
         response = ctx.client.graphql(
-            _COMMIT_HISTORY_QUERY,
+            query,
             {"first": _COMMIT_PAGE_SIZE, "after": after, "since": since},
             response=_CommitHistoryQueryResponse,
         )
@@ -82,7 +82,12 @@ def _sync_commits(ctx: _Sync) -> None:
         return
 
 
-_COMMIT_HISTORY_QUERY = _Query("""
+def _commit_history_query(target: Target) -> str:
+    """Build the commit-history query against `target`'s repository."""
+    return _COMMIT_HISTORY_TEMPLATE.substitute(owner=target.owner, repo=target.repo)
+
+
+_COMMIT_HISTORY_TEMPLATE = _Query("""
 query($first: Int!, $after: String, $since: GitTimestamp) {
   rateLimit { cost remaining resetAt }
   repository(owner: "%owner", name: "%repo") {
@@ -98,7 +103,7 @@ query($first: Int!, $after: String, $since: GitTimestamp) {
     }
   }
 }
-""").substitute(owner=_OWNER, repo=_REPO)
+""")
 
 
 def _commit_data(commit: _CommitNode) -> JsonObject:

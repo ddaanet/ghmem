@@ -26,6 +26,8 @@ from ghmem.store import Store
 from tests.diff_fixtures import write_diff_corpus
 from tests.triage_helpers import _engine, _store
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 _TOPICS_PREFIX = "topics: "
 
 _DIFF_LINES = 500

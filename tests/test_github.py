@@ -120,7 +120,7 @@ def test_pr_diff_text_sets_diff_accept_header(mocker: MockerFixture) -> None:
     request = mocker.Mock(return_value=mocker.Mock(text="diff --git a/x b/x\n"))
     client = _client(mocker, request=request)
 
-    diff_text, truncated = client.pr_diff_text(IssueOrPRNumber(1))
+    diff_text, truncated = client.pr_diff_text("acme", "widget", IssueOrPRNumber(1))
 
     assert diff_text == "diff --git a/x b/x\n"
     assert truncated is False
@@ -149,7 +149,7 @@ def test_pr_diff_text_flags_truncated(mocker: MockerFixture) -> None:
         mocker, request=mocker.Mock(side_effect=_request_failed(406, body))
     )
 
-    diff_text, truncated = client.pr_diff_text(IssueOrPRNumber(1392))
+    diff_text, truncated = client.pr_diff_text("acme", "widget", IssueOrPRNumber(1392))
 
     assert diff_text == ""
     assert truncated is True
@@ -193,7 +193,7 @@ def test_non_json_406_does_not_mask_the_request_failure(
     client = _client(mocker, request=mocker.Mock(side_effect=_failed_response(raw)))
 
     with pytest.raises(DiffFetchError) as exc_info:
-        client.pr_diff_text(IssueOrPRNumber(7))
+        client.pr_diff_text("acme", "widget", IssueOrPRNumber(7))
 
     assert exc_info.value.status_code == 406
     assert isinstance(exc_info.value.__cause__, RequestFailed)
@@ -216,7 +216,7 @@ def test_failed_diff_fetch_raises_domain_error(mocker: MockerFixture) -> None:
     )
 
     with pytest.raises(DiffFetchError) as exc_info:
-        client.pr_diff_text(IssueOrPRNumber(7))
+        client.pr_diff_text("acme", "widget", IssueOrPRNumber(7))
 
     assert exc_info.value.number == 7
     assert exc_info.value.status_code == 404

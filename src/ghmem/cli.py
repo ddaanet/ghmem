@@ -41,7 +41,7 @@ from ghmem.triage import ServeResult, mint_session, record_verdict, serve_next
     message="%(package)s %(version)s",
 )
 def main() -> None:
-    """ghmem: institutional-memory pipeline for micro."""
+    """ghmem: institutional-memory pipeline for a GitHub repository."""
 
 
 @main.command()

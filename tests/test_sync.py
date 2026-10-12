@@ -4,12 +4,15 @@ from collections import Counter
 from pathlib import Path
 from typing import cast
 
+import pytest
 from pytest_mock import MockerFixture
 
 from ghmem.aliases import IssueOrPRNumber, JsonObject
 from ghmem.ledger import FetchEvent, Ledger
 from ghmem.sync import sync
 from tests.sync_helpers import _ALL_PAGES, _client, _rebuild
+
+pytestmark = pytest.mark.usefixtures("target_corpus")
 
 
 def test_full_sync_appends_expected_nodes(

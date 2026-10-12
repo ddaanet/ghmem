@@ -16,11 +16,16 @@ input too. `UnknownSnapshotError` belongs to topic close
 is bad input too. `InvalidItemUpdatedAtError` belongs to the routing
 reducer (`routing_reduce.py`), alongside `UnknownRoutingEventError`: a
 `route` event's `item_updated_at` that doesn't parse, or parses naive,
-is bad input too.
+is bad input too. `TargetConfigError` belongs to the target config
+(`target.py`): a corpus whose `target.toml` is absent or incomplete is
+a setup fault the user fixes, hence `click.ClickException` — it reaches
+the terminal as one explained line rather than a traceback.
 """
 
 from datetime import datetime
 from pathlib import Path
+
+import click
 
 from ghmem.aliases import IssueOrPRNumber
 
@@ -70,6 +75,20 @@ class DiffFetchError(Exception):
         super().__init__(f"diff fetch for #{number} failed with HTTP {status_code}")
         self.number = number
         self.status_code = status_code
+
+
+class TargetConfigError(click.ClickException):
+    """Raised when a corpus's `target.toml` cannot supply the target.
+
+    Covers the file being absent, unparseable, or short a key. None of
+    those falls back to a default: which repository a corpus mirrors is
+    not something to guess.
+    """
+
+    def __init__(self, path: Path, problem: str) -> None:
+        """Name the file and what is wrong with it."""
+        super().__init__(f"cannot read the target repository from {path}: {problem}")
+        self.path = path
 
 
 class UnknownRoutingEventError(ValueError):

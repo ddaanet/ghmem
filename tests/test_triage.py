@@ -31,6 +31,8 @@ from tests.triage_helpers import (
     _store,
 )
 
+pytestmark = pytest.mark.usefixtures("target_corpus")
+
 
 def test_fresh_session_serves_the_hottest_item(tmp_path: Path) -> None:
     """A fresh session's first packet is the hottest queued item.

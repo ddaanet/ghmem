@@ -20,13 +20,11 @@ _ROUTING_JSONL = (
 
 
 @pytest.fixture
-def corpus(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+def corpus(target_corpus: Path) -> Path:
     """Point $GHMEM_CORPUS_DIR at a rebuilt corpus with two items routed."""
-    corpus = tmp_path / "corpus"
-    corpus.mkdir()
+    corpus = target_corpus
     (corpus / "fetch.jsonl").write_text(FIXTURE.read_text())
     (corpus / "routing.jsonl").write_text(_ROUTING_JSONL)
-    monkeypatch.setenv("GHMEM_CORPUS_DIR", str(corpus))
     assert CliRunner().invoke(main, ["rebuild"]).exit_code == 0
     return corpus
 

@@ -22,6 +22,7 @@ from ghmem.sync_commits import _sync_commits
 from ghmem.sync_core import _last_cursor, _Sync
 from ghmem.sync_discussions import _sync_discussions
 from ghmem.sync_items import _sync_issues, _sync_pull_requests
+from ghmem.target import load_target
 
 
 class SyncResult(NamedTuple):
@@ -47,11 +48,15 @@ def sync(client: GitHubClient, fetch: Ledger[FetchEvent]) -> SyncResult:
     re-fetching from the beginning would only re-append nodes that
     `rebuild_from_ledgers` dedups away.
 
+    The repository fetched is the corpus's own target, read from its
+    `target.toml` before the first request. Raises `TargetConfigError`
+    if that file cannot supply it.
+
     Raises `RateLimitError` if the budget runs out mid-page. Nothing
     from that in-flight page is appended, so the last persisted
     checkpoint stays the resume point.
     """
-    ctx = _Sync(client, fetch, Counter())
+    ctx = _Sync(client, fetch, Counter(), load_target())
     _sync_issues(ctx)
     _sync_pull_requests(ctx)
     _sync_commits(ctx)

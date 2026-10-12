@@ -1,7 +1,7 @@
 [project]
 name = "ghmem-cli"
 version = "0.1.0"
-description = "Institutional-memory pipeline for micro"
+description = "Institutional-memory pipeline for a GitHub repository"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
