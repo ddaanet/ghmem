@@ -267,8 +267,9 @@ quietly.
 - **The triage rubric's no-signal rate.** Settled by a two-pass eval
   (recorded in the micro-craft repo): raw no-signal-rate comparison
   was the wrong metric (it can't distinguish over-routing from
-  under-harvesting), so the eval checked each failure mode directly. Pass 1 found no manufactured routes among items that were
-  routed. Pass 2, a human-labelled blind slice against the calibration
+  under-harvesting), so the eval checked each failure mode directly.
+  Pass 1 found no manufactured routes among items that were routed.
+  Pass 2, a human-labelled blind slice against the calibration
   pool, found a real recall gap — 3 of 16 sampled no-signal items were
   human-labelled `signal`, including two high-confidence maintainer
   rulings — confirming the under-harvesting failure `#1445` raised is
