@@ -1,11 +1,11 @@
 # ghmem
 
-Institutional-memory pipeline for the `micro` repository: pulls
-GitHub PR/issue/discussion history into a local corpus so that
-agentic sessions can query it instead of re-fetching from the
-GitHub API on every run.
+Institutional-memory pipeline for a GitHub repository: pulls its
+PR/issue/discussion history into a local corpus so that agentic
+sessions can query it instead of re-fetching from the GitHub API on
+every run. It was built on `micro-editor/micro`, its first corpus.
 
-The living design is `docs/ghmem-design.md`, in the repository's
+The living design is `docs/ghmem-design.md`, in this repository's
 `docs/` directory, and it is the source of truth — this file describes
 what is built, not what is intended. It names the detail it carries:
 command contracts in `docs/ghmem-harness.md`, the argument behind each
@@ -44,9 +44,11 @@ item has moved past its recorded verdict — see `ghmem rebuild` below.
 Nothing reads the SQLite file as authoritative, so losing it costs
 only the time to rebuild.
 
-Corpus data lives at the repository root (`../../corpus/`), not
-inside this tool tree — resolved via `ghmem.paths.corpus_dir()`,
-overridable with `$GHMEM_CORPUS_DIR`.
+Corpus data lives in the consumer project the CLI is run in
+(`<git toplevel>/corpus/`), never in this repository — resolved via
+`ghmem.paths.corpus_dir()`, overridable with `$GHMEM_CORPUS_DIR`.
+Topic docs go to `docs/design/` in the same project. The data for
+`micro-editor/micro` lives in the micro-craft repo.
 
 Served triage packets are written to `corpus/packets/` (gitignored
 scratch), and the triage agent's Read hook scopes to exactly that path

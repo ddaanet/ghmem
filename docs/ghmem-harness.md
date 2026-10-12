@@ -11,9 +11,9 @@ shapes is in `docs/ghmem-decisions.md`.
 - `ghmem sync` — GraphQL-batched fetch (githubkit; explicit nested
   cursors) of all issues, PRs (including review threads and review
   comments, `mergedBy`/`mergedAt`, and fetch-time `author_association`
-  as the hint column) and discussions, plus the commit log from the
-  local `micro/` clone, into the fetch ledger. PR diff text comes from
-  the REST diff endpoint. Cursor on `updated_at`; resumable mid-run;
+  as the hint column) and discussions, plus the default branch's
+  commit log, into the fetch ledger. PR diff text comes from the REST
+  diff endpoint. Cursor on `updated_at`; resumable mid-run;
   rate-limit aware, tracking GraphQL point cost and sleeping or
   exiting cleanly on exhaustion.
 - `ghmem rebuild` — replays both ledgers into SQLite, then appends

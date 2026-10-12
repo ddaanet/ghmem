@@ -1,12 +1,13 @@
-# ghmem — reified institutional memory for micro
+# ghmem — reified institutional memory for a GitHub repository
 
-ghmem turns micro's GitHub history into maintained design documents.
-Recurring debates — option-count aversion, clipboard behavior,
-highlighter architecture, wrap semantics — get re-litigated in issues
-because the outcome of every past debate lives only in a closed thread
-nobody re-reads. ghmem fetches that history into a local corpus, has
-agents route each item to a topic, and synthesizes one living document
-per topic under `docs/design/`: published on GitHub now, offerable
+ghmem turns a repository's GitHub history into maintained design
+documents. It was built on `micro-editor/micro`, where recurring
+debates — option-count aversion, clipboard behavior, highlighter
+architecture, wrap semantics — get re-litigated in issues because the
+outcome of every past debate lives only in a closed thread nobody
+re-reads. ghmem fetches that history into a local corpus, has agents
+route each item to a topic, and synthesizes one living document per
+topic under `docs/design/`: published on GitHub now, offerable
 upstream later, and kept incrementally updated.
 
 This document is the index: what the system must do, what it
@@ -264,23 +265,22 @@ quietly.
   it only if the mint race the per-serve topic list narrows but cannot
   close actually produces duplicates worth merging.
 - **The triage rubric's no-signal rate.** Settled by a two-pass eval
-  (`plans/triage-rubric-eval/findings.md`): raw no-signal-rate
-  comparison was the wrong metric (it can't distinguish over-routing
-  from under-harvesting), so the eval checked each failure mode
-  directly. Pass 1 found no manufactured routes among items that were
+  (recorded in the micro-craft repo): raw no-signal-rate comparison
+  was the wrong metric (it can't distinguish over-routing from
+  under-harvesting), so the eval checked each failure mode directly. Pass 1 found no manufactured routes among items that were
   routed. Pass 2, a human-labelled blind slice against the calibration
   pool, found a real recall gap — 3 of 16 sampled no-signal items were
   human-labelled `signal`, including two high-confidence maintainer
   rulings — confirming the under-harvesting failure `#1445` raised is
   not an isolated miss, though the rate isn't pinned down at n=16. The
-  rubric revision (`.claude/agents/ghmem-triage.md`'s Judgment section)
+  rubric revision (`agents/ghmem-triage.md`'s Judgment section)
   stays as-is rather than reverting: the gap is a residual the
   revision didn't fully close, not evidence the revision made things
   worse.
 
 ## Architecture
 
-### 1. Harness — `tools/ghmem`
+### 1. Harness — `src/ghmem`
 
 Python/uv, click, githubkit, SQLAlchemy/SQLite. No agent ever calls
 the GitHub API; agents read what `ghmem` commands emit from the local
@@ -328,9 +328,9 @@ Rationale: **Doc form: hybrid, native-memory shaped**, **Naming:
 
 ### 3. Agentic layer — two custom agents
 
-Both are `.claude/agents/` definitions with pinned models, their full
-procedure text inline in the definition body, and a frontmatter
-PreToolUse allowlist hook.
+Both are plugin agent definitions (`agents/`) with pinned models,
+their full procedure text inline in the definition body, and a
+frontmatter PreToolUse allowlist hook.
 
 - **ghmem-triage (Sonnet).** Input: none — no item content, no budget
   numbers; it opens its own session and rides the `triage`/`route`

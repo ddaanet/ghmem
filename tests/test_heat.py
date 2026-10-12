@@ -97,7 +97,7 @@ def test_metrics_count_reviews_and_review_comments(store: Store) -> None:
 def test_reactions_count_the_whole_thread(store: Store) -> None:
     """The reactions metric counts replies too, not just the body.
 
-    Consensus in this repo often lands on a reply — a maintainer
+    Consensus in micro threads often lands on a reply — a maintainer
     comments "I'd take a PR for this" and the thumbs go there, not on
     the original post. Scoping reactions to the body alone would rank
     exactly those threads cold, and would scope one metric differently
