@@ -171,3 +171,13 @@ human reviews the plan itself.
   the 36.5% `no-signal` base rate the open question is measured
   against. Counts in this changelog stay too: an entry is dated and
   of-a-moment by construction.
+
+- **2026-10-12 — NFR10 stops naming a gate that never ran.** The
+  requirement said the pipeline was validated against ground truth, with
+  a synthesized wrap topic doc compared to a hand-written reference. The
+  gate was subproject 4's first item and was never executed, and the
+  reference lives in a repo ghmem no longer shares. NFR10 now states
+  what is relied on: harness tests, the triage rubric eval and the heat
+  calibration, and for synthesis only FR5's citation rule plus human
+  reading. The Open question that asked "run the gate or rewrite NFR10"
+  is closed by the rewrite.

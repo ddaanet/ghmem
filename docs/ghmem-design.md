@@ -187,26 +187,30 @@ and always resolves: a requirement names the decision behind it by
 section title, no decision restates the requirement it serves, and
 there is one copy of each to change.
 
-**NFR10 — the pipeline is validated against ground truth before it is
-trusted.** It runs on the wrapindent cluster (#3107, #2374 and their
-cross-references) and the produced topic doc is compared against
-`docs/softwrapcolumn-vs-wrapindent.md`, which was validated by hand.
-The comparison is purely **semantic** — freshly generated output has
-no reason to be structurally similar to a hand-written doc, so a
-textual diff is useless; the gate judges whether each required signal
-is present and citation-backed. Missing the option-count aversion, the
-indent-vs-wrap axis distinction, or the stall rationale means the
-prompts are not ready. Triage validation runs against **distractors**
-— a mixed queue of ~15–20 items around the cluster, cross-references
-plus contemporaneous unrelated bug reports and support questions,
-where most items should come back no-signal or other-topic — because
-routing only the wrapindent cluster against an empty topic list would
-make the match trivial and prove nothing about accuracy.
-Harness-level, `sync` resumability and cursor correctness are testable
-against recorded fixtures, and `heat`/`triage`/`route`/`status` are
-pure functions over the local store, testable without network. **This
-gate has not run**, so the requirement stands unmet; see Open
-questions.
+**NFR10 — synthesis fidelity is checked by human reading, and nothing
+else.** No ground-truth gate has ever run: the one this requirement
+once named, a synthesized wrap topic doc compared against a hand-written
+reference, was never executed, and no such topic doc exists. What is
+relied on instead, by layer:
+
+- **Harness.** `sync` resumability and cursor correctness are tested
+  against recorded fixtures, and `heat`, `triage`, `route` and `status`
+  are pure functions over the local store, tested without network.
+- **Triage.** The rubric was evaluated once, in a two-pass check against
+  a human-labelled blind slice (see Open questions, "The triage rubric's
+  no-signal rate"); it found a recall gap the revision did not fully
+  close. The heat weights were calibrated against 198 labels (NFR7).
+- **Synthesis.** Only FR5's rule, that every requirement is
+  citation-backed, enforced by the synthesize agent's prompt and by a
+  human reading the topic doc. Nothing measures whether a doc captures
+  the signals in its topic's threads; a missed signal is caught only if
+  the reader knows the thread.
+
+Do not read a topic doc as validated beyond that. A future gate would
+need a hand-written reference for one topic, judged semantically, since
+freshly generated output has no reason to resemble a hand-written doc
+textually, and a triage queue seeded with distractors, since routing a
+cluster against an empty topic list makes the match trivial.
 
 ## Limitations
 
@@ -247,12 +251,6 @@ Accepted trade-offs and known constraints of the current design.
 Live and unresolved; recorded here so that no branch settles one
 quietly.
 
-- **NFR10's ground-truth gate has not run.** No wrap topic doc
-  exists under `docs/design/` and the changelog records no validation
-  slice, while items keep being routed and topic docs keep being
-  synthesized. The prompts carry no evidence of accuracy beyond their
-  outputs reading well. Either the gate runs, or NFR10 is rewritten to
-  say what is actually relied on.
 - **Three constant families are still provisional** (NFR7): the
   standing thresholds (`MERGE_THRESHOLD`, `ACCEPTED_PR_THRESHOLD`),
   the batch budget (`BATCH_ITEMS = 12`,

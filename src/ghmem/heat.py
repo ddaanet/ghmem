@@ -7,9 +7,10 @@ below never touches SQL.
 
 Calibrated 2026-07-25 against 198 read-only signal labels, and retained:
 no fitted vector ranked better than this one, and the fitted vector lost
-to it under cross-validation. See `docs/ghmem-heat-weights.md` — the
-result is a negative one, and the reasoning for keeping numbers that
-started out as guesses lives there rather than here.
+to it under cross-validation. The defaults were fitted on the micro
+corpus, and the fit lives in the micro-craft repo — the result is a
+negative one, and the reasoning for keeping numbers that started out as
+guesses lives there rather than here.
 """
 
 from ghmem.models import HeatScore
