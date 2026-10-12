@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PreToolUse(Read) hook, carried by ghmem-triage only. Scopes its Read access
-# to tools/ghmem/tmp/packets/ — the one directory `packet-file:` lines can
+# to corpus/packets/ — the one directory `packet-file:` lines can
 # ever point at (see `paths.packet_dir`).
 #
 # Without this, the only thing standing between a corpus item's rendered
@@ -22,11 +22,11 @@ if [[ "$file_path" != /* ]]; then
 fi
 
 resolved="$(realpath -m -- "$file_path")"
-packet_dir="$(realpath -m -- "$project_dir/tools/ghmem/tmp/packets")"
+packet_dir="$(realpath -m -- "$project_dir/corpus/packets")"
 
 case "$resolved" in
   "$packet_dir"/*) exit 0 ;;
 esac
 
-echo "scope-packets-only: blocked — Read is scoped to tools/ghmem/tmp/packets/ only ($resolved is outside $packet_dir)" >&2
+echo "scope-packets-only: blocked — Read is scoped to corpus/packets/ only ($resolved is outside $packet_dir)" >&2
 exit 2

@@ -48,6 +48,12 @@ Corpus data lives at the repository root (`../../corpus/`), not
 inside this tool tree — resolved via `ghmem.paths.corpus_dir()`,
 overridable with `$GHMEM_CORPUS_DIR`.
 
+Served triage packets are written to `corpus/packets/` (gitignored
+scratch), and the triage agent's Read hook scopes to exactly that path
+under `$CLAUDE_PROJECT_DIR`. `$GHMEM_CORPUS_DIR` and `$GHMEM_PACKET_DIR`
+are test-only overrides: the hook honors neither, so a contained worker
+run under either is unsupported.
+
 Which repository a corpus mirrors is recorded beside it, in
 `target.toml` (`owner`, `repo`, and `owner_login` — the login standing
 ranks as owner). `sync` and the commands that render standing read it;

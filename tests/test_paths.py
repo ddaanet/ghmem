@@ -35,6 +35,22 @@ def test_design_dir_env_override_and_creation(
     assert target.is_dir()
 
 
+def test_packet_dir_defaults_under_corpus_dir_and_is_created(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without $GHMEM_PACKET_DIR, packets live in `<corpus_dir>/packets`.
+
+    When: GHMEM_CORPUS_DIR names a corpus and GHMEM_PACKET_DIR is unset
+    Then: packet_dir() is that corpus's `packets/` and has created it
+    """
+    corpus = tmp_path / "corpus"
+    monkeypatch.setenv("GHMEM_CORPUS_DIR", str(corpus))
+    monkeypatch.delenv("GHMEM_PACKET_DIR", raising=False)
+
+    assert packet_dir() == corpus / "packets"
+    assert (corpus / "packets").is_dir()
+
+
 def test_packet_dir_env_override_and_creation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
