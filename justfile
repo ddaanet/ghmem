@@ -6,6 +6,12 @@ trace := "false"
 help:
     @just --list --unsorted
 
+# The commit gate, under the name the claude-plugin-dev toolkit expects
+precommit: green
+
+# The gate `release` depends on; the toolkit makes it mandatory.
+prerelease: precommit
+
 # Format code: ruff fixes, ruff format, docformatter
 format:
     #!{{ bash_prolog }}
