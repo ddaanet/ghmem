@@ -329,9 +329,10 @@ Rationale: **Doc form: hybrid, native-memory shaped**, **Naming:
 
 ### 3. Agentic layer — two custom agents
 
-Both are plugin agent definitions (`agents/`) with pinned models,
-their full procedure text inline in the definition body, and a
-frontmatter PreToolUse allowlist hook.
+Both are plugin agent definitions (`agents/`) with pinned models and
+their full procedure text inline in the definition body. Their
+PreToolUse containment hooks are registered by the plugin's
+`hooks/hooks.json` and act on the payload's `agent_type`.
 
 - **ghmem-triage (Sonnet).** Input: none — no item content, no budget
   numbers; it opens its own session and rides the `triage`/`route`

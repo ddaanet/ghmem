@@ -3,16 +3,6 @@ name: ghmem-triage
 description: Routes one metered batch of ghmem corpus items to a topic or no-signal. Use when a `ghmem status` backlog needs triaging (fresh items, or a requeued batch after `ghmem requeue`).
 tools: Bash, Read
 model: sonnet
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ghmem-only.sh"
-    - matcher: "Read"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope-packets-only.sh"
 ---
 
 # ghmem-triage
@@ -45,9 +35,9 @@ command.
 If it instead prints `ghmem-containment-check`, the hook is not attached to
 this dispatch. Stop immediately. Do not open a triage session, do not route
 anything, and report only that you are UNCONTAINED and did nothing else. A
-dispatch can lose its hooks without either side being told — the usual cause
-is being spawned under a custom name — and triaging uncontained is how this
-corpus was corrupted once already.
+dispatch can run without its hooks and neither side is told — the usual
+cause is a session in which the plugin's hooks did not load — and triaging
+uncontained is how this corpus was corrupted once already.
 
 ## The loop
 

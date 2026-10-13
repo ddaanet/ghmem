@@ -12,10 +12,51 @@ setup() {
   export CLAUDE_PROJECT_DIR="$PROJECT_DIR"
 }
 
-run_hook() {
+# AGENT_TYPE picks the agent; setting it empty drops the key the way a
+# main-thread payload does.
+payload() {
   jq -n --arg fp "$1" --arg cwd "$PROJECT_DIR" \
-    '{tool_name: "Read", tool_input: {file_path: $fp}, cwd: $cwd}' \
-    | bash "$HOOK"
+    --arg agent "${AGENT_TYPE-ghmem:ghmem-triage}" \
+    '{tool_name: "Read", tool_input: {file_path: $fp}, cwd: $cwd}
+     + if $agent == "" then {} else {agent_type: $agent} end'
+}
+
+run_hook() {
+  payload "$1" | bash "$HOOK"
+}
+
+@test "scope-packets-only: passes any read through, silently, when no agent is named" {
+  AGENT_TYPE=""
+  run --separate-stderr run_hook "/etc/passwd"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+}
+
+# ghmem-synthesize reads the docs it rewrites, so its Read is not scoped;
+# the bare name is a project's own definition, not the plugin's.
+@test "scope-packets-only: passes any read through for an agent other than ghmem-triage" {
+  for AGENT_TYPE in ghmem:ghmem-synthesize general-purpose ghmem-triage \
+    other:ghmem-triage; do
+    run run_hook "/etc/passwd"
+    [ "$status" -eq 0 ]
+  done
+}
+
+# Any exit but 2 reads as "not a block", so a hook that cannot decide has to
+# refuse. `realpath -m` is GNU-only, which makes the second case a real one.
+@test "scope-packets-only: blocks when the payload is not JSON" {
+  run bash "$HOOK" <<<"not json"
+  [ "$status" -eq 2 ]
+}
+
+@test "scope-packets-only: blocks when realpath fails" {
+  mkdir "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\nexit 1\n' >"$BATS_TEST_TMPDIR/bin/realpath"
+  chmod +x "$BATS_TEST_TMPDIR/bin/realpath"
+  body="$(payload "corpus/packets/AbCd1234.txt")"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run bash "$HOOK" <<<"$body"
+  [ "$status" -eq 2 ]
 }
 
 @test "scope-packets-only: allows a relative path under corpus/packets/" {

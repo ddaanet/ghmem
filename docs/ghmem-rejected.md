@@ -94,5 +94,13 @@ event payloads around 2018 and GitHub removed it in October 2025 — and
 access means a BigQuery dependency with unverified scan costs.
 Computed standing covers the whole decade uniformly.
 
+**Installing the agent definitions into the consumer's
+`.claude/agents/`.** Frontmatter `hooks:` do attach there, which would
+keep containment on the definition. It needs an install step in every
+consumer project and an exact-path workspace-trust key for each one in
+`~/.claude.json` — inherited trust from a parent directory does not
+count, and the hooks are dropped silently without it. Hooks registered
+by the plugin need neither.
+
 **Heat-ordered `INDEX.md`.** Heat ordering would churn the whole file
 on every sync; alphabetical ordering keeps diffs stable and reviewable.

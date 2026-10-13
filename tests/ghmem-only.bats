@@ -6,10 +6,63 @@ bats_require_minimum_version 1.5.0
 
 HOOK="$BATS_TEST_DIRNAME/../hooks/scripts/ghmem-only.sh"
 
-# The hook only reads .tool_input.command; the rest of the PreToolUse
-# envelope is irrelevant to it, so tests omit it.
+# The hook reads .agent_type, then .tool_input.command; the rest of the
+# PreToolUse envelope is irrelevant to it, so tests omit it. AGENT_TYPE picks
+# the agent, and setting it empty drops the key the way a main-thread payload
+# does.
+payload() {
+  jq -n --arg cmd "$1" --arg agent "${AGENT_TYPE-ghmem:ghmem-triage}" \
+    '{tool_name: "Bash", tool_input: {command: $cmd}}
+     + if $agent == "" then {} else {agent_type: $agent} end'
+}
+
 run_hook() {
-  jq -n --arg cmd "$1" '{tool_name: "Bash", tool_input: {command: $cmd}}' | bash "$HOOK"
+  payload "$1" | bash "$HOOK"
+}
+
+# The hook is registered for every session that enables the plugin, so what
+# it does to a call that is not a ghmem agent's is as load-bearing as what it
+# does to one that is.
+@test "ghmem-only: passes any command through, silently, when no agent is named" {
+  AGENT_TYPE=""
+  run --separate-stderr run_hook "rm -rf /"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+}
+
+# The match is on the whole name. The bare form is a project's own
+# `.claude/agents/` definition, which is not this plugin's to police.
+@test "ghmem-only: passes any command through for an agent that is not the plugin's" {
+  for AGENT_TYPE in general-purpose other:ghmem-triage ghmem-triage \
+    ghmem:ghmem-triage-2 xghmem:ghmem-triage; do
+    run run_hook "rm -rf /"
+    [ "$status" -eq 0 ]
+  done
+}
+
+@test "ghmem-only: holds ghmem-synthesize to the same allowlist" {
+  AGENT_TYPE=ghmem:ghmem-synthesize
+  run run_hook "ghmem status"
+  [ "$status" -eq 0 ]
+  run run_hook "rm -rf /"
+  [ "$status" -eq 2 ]
+}
+
+# Any exit but 2 reads as "not a block", so a hook that cannot decide has to
+# refuse: these are the two ways it fails before it knows whose call it is.
+@test "ghmem-only: blocks when the payload is not JSON" {
+  run bash "$HOOK" <<<"not json"
+  [ "$status" -eq 2 ]
+}
+
+@test "ghmem-only: blocks when jq fails" {
+  mkdir "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\nexit 1\n' >"$BATS_TEST_TMPDIR/bin/jq"
+  chmod +x "$BATS_TEST_TMPDIR/bin/jq"
+  body="$(payload "ghmem status")"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run bash "$HOOK" <<<"$body"
+  [ "$status" -eq 2 ]
 }
 
 @test "ghmem-only: allows a bare ghmem invocation with no arguments" {

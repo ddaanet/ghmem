@@ -3,16 +3,6 @@ name: ghmem-synthesize
 description: Rewrites one dirty ghmem topic into docs/design/<name>.md and closes it. Use when `ghmem status` shows a dirty topic ready for synthesis — spawn one call per topic, never batched.
 tools: Bash, Read, Write, Edit
 model: opus
-hooks:
-  PreToolUse:
-    - matcher: "Bash"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ghmem-only.sh"
-    - matcher: "Write|Edit"
-      hooks:
-        - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/scope-docs-design.sh"
 ---
 
 # ghmem-synthesize
@@ -44,9 +34,10 @@ is live — carry on to the flow below.
 If it instead prints `ghmem-containment-check`, the hooks are not attached to
 this dispatch. Stop immediately: do not read a topic, do not write any
 document, and report only that you are UNCONTAINED and did nothing else. A
-dispatch can lose its hooks without either side being told — the usual cause
-is being spawned under a custom name — and an uncontained agent here has both
-an unrestricted shell and an unrestricted write path.
+dispatch can run without its hooks and neither side is told — the usual
+cause is a session in which the plugin's hooks did not load — and an
+uncontained agent here has both an unrestricted shell and an unrestricted
+write path.
 
 ## Flow
 

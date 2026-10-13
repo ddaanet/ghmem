@@ -40,13 +40,29 @@ that must pass before a commit. `ruff`, `mypy` and `pytest` resolve
 from the direnv-activated `.venv` on PATH.
 
 The hooks live at `hooks/scripts/`, with their bats suites in `tests/`
-beside the pytest ones. Each agent's frontmatter names its hook as
-`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>`, and
-`tests/test_plugin_layout.py` checks that every such command resolves
-to an executable file inside the plugin and that each agent carries
-exactly its pinned hooks. That matters because a hook path that does
-not resolve exits 127, which reads as "not a block", so the agent would
-run uncontained with nothing reported.
+beside the pytest ones. `hooks/hooks.json` registers them for every
+session that enables the plugin, and each script acts only when the
+payload's `agent_type` names its agent (`ghmem:ghmem-triage`,
+`ghmem:ghmem-synthesize`), passing every other call through untouched.
+Never put `hooks:` in an agent's frontmatter: Claude Code ignores it
+for a plugin agent, saying so only in the debug log, and the agent runs
+uncontained.
+
+Any exit but 2 reads as "not a block", so each script traps its own
+failures into a block, and `tests/test_plugin_layout.py` checks that
+every registered command is the quoted
+`"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>"` form resolving to an
+executable inside the plugin — an unresolved path exits 127 and the
+agent runs uncontained with nothing reported. The same file pins each
+agent's `tools:` and requires a hook matcher for every one of them.
+
+A layout test proves the wiring, not the containment. After changing a
+hook, an agent or `hooks.json`, run `just dogfood` and dispatch the
+agent by `subagent_type` from a shim-launched session in a project
+holding a `corpus/`: one command that must be blocked, one that must
+be allowed, both allowed in the session's permissions so that only the
+hook can refuse, and read the tool result rather than the agent's
+report.
 
 The gate is quiet when it passes — each check prints a labelled section
 only if it had something to say — so it signs off with a one-line recap

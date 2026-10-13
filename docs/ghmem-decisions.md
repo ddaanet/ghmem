@@ -61,10 +61,26 @@ no note at all.
 Opus for topic-doc synthesis, where prose quality is the product.
 
 **Triage and synthesize are custom agents, not a skill and a prompt.**
-`.claude/agents/` is file-watched, so editing a definition takes
-effect on the next spawn with no restart, and `model`, `tools` and
-`hooks` are frontmatter fields — which is what lets containment be
-attached to the agent rather than to the session that spawns it.
+`model` and `tools` are frontmatter fields, so the model tier and the
+tool set belong to the agent rather than to the session that spawns
+it. The definitions ship in the plugin's `agents/`.
+
+**Containment is registered by the plugin and keyed on `agent_type`.**
+Claude Code ignores `hooks:` in a plugin agent's frontmatter (verified
+against CC 2.1.296: `sets hooks, which is ignored for plugin agents`,
+on the debug channel only), so the hooks cannot ride the definition.
+`hooks/hooks.json` registers them for the whole session instead, and
+each script reads the payload's `agent_type` — `ghmem:ghmem-triage` or
+`ghmem:ghmem-synthesize` inside those agents, absent on the main
+thread — and passes through any call that is not its agent's. A
+dispatch `name` leaves that value alone, so a named spawn stays
+contained. The price is one hook process on every Bash, Read, Write
+and Edit call of every session that enables the plugin. Each script
+turns its own failure into a block, because any exit but 2 lets the
+call through: a machine without `jq` therefore has those four tools
+refused in every such session, which is loud where the alternative —
+agents reading attacker-reachable text with no containment — is
+silent.
 
 **The allowlist is a positive character class over the whole command
 string.** None of ``; & | $ ` < > ( )`` or newline is in the permitted
