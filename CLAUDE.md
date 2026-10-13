@@ -48,8 +48,11 @@ Never put `hooks:` in an agent's frontmatter: Claude Code ignores it
 for a plugin agent, saying so only in the debug log, and the agent runs
 uncontained.
 
-Any exit but 2 reads as "not a block", so each script traps its own
-failures into a block, and `tests/test_plugin_layout.py` checks that
+A script that cannot run lets the call through, silently — exit 0,
+nothing on stderr — since refusing would brick those tools in every
+session that enables the plugin. `hooks/scripts/check-deps.sh`, the
+plugin's `SessionStart` hook, names any missing `jq` or GNU `realpath`
+instead. `tests/test_plugin_layout.py` checks that
 every registered command is the quoted
 `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>"` form resolving to an
 executable inside the plugin — an unresolved path exits 127 and the

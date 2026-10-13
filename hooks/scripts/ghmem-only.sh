@@ -38,19 +38,19 @@
 # whichever verdict it accompanies: it opened a note and then supplied none.
 # That is a fact about the command's shape, so it belongs here; which
 # verdicts want a note is a domain rule and stays in `record_verdict`.
-set -Eeuo pipefail
+set -euo pipefail
 
-# Any exit but 2 reads to Claude Code as "not a block", so a failure in the
-# hook itself — jq missing, a payload that does not parse — would let the
-# call through. A containment hook that cannot decide refuses instead. A
-# command substitution inherits the trap, so only the outermost shell speaks.
-trap '((BASH_SUBSHELL)) || echo "ghmem-only: blocked — the hook itself failed (is jq installed?)" >&2; exit 2' ERR
-
+# A hook that cannot decide — jq missing, a payload that does not parse —
+# lets the call through, silently. It runs on every Bash call of every
+# session that enables the plugin, so refusing would brick Bash on a machine
+# without jq, and a non-2 exit with stderr shows as a hook error on every
+# call. check-deps.sh reports the missing dependency once, at SessionStart,
+# and the agents' own containment check catches the hook that let it through.
 payload="$(cat)"
 
 # Assigned before it is tested: a command substitution that fails inside a
-# `case` word is not an error to bash, and would fall through to the pass.
-agent_type="$(jq -r '.agent_type // empty' <<<"$payload")"
+# `case` word is not an error to bash, and would fall through unnoticed.
+agent_type="$(jq -r '.agent_type // empty' <<<"$payload" 2>/dev/null)" || exit 0
 case "$agent_type" in
   ghmem:ghmem-triage | ghmem:ghmem-synthesize) ;;
   *) exit 0 ;;
@@ -71,7 +71,7 @@ block() {
   exit 2
 }
 
-command="$(jq -r '.tool_input.command' <<<"$payload")"
+command="$(jq -r '.tool_input.command' <<<"$payload" 2>/dev/null)" || exit 0
 
 if [[ "$command" != *$'\n'* ]]; then
   [[ "$command" =~ $bare_re ]] || block

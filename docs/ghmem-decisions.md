@@ -75,12 +75,23 @@ each script reads the payload's `agent_type` — `ghmem:ghmem-triage` or
 thread — and passes through any call that is not its agent's. A
 dispatch `name` leaves that value alone, so a named spawn stays
 contained. The price is one hook process on every Bash, Read, Write
-and Edit call of every session that enables the plugin. Each script
-turns its own failure into a block, because any exit but 2 lets the
-call through: a machine without `jq` therefore has those four tools
-refused in every such session, which is loud where the alternative —
-agents reading attacker-reachable text with no containment — is
-silent.
+and Edit call of every session that enables the plugin, so a script
+that cannot run — `jq` missing, a `realpath` without GNU's `-m`, a
+payload that does not parse — lets the call through, silently. The
+rejected alternative was to turn the hook's own failure into a block:
+on a machine without `jq` it refused those four tools in every session
+that enables the plugin, bricking sessions that never dispatch a ghmem
+agent. Visibility comes instead from a `SessionStart` hook,
+`check-deps.sh`, which names any missing dependency to the user
+(`systemMessage`) and to the agent (`additionalContext`), telling the
+agent not to dispatch either ghmem agent. Each agent's opening
+containment check is what stops a dispatch that runs anyway: with no
+`jq`, its must-block command goes through and it reports `UNCONTAINED`.
+With `jq` present but no GNU `realpath`, that Bash check still blocks
+and only the file-tool scopes are open, so the `SessionStart` report is
+then the only signal. That is a defect, not a tolerated residual:
+macOS is a target platform, its stock `realpath` has no `-m`, and the
+scopes have to hold there rather than merely fail safe.
 
 **The allowlist is a positive character class over the whole command
 string.** None of ``; & | $ ` < > ( )`` or newline is in the permitted

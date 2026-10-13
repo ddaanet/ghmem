@@ -6,7 +6,9 @@ names that agent. Claude Code ignores `hooks:` in a plugin agent's
 frontmatter, so nothing an agent file says can contain it. A hook command that
 does not resolve exits 127, which Claude Code reads as "not a block", so the
 agent would run uncontained with nothing reported. These tests are what keeps
-that from happening after a move or a rename.
+that from happening after a move or a rename. The SessionStart hook pinned
+beside them names any missing dependency of those scripts, which let every
+call through when they cannot run.
 """
 
 import json
@@ -167,6 +169,7 @@ EXPECTED_HOOKS = [
     ("PreToolUse", "Bash", "ghmem-only.sh"),
     ("PreToolUse", "Read", "scope-packets-only.sh"),
     ("PreToolUse", "Read|Write|Edit", "scope-docs-design.sh"),
+    ("SessionStart", "", "check-deps.sh"),
 ]
 
 # Which script acts for which agent is decided inside the scripts, on the
@@ -188,7 +191,10 @@ def frontmatter(agent: str) -> dict[str, Any]:
 
 
 def hook_commands() -> list[tuple[str, str, str]]:
-    """List `(event, matcher, command)` for every hook in hooks/hooks.json."""
+    """List `(event, matcher, command)` for every hook in hooks/hooks.json.
+
+    An entry with no matcher, which fires on every source, lists as `""`.
+    """
     registry = PLUGIN_ROOT / "hooks" / "hooks.json"
     assert registry.is_file(), f"{registry} is missing"
     found = []
@@ -196,7 +202,7 @@ def hook_commands() -> list[tuple[str, str, str]]:
         for entry in entries:
             for hook in entry["hooks"]:
                 assert hook["type"] == "command", hook
-                found.append((event, entry["matcher"], hook["command"]))
+                found.append((event, entry.get("matcher", ""), hook["command"]))
     return found
 
 

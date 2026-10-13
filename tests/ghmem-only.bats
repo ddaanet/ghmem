@@ -49,20 +49,26 @@ run_hook() {
   [ "$status" -eq 2 ]
 }
 
-# Any exit but 2 reads as "not a block", so a hook that cannot decide has to
-# refuse: these are the two ways it fails before it knows whose call it is.
-@test "ghmem-only: blocks when the payload is not JSON" {
-  run bash "$HOOK" <<<"not json"
-  [ "$status" -eq 2 ]
+# A hook that cannot decide lets the call through, silently: refusing would
+# stop Bash in every session that enables the plugin, and a non-2 exit with
+# stderr shows as a hook error on every call. The missing dependency is
+# reported once, by check-deps.sh at SessionStart.
+@test "ghmem-only: passes through, silently, when the payload is not JSON" {
+  run --separate-stderr bash "$HOOK" <<<"not json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
 }
 
-@test "ghmem-only: blocks when jq fails" {
+@test "ghmem-only: passes through, silently, when jq fails" {
   mkdir "$BATS_TEST_TMPDIR/bin"
-  printf '#!/bin/sh\nexit 1\n' >"$BATS_TEST_TMPDIR/bin/jq"
+  printf '#!/bin/sh\necho jq-broke >&2\nexit 1\n' >"$BATS_TEST_TMPDIR/bin/jq"
   chmod +x "$BATS_TEST_TMPDIR/bin/jq"
-  body="$(payload "ghmem status")"
-  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run bash "$HOOK" <<<"$body"
-  [ "$status" -eq 2 ]
+  body="$(payload "rm -rf /")"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run --separate-stderr bash "$HOOK" <<<"$body"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
 }
 
 @test "ghmem-only: allows a bare ghmem invocation with no arguments" {

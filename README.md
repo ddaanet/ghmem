@@ -69,10 +69,11 @@ check is not refused.
 
 The hooks need `jq` and GNU `realpath` (coreutils). They run on every
 Bash, Read, Write and Edit call of a session that enables the plugin,
-passing through any that is not one of the two agents'; a hook that
-cannot run refuses the call rather than letting it through, so on a
-machine missing either tool those four tools stop working until it is
-installed or the plugin is disabled.
+passing through any that is not one of the two agents'. A hook that
+cannot run lets the call through rather than stopping those four tools
+in every session. On a machine missing either tool the plugin says so
+when a session starts; do not dispatch the agents until it is
+installed.
 
 ## Storage model
 

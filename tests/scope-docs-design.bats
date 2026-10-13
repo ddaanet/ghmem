@@ -58,20 +58,28 @@ run_hook() {
   done
 }
 
-# Any exit but 2 reads as "not a block", so a hook that cannot decide has to
-# refuse. `realpath -m` is GNU-only, which makes the second case a real one.
-@test "scope-docs-design: blocks when the payload is not JSON" {
-  run bash "$HOOK" <<<"not json"
-  [ "$status" -eq 2 ]
+# A hook that cannot decide lets the call through, silently: refusing would
+# stop Read, Write and Edit in every session that enables the plugin, and a
+# non-2 exit with stderr shows as a hook error on every call. The missing
+# dependency is reported once, by check-deps.sh at SessionStart.
+# `realpath -m` is GNU-only, which makes the second case a real one.
+@test "scope-docs-design: passes through, silently, when the payload is not JSON" {
+  run --separate-stderr bash "$HOOK" <<<"not json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
 }
 
-@test "scope-docs-design: blocks when realpath fails" {
+@test "scope-docs-design: passes through, silently, when realpath fails" {
   mkdir "$BATS_TEST_TMPDIR/bin"
-  printf '#!/bin/sh\nexit 1\n' >"$BATS_TEST_TMPDIR/bin/realpath"
+  printf '#!/bin/sh\necho realpath-broke >&2\nexit 1\n' \
+    >"$BATS_TEST_TMPDIR/bin/realpath"
   chmod +x "$BATS_TEST_TMPDIR/bin/realpath"
-  body="$(payload "docs/design/softwrapcolumn.md")"
-  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run bash "$HOOK" <<<"$body"
-  [ "$status" -eq 2 ]
+  body="$(payload "/etc/passwd")"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run --separate-stderr bash "$HOOK" <<<"$body"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
 }
 
 @test "scope-docs-design: allows a relative path under docs/design/" {

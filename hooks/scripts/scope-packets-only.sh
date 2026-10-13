@@ -16,34 +16,35 @@
 # frontmatter. So it first asks whose call this is, and lets through
 # untouched any that is not that agent's — ghmem-synthesize's included,
 # whose Read is scope-docs-design.sh's to hold.
-set -Eeuo pipefail
+set -euo pipefail
 
-# Any exit but 2 reads to Claude Code as "not a block", so a failure in the
-# hook itself — jq missing, a realpath without GNU's `-m` — would let the
-# call through. A containment hook that cannot decide refuses instead. A
-# command substitution inherits the trap, so only the outermost shell speaks.
-trap '((BASH_SUBSHELL)) || echo "scope-packets-only: blocked — the hook itself failed (are jq and GNU realpath installed?)" >&2; exit 2' ERR
+# A hook that cannot decide — jq missing, a realpath without GNU's `-m`, a
+# payload that does not parse — lets the call through, silently. It runs on
+# every Read call of every session that enables the plugin, so refusing
+# would brick those tools on a machine missing either, and a non-2 exit with
+# stderr shows as a hook error on every call. check-deps.sh reports the
+# missing dependency once, at SessionStart.
 
 payload="$(cat)"
 
 # Assigned before it is tested: a command substitution that fails inside a
-# `case` word is not an error to bash, and would fall through to the pass.
-agent_type="$(jq -r '.agent_type // empty' <<<"$payload")"
+# `case` word is not an error to bash, and would fall through unnoticed.
+agent_type="$(jq -r '.agent_type // empty' <<<"$payload" 2>/dev/null)" || exit 0
 case "$agent_type" in
   ghmem:ghmem-triage) ;;
   *) exit 0 ;;
 esac
 
-file_path="$(jq -r '.tool_input.file_path' <<<"$payload")"
-cwd="$(jq -r '.cwd // empty' <<<"$payload")"
+file_path="$(jq -r '.tool_input.file_path' <<<"$payload" 2>/dev/null)" || exit 0
+cwd="$(jq -r '.cwd // empty' <<<"$payload" 2>/dev/null)" || exit 0
 project_dir="${CLAUDE_PROJECT_DIR:-$cwd}"
 
 if [[ "$file_path" != /* ]]; then
   file_path="${cwd:-$project_dir}/$file_path"
 fi
 
-resolved="$(realpath -m -- "$file_path")"
-packet_dir="$(realpath -m -- "$project_dir/corpus/packets")"
+resolved="$(realpath -m -- "$file_path" 2>/dev/null)" || exit 0
+packet_dir="$(realpath -m -- "$project_dir/corpus/packets" 2>/dev/null)" || exit 0
 
 case "$resolved" in
   "$packet_dir"/*) exit 0 ;;
