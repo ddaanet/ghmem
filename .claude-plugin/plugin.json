@@ -7,5 +7,6 @@
     "email": "david@ddaa.net"
   },
   "homepage": "https://github.com/ddaanet/ghmem",
-  "repository": "https://github.com/ddaanet/ghmem"
+  "repository": "https://github.com/ddaanet/ghmem",
+  "license": "MIT"
 }

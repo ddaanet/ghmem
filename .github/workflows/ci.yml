@@ -1,0 +1,45 @@
+# Runs the same gate as a local commit (`just green`) on a clean machine.
+# What that adds over the local pre-commit gate: it proves the gate does not
+# depend on one workstation (docformatter's version, bats, jq, GNU
+# realpath), and it covers commits that arrive without the hook — another
+# machine, a web edit, an outside PR.
+#
+# What it cannot cover: agent containment (needs a live Claude Code session)
+# and the GraphQL queries against the live API (the e2e marker is excluded
+# and would need a token).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  green:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # The memory submodule is not needed by the gate, so no `submodules:`.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0
+
+      # bats and jq are the two system tools the hook suites need.
+      - run: sudo apt-get update && sudo apt-get install -y bats jq
+
+      # docformatter cannot live in the 3.14 venv, and 1.7.8 rewraps every
+      # file in the repo — so it is installed standalone and pinned.
+      - run: uv tool install --python 3.13 docformatter==1.7.7
+
+      - run: uv sync --locked
+
+      # `green` formats in place before it checks, so an unformatted commit
+      # would be silently repaired and pass. The diff check turns that into
+      # a failure.
+      - run: |
+          source .venv/bin/activate
+          just green
+          git diff --exit-code
