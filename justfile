@@ -1,3 +1,5 @@
+import 'plugin-dev/release.just'
+
 # Enable bash tracing (set -x) for all recipes. Usage: just trace=true <recipe>
 
 trace := "false"
