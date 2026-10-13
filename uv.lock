@@ -136,7 +136,7 @@ requires-dist = [
     { name = "githubkit", specifier = ">=0.16.0" },
     { name = "msgspec", specifier = ">=0.21.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "sqlalchemy", specifier = ">=2.0.51" },
+    { name = "sqlalchemy", specifier = ">=2.0.51,<2.1" },
 ]
 
 [package.metadata.requires-dev]
