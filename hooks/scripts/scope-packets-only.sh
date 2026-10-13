@@ -15,7 +15,7 @@
 # the plugin, because Claude Code ignores `hooks:` in a plugin agent's own
 # frontmatter. So it first asks whose call this is, and lets through
 # untouched any that is not that agent's — ghmem-synthesize's included,
-# which has to read the docs it rewrites.
+# whose Read is scope-docs-design.sh's to hold.
 set -Eeuo pipefail
 
 # Any exit but 2 reads to Claude Code as "not a block", so a failure in the

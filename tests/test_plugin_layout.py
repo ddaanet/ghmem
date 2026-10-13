@@ -12,6 +12,7 @@ that from happening after a move or a rename.
 import json
 import os
 import re
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -47,18 +48,48 @@ def test_no_agent_declares_frontmatter_hooks() -> None:
         assert "hooks" not in frontmatter(agent), agent
 
 
-def test_each_agent_has_its_pinned_tools_and_every_one_is_hooked() -> None:
-    """A tool cannot be handed to an agent without a hook seeing its calls.
+def test_each_agent_has_its_pinned_tools() -> None:
+    """A tool cannot be handed to an agent without being pinned here.
 
-    When: an agent's `tools:` are read beside the plugin's hook matchers
-    Then: the tools are the pinned ones, and each is named by a matcher
+    When: an agent's `tools:` are read
+    Then: they are the pinned ones
     """
-    matched = {tool for _, matcher, _ in hook_commands() for tool in matcher.split("|")}
     for agent, expected in EXPECTED_TOOLS.items():
         tools = {tool.strip() for tool in frontmatter(agent)["tools"].split(",")}
 
         assert tools == expected, agent
-        assert tools <= matched, agent
+
+
+def test_every_tool_an_agent_holds_is_refused_out_of_scope(tmp_path: Path) -> None:
+    """No agent holds a tool that no hook constrains for that agent.
+
+    When: the hooks registered for a tool receive a call from the agent that
+        no scope allows — a non-`ghmem` command, a path outside the project
+    Then: one of them blocks it, so a tool with a matcher but no script acting
+        for that agent is caught
+    """
+    for agent, tools in EXPECTED_TOOLS.items():
+        for tool in sorted(tools):
+            payload = {
+                "tool_name": tool,
+                "agent_type": f"ghmem:{agent}",
+                "cwd": str(tmp_path),
+                "tool_input": {"command": "echo x", "file_path": "/etc/passwd"},
+            }
+            statuses = [
+                subprocess.run(
+                    [script_path(command)],
+                    input=json.dumps(payload),
+                    env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path)},
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).returncode
+                for _, matcher, command in hook_commands()
+                if tool in matcher.split("|")
+            ]
+
+            assert 2 in statuses, f"{agent} holds {tool} unconstrained: {statuses}"
 
 
 def test_the_plugin_registers_exactly_its_pinned_hooks() -> None:
@@ -135,7 +166,7 @@ def test_manifest_version_matches_pyproject() -> None:
 EXPECTED_HOOKS = [
     ("PreToolUse", "Bash", "ghmem-only.sh"),
     ("PreToolUse", "Read", "scope-packets-only.sh"),
-    ("PreToolUse", "Write|Edit", "scope-docs-design.sh"),
+    ("PreToolUse", "Read|Write|Edit", "scope-docs-design.sh"),
 ]
 
 # Which script acts for which agent is decided inside the scripts, on the

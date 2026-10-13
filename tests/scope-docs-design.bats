@@ -14,18 +14,31 @@ setup() {
 }
 
 # tool_name is irrelevant to the hook (the matcher already restricted it to
-# Write|Edit); cwd mirrors the real invocation, where agent Bash/tool calls
-# run from the project root. AGENT_TYPE picks the agent; setting it empty
-# drops the key the way a main-thread payload does.
+# Read|Write|Edit, and all three name their target as file_path); cwd mirrors
+# the real invocation, where agent Bash/tool calls run from the project root.
+# AGENT_TYPE picks the agent; setting it empty drops the key the way a
+# main-thread payload does.
 payload() {
   jq -n --arg fp "$1" --arg cwd "$PROJECT_DIR" \
     --arg agent "${AGENT_TYPE-ghmem:ghmem-synthesize}" \
-    '{tool_name: "Write", tool_input: {file_path: $fp}, cwd: $cwd}
+    --arg tool "${TOOL_NAME-Write}" \
+    '{tool_name: $tool, tool_input: {file_path: $fp}, cwd: $cwd}
      + if $agent == "" then {} else {agent_type: $agent} end'
 }
 
 run_hook() {
   payload "$1" | bash "$HOOK"
+}
+
+# The agent reads untrusted text and writes docs that get committed, so an
+# unscoped Read is a way out for any file on the machine.
+@test "scope-docs-design: holds a Read to docs/design/ and says so" {
+  TOOL_NAME=Read
+  run run_hook "docs/design/softwrapcolumn.md"
+  [ "$status" -eq 0 ]
+  run --separate-stderr run_hook "/etc/passwd"
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *Read* ]]
 }
 
 @test "scope-docs-design: passes any write through, silently, when no agent is named" {

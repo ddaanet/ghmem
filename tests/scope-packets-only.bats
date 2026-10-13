@@ -33,7 +33,7 @@ run_hook() {
   [ -z "$stderr" ]
 }
 
-# ghmem-synthesize reads the docs it rewrites, so its Read is not scoped;
+# ghmem-synthesize's Read is scope-docs-design's to hold, not this hook's;
 # the bare name is a project's own definition, not the plugin's.
 @test "scope-packets-only: passes any read through for an agent other than ghmem-triage" {
   for AGENT_TYPE in ghmem:ghmem-synthesize general-purpose ghmem-triage \

@@ -54,7 +54,9 @@ every registered command is the quoted
 `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>"` form resolving to an
 executable inside the plugin — an unresolved path exits 127 and the
 agent runs uncontained with nothing reported. The same file pins each
-agent's `tools:` and requires a hook matcher for every one of them.
+agent's `tools:` and runs the registered hooks against an out-of-scope
+call for every one of them, so a tool no hook constrains for that agent
+fails the suite.
 
 A layout test proves the wiring, not the containment. After changing a
 hook, an agent or `hooks.json`, run `just dogfood` and dispatch the

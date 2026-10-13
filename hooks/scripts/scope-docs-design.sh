@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# PreToolUse(Write|Edit) hook, acting for ghmem-synthesize only. Scopes its
-# Write/Edit tool access to docs/design/ — the one directory that agent is
-# meant to write. See spec
+# PreToolUse(Read|Write|Edit) hook, acting for ghmem-synthesize only. Scopes
+# its file tools to docs/design/ — the one directory that agent is meant to
+# write. See spec
 # docs/superpowers/specs/2026-07-24-ghmem-agents-design.md §The allowlist
 # hook (write-path scope).
+#
+# Read is held to the same directory as Write and Edit. The agent needs it
+# only to open the doc it is about to rewrite, and it works from untrusted
+# corpus text into docs that get committed: with Read unscoped, an injected
+# instruction could have it copy any file on the machine into one.
 #
 # There is no frontmatter field for directory scoping, and permission rules
 # only auto-approve rather than hard-deny (a Write(...) rule is silently
@@ -46,5 +51,5 @@ case "$resolved" in
   "$design_dir"|"$design_dir"/*) exit 0 ;;
 esac
 
-echo "scope-docs-design: blocked — Write/Edit is scoped to docs/design/ only ($resolved is outside $design_dir)" >&2
+echo "scope-docs-design: blocked — Read, Write and Edit are scoped to docs/design/ only ($resolved is outside $design_dir)" >&2
 exit 2
