@@ -28,6 +28,52 @@ What is outstanding is coverage, not machinery: most of the corpus is
 still untriaged, and most topics still hold a single item.
 `ghmem status` reports where that stands.
 
+## Running it in a project
+
+ghmem is two things, installed separately: the `ghmem` command, and a
+Claude Code plugin carrying the two agents that drive it.
+
+**The command.** It is a Python 3.14 package, installed as a uv tool:
+
+```console
+$ uv tool install git+https://github.com/ddaanet/ghmem
+```
+
+That puts `ghmem` on PATH, which is where the agents look for it: they
+call it by bare name. A uv tool install resolves from `pyproject.toml`
+and ignores `uv.lock`, so the version ranges declared there are what
+it gets.
+
+**The project.** Run `ghmem` from inside the git tree whose history
+the corpus belongs with. It needs one file, `corpus/target.toml`,
+naming the repository to mirror (`owner`, `repo`, `owner_login`), and
+a GitHub token for `sync` — `$GITHUB_TOKEN`, else `gh auth token`.
+Everything else it creates. Ignore `corpus/fetch.jsonl`,
+`corpus/cache.sqlite` and `corpus/packets/`; commit
+`corpus/routing.jsonl` and `docs/design/`.
+
+**The agents.** Install the plugin from the `ddaanet` marketplace:
+
+```
+/plugin install ghmem@ddaanet
+```
+
+Dispatch `ghmem:ghmem-triage` when `ghmem status` shows a backlog, and
+`ghmem:ghmem-synthesize` once per dirty topic, each by `subagent_type`
+with no further prompt needed. Both read text anyone can file on
+GitHub, so both are contained by the plugin's hooks: Bash is held to
+`ghmem` invocations, the triage agent's Read to `corpus/packets/`, and
+the synthesis agent's Read, Write and Edit to `docs/design/`. Each agent
+opens by checking that, and reports `UNCONTAINED` and stops if the
+check is not refused.
+
+The hooks need `jq` and GNU `realpath` (coreutils). They run on every
+Bash, Read, Write and Edit call of a session that enables the plugin,
+passing through any that is not one of the two agents'; a hook that
+cannot run refuses the call rather than letting it through, so on a
+machine missing either tool those four tools stop working until it is
+installed or the plugin is disabled.
+
 ## Storage model
 
 Two append-only JSONL ledgers are the sources of truth, and SQLite is
