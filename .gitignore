@@ -7,3 +7,4 @@ __pycache__/
 tmp/
 # The dogfood copy of the plugin the development launcher loads.
 /dist/plugin/
+.claude/settings.local.json
