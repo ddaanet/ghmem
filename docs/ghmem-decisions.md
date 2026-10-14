@@ -132,10 +132,24 @@ wrapper uses no bash 4 feature). The seventh, SessionStart having no
 matcher and so firing again on resume, clear and compact, is deliberate
 and not a defect.
 
+A `ghmem-hook` that is on PATH but cannot start — a deleted venv behind
+its shebang, a failing import — exits non-0 and non-2 before `main()`
+can decide, so every call passes, the contained agents' included.
+`check-deps.sh` therefore runs it once (a payload naming no agent must
+exit 0) instead of only looking it up, and the agents' opening check is
+what stops a dispatch that runs anyway.
+
+Rejected: a bash prefilter in the wrapper that starts Python only when
+the raw payload contains `"agent_type":"ghmem:ghmem-`. It would save the
+interpreter start on calls that are not a ghmem agent's, but JSON lets a
+payload spell that string with escapes (`ghmem`), so the prefilter
+would be a bypass of the gate it fronts.
+
 The per-call cost is also why the hook stays off the `ghmem` click
-entry point and imports only `json`, `os`, `re` and `sys`: `import
-ghmem` measured 126 ms against 44 ms stdlib-only, since reading
-`__version__` through `importlib.metadata` costs about 80 ms per
+entry point and imports only the standard library (`json`, `os`, `re`,
+`sys`, plus `typing` and `collections.abc` for annotations, about 3
+ms): `import ghmem` measured 126 ms against 44 ms stdlib-only, since
+reading `__version__` through `importlib.metadata` costs about 80 ms per
 process. `__version__` in `src/ghmem/__init__.py` is therefore lazy,
 resolved on first access.
 

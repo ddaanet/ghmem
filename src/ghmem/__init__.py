@@ -10,8 +10,14 @@ def __getattr__(name: str) -> str:
     not read until something asks for the version.
     """
     if name == "__version__":
-        from importlib.metadata import version  # noqa: PLC0415 - see above
+        from importlib.metadata import (  # noqa: PLC0415 - see above
+            PackageNotFoundError,
+            version,
+        )
 
-        return version("ghmem-cli")
+        try:
+            return version("ghmem-cli")
+        except PackageNotFoundError as error:
+            raise AttributeError(name) from error
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)

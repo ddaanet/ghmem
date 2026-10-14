@@ -5,7 +5,8 @@ Read, Write and Edit call, because Claude Code ignores `hooks:` in a plugin
 agent's own frontmatter. Each acts only for the agents it names, read from
 the payload's `agent_type`, and passes every other call through untouched.
 
-This module imports `json`, `os`, `re` and `sys` and nothing else, and the
+This module imports `json`, `os`, `re` and `sys` to do its work, plus `typing`
+and `collections.abc` for annotations (about 3 ms), and the
 package `__init__` keeps `importlib.metadata` out of the way: the process
 starts once per tool call, so its cost is paid by every session. It stays off
 the `ghmem` click entry point for the same reason.

@@ -8,6 +8,8 @@ bats_require_minimum_version 1.5.0
 HOOK="$BATS_TEST_DIRNAME/../hooks/scripts/scope-docs-design.sh"
 
 setup() {
+  # The wrappers exec the first ghmem-hook on PATH; this tree's must be it.
+  PATH="$BATS_TEST_DIRNAME/../.venv/bin:$PATH"
   PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   mkdir -p "$PROJECT_DIR/docs/design" "$PROJECT_DIR/docs/design-old"
   export CLAUDE_PROJECT_DIR="$PROJECT_DIR"
@@ -61,7 +63,7 @@ run_hook() {
 # A hook that cannot decide lets the call through, silently: refusing would
 # stop Read, Write and Edit in every session that enables the plugin, and a
 # non-2 exit with stderr shows as a hook error on every call. The missing
-# dependency is reported once, by check-deps.sh at SessionStart.
+# dependency is reported by check-deps.sh at SessionStart.
 @test "scope-docs-design: passes through, silently, when the payload is not JSON" {
   run --separate-stderr bash "$HOOK" <<<"not json"
   [ "$status" -eq 0 ]

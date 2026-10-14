@@ -82,7 +82,11 @@ def test_every_tool_an_agent_holds_is_refused_out_of_scope(tmp_path: Path) -> No
                 subprocess.run(
                     [script_path(command)],
                     input=json.dumps(payload),
-                    env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path)},
+                    env={
+                        **os.environ,
+                        "CLAUDE_PROJECT_DIR": str(tmp_path),
+                        "PATH": hook_path(),
+                    },
                     capture_output=True,
                     text=True,
                     check=False,
@@ -188,6 +192,15 @@ def frontmatter(agent: str) -> dict[str, Any]:
     parsed = yaml.safe_load(match.group(1))
     assert isinstance(parsed, dict)
     return parsed
+
+
+def hook_path() -> str:
+    """Return PATH with this tree's venv first, so its `ghmem-hook` runs.
+
+    The wrapper scripts exec the first `ghmem-hook` on PATH, which on a machine
+    with a global install is an older copy that would pass the suite.
+    """
+    return f"{PLUGIN_ROOT / '.venv' / 'bin'}{os.pathsep}{os.environ['PATH']}"
 
 
 def hook_commands() -> list[tuple[str, str, str]]:

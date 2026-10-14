@@ -32,6 +32,15 @@ field() {
   [ -z "$stderr" ]
 }
 
+@test "check-deps: names ghmem-hook when it is on PATH but fails to start" {
+  printf '#!/bin/sh\nexit 127\n' >"$BIN/ghmem-hook"
+  chmod +x "$BIN/ghmem-hook"
+  run_hook
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [[ "$(field .systemMessage)" == *ghmem-hook* ]]
+}
+
 @test "check-deps: names ghmem-hook to both user and agent when it is missing" {
   run_hook
   [ "$status" -eq 0 ]

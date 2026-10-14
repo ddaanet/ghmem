@@ -12,13 +12,17 @@
 #
 # It builds its JSON with printf because it cannot rely on any other tool
 # being there. Every string it prints is fixed text with nothing to escape. A
-# present `ghmem-hook` prints nothing.
+# `ghmem-hook` that runs prints nothing.
 set -uo pipefail
 
-command -v ghmem-hook >/dev/null 2>&1 && exit 0
+# Run it, not just find it: on PATH with a dead interpreter or a broken import
+# it exits non-0 and non-2 on every call, which Claude Code reads as "not a
+# block". A payload naming no agent is the cheapest call that must exit 0.
+command -v ghmem-hook >/dev/null 2>&1 &&
+  ghmem-hook ghmem-only <<<'{}' >/dev/null 2>&1 && exit 0
 
-user="ghmem: ghmem-hook is not on PATH — its containment hooks pass every call through until ghmem is installed."
-agent="ghmem's containment hooks cannot run in this session (ghmem-hook is not on PATH), so they pass every call through. Do not dispatch ghmem:ghmem-triage or ghmem:ghmem-synthesize: both read untrusted GitHub text and would run uncontained."
+user="ghmem: ghmem-hook is not on PATH or fails to start — its containment hooks pass every call through until ghmem is installed."
+agent="ghmem's containment hooks cannot run in this session (ghmem-hook is not on PATH or fails to start), so they pass every call through. Do not dispatch ghmem:ghmem-triage or ghmem:ghmem-synthesize: both read untrusted GitHub text and would run uncontained."
 
 printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s"}}\n' \
   "$user" "$agent"

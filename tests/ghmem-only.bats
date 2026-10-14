@@ -6,6 +6,11 @@ bats_require_minimum_version 1.5.0
 
 HOOK="$BATS_TEST_DIRNAME/../hooks/scripts/ghmem-only.sh"
 
+setup() {
+  # The wrappers exec the first ghmem-hook on PATH; this tree's must be it.
+  PATH="$BATS_TEST_DIRNAME/../.venv/bin:$PATH"
+}
+
 # The hook reads .agent_type, then .tool_input.command; the rest of the
 # PreToolUse envelope is irrelevant to it, so tests omit it. AGENT_TYPE picks
 # the agent, and setting it empty drops the key the way a main-thread payload
@@ -52,7 +57,7 @@ run_hook() {
 # A hook that cannot decide lets the call through, silently: refusing would
 # stop Bash in every session that enables the plugin, and a non-2 exit with
 # stderr shows as a hook error on every call. The missing dependency is
-# reported once, by check-deps.sh at SessionStart.
+# reported by check-deps.sh at SessionStart.
 @test "ghmem-only: passes through, silently, when the payload is not JSON" {
   run --separate-stderr bash "$HOOK" <<<"not json"
   [ "$status" -eq 0 ]
