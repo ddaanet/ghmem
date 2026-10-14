@@ -1,6 +1,6 @@
 {
   "name": "ghmem",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Institutional-memory pipeline for a GitHub repository: a CLI plus contained triage and synthesis subagents.",
   "author": {
     "name": "David Allouche",
