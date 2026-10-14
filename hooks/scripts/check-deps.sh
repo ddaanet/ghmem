@@ -5,9 +5,10 @@
 # for `ghmem-hook`, and run on every Bash, Read, Write and Edit call of every
 # session that enables the plugin. When it is not on PATH they let the call
 # through, silently, rather than bricking those tools. This report is where
-# that shows instead: once per session, to the user on `systemMessage` and to
-# the agent on `additionalContext`, since it is the agent that dispatches
-# ghmem's.
+# that shows instead: at session start and again after resume, clear and
+# compact (the agent's copy of the warning is gone after the last two), to the
+# user on `systemMessage` and to the agent on `additionalContext`, since it is
+# the agent that dispatches ghmem's.
 #
 # It builds its JSON with printf because it cannot rely on any other tool
 # being there. Every string it prints is fixed text with nothing to escape. A

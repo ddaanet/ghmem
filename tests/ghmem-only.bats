@@ -312,3 +312,34 @@ run_hook() {
   [ -z "$output" ]
   [ -n "$stderr" ]
 }
+
+# Once the payload names a ghmem agent the hook knows whose call this is, so a
+# payload it then cannot read is that agent's failure and blocks. It stops
+# only those two agents; every other call is unaffected.
+@test "ghmem-only: blocks a ghmem agent's call whose payload cannot be read" {
+  for AGENT_TYPE in ghmem:ghmem-triage ghmem:ghmem-synthesize; do
+    for body in \
+      "{\"agent_type\": \"$AGENT_TYPE\"}" \
+      "{\"agent_type\": \"$AGENT_TYPE\", \"tool_input\": {}}" \
+      "{\"agent_type\": \"$AGENT_TYPE\", \"tool_input\": {\"command\": 42}}" \
+      "{\"agent_type\": \"$AGENT_TYPE\", \"tool_input\": \"ghmem status\"}"; do
+      run --separate-stderr bash "$HOOK" <<<"$body"
+      [ "$status" -eq 2 ]
+      [ -z "$output" ]
+      [ -n "$stderr" ]
+    done
+  done
+}
+
+@test "ghmem-only: passes a malformed payload through when it names no ghmem agent" {
+  for body in \
+    '{"tool_input": {}}' \
+    '{"agent_type": 5, "tool_input": {}}' \
+    '{"agent_type": "general-purpose", "tool_input": {"command": 42}}' \
+    '[]'; do
+    run --separate-stderr bash "$HOOK" <<<"$body"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -z "$stderr" ]
+  done
+}

@@ -71,10 +71,13 @@ either is not.
 The hooks need `ghmem-hook` on PATH, which ships with the ghmem
 package. They run on every Bash, Read, Write and Edit call of a session
 that enables the plugin, passing through any that is not one of the two
-agents'. A hook that cannot run lets the call through rather than
-stopping those four tools in every session. On a machine where
-`ghmem-hook` is missing the plugin says so when a session starts; do
-not dispatch the agents until it is installed.
+agents'. A hook fails open, silently, only while it cannot tell whose
+call it is: a payload that does not parse, or `ghmem-hook` missing. Once
+it has identified one of the two agents and then fails, it blocks that
+call, which stops those agents and no one else. On a machine where
+`ghmem-hook` is missing the plugin says so at session start, and again
+after resume, clear and compact; do not dispatch the agents until it is
+installed.
 
 ## Storage model
 

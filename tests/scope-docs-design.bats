@@ -137,3 +137,32 @@ run_hook() {
   run run_hook "$PROJECT_DIR/docs/design/../../x.txt"
   [ "$status" -eq 2 ]
 }
+
+# Once the payload names ghmem-synthesize the hook knows whose call this is, so a payload
+# or a path it then cannot resolve is that agent's failure and blocks. It stops
+# only that agent; every other call is unaffected.
+@test "scope-docs-design: blocks its agent's call whose payload or path cannot be resolved" {
+  for body in \
+    '{"agent_type": "ghmem:ghmem-synthesize", "cwd": "/"}' \
+    '{"agent_type": "ghmem:ghmem-synthesize", "cwd": "/", "tool_input": {}}' \
+    '{"agent_type": "ghmem:ghmem-synthesize", "cwd": "/", "tool_input": {"file_path": 42}}' \
+    '{"agent_type": "ghmem:ghmem-synthesize", "cwd": "/", "tool_input": {"file_path": "a\u0000b"}}' \
+    '{"agent_type": "ghmem:ghmem-synthesize", "tool_input": {"file_path": "x.txt"}}'; do
+    run --separate-stderr env -u CLAUDE_PROJECT_DIR bash "$HOOK" <<<"$body"
+    [ "$status" -eq 2 ]
+    [ -z "$output" ]
+    [ -n "$stderr" ]
+  done
+}
+
+@test "scope-docs-design: passes a malformed payload through when it is not its agent's" {
+  for body in \
+    '{"tool_input": {}}' \
+    '{"agent_type": 5, "tool_input": {}}' \
+    '{"agent_type": "general-purpose", "tool_input": {"file_path": 42}}'; do
+    run --separate-stderr bash "$HOOK" <<<"$body"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -z "$stderr" ]
+  done
+}

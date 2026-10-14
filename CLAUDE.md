@@ -50,11 +50,16 @@ Never put `hooks:` in an agent's frontmatter: Claude Code ignores it
 for a plugin agent, saying so only in the debug log, and the agent runs
 uncontained.
 
-A hook that cannot run lets the call through, silently — exit 0,
-nothing on stderr — since refusing would brick those tools in every
-session that enables the plugin. Its one dependency is `ghmem-hook` on
-PATH, and `hooks/scripts/check-deps.sh`, the plugin's `SessionStart`
-hook, names it when missing. `tests/test_plugin_layout.py` checks that
+A hook fails open, silently — exit 0, nothing on stderr — only while it
+does not know whose call it is: a payload that does not parse, an
+`agent_type` that is absent, not a string or not its agent's, or
+`ghmem-hook` missing from PATH. Once it has read one of the two agents'
+names and then fails, it blocks with exit 2 and a reason on stderr. That
+stops only those agents, so it does not brick the tools in every
+session that enables the plugin. Its one dependency is `ghmem-hook`, and
+`hooks/scripts/check-deps.sh`, the plugin's `SessionStart` hook, names it
+when missing, at session start and again after resume, clear and
+compact. `tests/test_plugin_layout.py` checks that
 every registered command is the quoted
 `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>"` form resolving to an
 executable inside the plugin — an unresolved path exits 127 and the

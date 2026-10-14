@@ -83,26 +83,54 @@ dependency is `ghmem-hook` on PATH. Paths are resolved in Python, where
 on macOS, whose stock `realpath` has no `-m`.
 
 The price is one hook process on every Bash, Read, Write and Edit call
-of every session that enables the plugin, so a hook that cannot run —
-`ghmem-hook` missing, a payload that does not parse — lets the call
-through, silently. The rejected alternative was to turn the hook's own
-failure into a block: on a machine without `ghmem-hook` it refused
-those four tools in every session that enables the plugin, bricking
-sessions that never dispatch a ghmem agent. Visibility comes instead
-from a `SessionStart` hook, `check-deps.sh`, which names a missing
-`ghmem-hook` to the user (`systemMessage`) and to the agent
-(`additionalContext`), telling the agent not to dispatch either ghmem
-agent. Each agent's opening containment check is what stops a dispatch
-that runs anyway, and it has two parts: a Bash `echo` that must be
-blocked, and a Read of `.gitignore` that must be blocked. The Bash
-check alone cannot show a file-tool hook that did not load; the pair
-does, and either one going through ends in `UNCONTAINED`.
+of every session that enables the plugin. The hook therefore fails open
+only while the caller is unknown, silently (exit 0, nothing on stderr):
+a payload that does not parse, an `agent_type` that is absent, not a
+string or not one of the hook's agents, or `ghmem-hook` itself missing,
+where the wrapper exits 0. Once the hook has read `agent_type` as
+`ghmem:ghmem-triage` or `ghmem:ghmem-synthesize` and then fails —
+`tool_input`, `command` or `file_path` missing or of the wrong type, no
+project directory, a path that does not resolve, any exception — it
+blocks with exit 2 and a reason on stderr. That stops those two agents
+only and leaves every other call alone, so it does not bring back the
+session bricking that ruled out failing closed everywhere: on a machine
+without `ghmem-hook` that refused those four tools in every session
+that enables the plugin, including ones that never dispatch a ghmem
+agent. It is safe because all the logic is in the stdlib-only Python
+console script, so nothing after identification depends on an external
+tool.
 
-Two other ways to drop the `jq` and `realpath` dependencies were
-rejected. Portable bash path resolution that keeps `jq` still needs a
-tool macOS does not ship. Searching the raw payload for
-`"ghmem:ghmem-` without `jq` blocks the main thread whenever a command
-merely contains that string.
+What still fails open is made visible from two sides. A `SessionStart`
+hook, `check-deps.sh`, names a missing `ghmem-hook` to the user
+(`systemMessage`) and to the agent (`additionalContext`), telling the
+agent not to dispatch either ghmem agent. It runs at session start and
+again after resume, clear and compact, deliberately: after `/clear` or
+`/compact` the agent's copy of the warning is gone, so it must be said
+again. Each agent's opening containment check stops a dispatch that runs
+anyway, and it has two parts: a Bash `echo` that must be blocked, and a
+Read of `.gitignore` that must be blocked. The Bash check alone cannot
+show a file-tool hook that did not load; the pair does, and either one
+going through ends in `UNCONTAINED`.
+
+Rejected: blocking when the hook cannot identify the caller. That is the
+bricking above. Searching the raw payload for `"ghmem:ghmem-` when it
+does not parse blocks the main thread whenever a command or edit merely
+contains that string. Blocking on a `realpath` failure in bash was
+rejected too: macOS has no `realpath -m`, so it would have blocked every
+file-tool call there. Resolving paths in Python removes the question.
+
+The automated security review of the earlier fail-open commit raised
+seven findings. Six no longer apply, because the bash logic is gone: a
+`mapfile` missing on macOS bash 3.2 failing open in `ghmem-only.sh`, a
+`realpath -m` failure failing open in both scope scripts, hooks failing
+open generally once the ERR trap was removed, too few tests of
+unguarded failure paths (the Python hook fails closed once the agent is
+identified, and the bats suites pin that), `check-deps.sh` overstating
+what is open when only `realpath` was missing, and it probing too few
+dependencies (it now checks `ghmem-hook`, the single dependency, and the
+wrapper uses no bash 4 feature). The seventh, SessionStart having no
+matcher and so firing again on resume, clear and compact, is deliberate
+and not a defect.
 
 The per-call cost is also why the hook stays off the `ghmem` click
 entry point and imports only `json`, `os`, `re` and `sys`: `import

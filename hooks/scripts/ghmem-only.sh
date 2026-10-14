@@ -8,7 +8,7 @@
 # Where `ghmem-hook` is not on PATH the call passes through, silently: the
 # hook runs on every matching call of every session that enables the plugin,
 # so refusing would brick those tools, and a non-2 exit with stderr shows as
-# a hook error on every call. check-deps.sh reports it once, at SessionStart,
+# a hook error on every call. check-deps.sh reports it at SessionStart,
 # and each agent's opening containment check catches the call that got by.
 command -v ghmem-hook >/dev/null 2>&1 || exit 0
 exec ghmem-hook ghmem-only
