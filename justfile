@@ -197,7 +197,8 @@ require-docformatter () {
     command -v docformatter >/dev/null && return
     echo "docformatter is not on PATH." >&2
     echo "It cannot be a dev dependency: no Python 3.14 support." >&2
-    echo "Install it standalone: uv tool install docformatter" >&2
+    echo "Install it standalone: uv tool install docformatter==1.7.7" >&2
+    echo "The version is pinned: 1.7.8 breaks the gate, and CI pins 1.7.7." >&2
     return 1
 }
 '''
