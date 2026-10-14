@@ -104,6 +104,9 @@ run-format () {
     ruff check -q --fix-only
     ruff format -q
     docformatter src tests
+    # The pinned requirements the plugin's pip fallback installs from, derived
+    # from uv.lock so the two cannot drift (hooks/scripts/build-venv.sh).
+    uv export --frozen --no-cache --no-dev --no-emit-project --quiet -o requirements.txt
 }
 
 # Run one check, printing a labelled section only if it had something to
@@ -173,7 +176,7 @@ gate-inputs-hash () {
         docformatter --version
         bats --version
         git ls-files -z --cached --others --exclude-standard \
-                justfile pyproject.toml uv.lock scripts src tests hooks \
+                justfile pyproject.toml uv.lock requirements.txt scripts src tests hooks \
                 agents .claude-plugin \
             | sort -z \
             | while IFS= read -r -d '' file; do

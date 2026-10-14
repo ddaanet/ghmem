@@ -1,4 +1,4 @@
-"""Test the plugin's layout: manifest version and containment hook wiring.
+"""Test the plugin's layout: manifest version, launcher and hook wiring.
 
 Each agent's containment is a PreToolUse hook registered by the plugin's own
 `hooks/hooks.json`, whose script acts only when the payload's `agent_type`
@@ -6,14 +6,16 @@ names that agent. Claude Code ignores `hooks:` in a plugin agent's
 frontmatter, so nothing an agent file says can contain it. A hook command that
 does not resolve exits 127, which Claude Code reads as "not a block", so the
 agent would run uncontained with nothing reported. These tests are what keeps
-that from happening after a move or a rename. The SessionStart hook pinned
-beside them names any missing dependency of those scripts, which let every
-call through when they cannot run.
+that from happening after a move or a rename. The SessionStart hooks pinned
+beside them build the CLI's environment, which `bin/ghmem` runs, and name any
+missing dependency of those scripts, which let every call through when they
+cannot run.
 """
 
 import json
 import os
 import re
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
@@ -82,11 +84,7 @@ def test_every_tool_an_agent_holds_is_refused_out_of_scope(tmp_path: Path) -> No
                 subprocess.run(
                     [script_path(command)],
                     input=json.dumps(payload),
-                    env={
-                        **os.environ,
-                        "CLAUDE_PROJECT_DIR": str(tmp_path),
-                        "PATH": hook_path(),
-                    },
+                    env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path)},
                     capture_output=True,
                     text=True,
                     check=False,
@@ -96,6 +94,70 @@ def test_every_tool_an_agent_holds_is_refused_out_of_scope(tmp_path: Path) -> No
             ]
 
             assert 2 in statuses, f"{agent} holds {tool} unconstrained: {statuses}"
+
+
+def test_wrappers_block_with_nothing_installed_on_path(tmp_path: Path) -> None:
+    """The containment hooks need no PATH-installed command, only a python3.
+
+    When: each wrapper receives an in-scope violating call for its agent, from
+        a working directory outside the plugin, with a PATH holding no
+        `ghmem-hook` (a stale one is dropped) and a `python3`
+    Then: it blocks with exit 2, so containment does not depend on an install
+        the plugin does not make
+    """
+    python = shutil.which("python3")
+    assert python, "no python3 to run the hooks with"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python3").symlink_to(python)
+    kept = [
+        entry
+        for entry in os.environ["PATH"].split(os.pathsep)
+        if not shutil.which("ghmem-hook", path=entry)
+    ]
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    env = {
+        **os.environ,
+        "CLAUDE_PROJECT_DIR": str(elsewhere),
+        "PATH": os.pathsep.join([*kept, str(bin_dir)]),
+    }
+    assert shutil.which("ghmem-hook", path=env["PATH"]) is None
+    violations = {
+        "ghmem-only.sh": ("ghmem-triage", "Bash", {"command": "echo x"}),
+        "scope-packets-only.sh": ("ghmem-triage", "Read", {"file_path": "/etc/passwd"}),
+        "scope-docs-design.sh": (
+            "ghmem-synthesize",
+            "Write",
+            {"file_path": "/etc/passwd"},
+        ),
+    }
+    registered = {
+        script_path(command).name: command
+        for event, _, command in hook_commands()
+        if event == "PreToolUse"
+    }
+    assert set(violations) == set(registered)
+
+    for name, (agent, tool, tool_input) in violations.items():
+        payload = {
+            "tool_name": tool,
+            "agent_type": f"ghmem:{agent}",
+            "cwd": str(elsewhere),
+            "tool_input": tool_input,
+        }
+        result = subprocess.run(
+            [script_path(registered[name])],
+            input=json.dumps(payload),
+            env=env,
+            cwd=elsewhere,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 2, f"{name}: {result.returncode} {result.stderr}"
+        assert result.stderr, name
 
 
 def test_the_plugin_registers_exactly_its_pinned_hooks() -> None:
@@ -154,6 +216,79 @@ def test_script_path_rejects_any_other_form(command: str) -> None:
         script_path(command)
 
 
+def test_the_launcher_is_an_executable_in_bin() -> None:
+    """The `ghmem` command the agents call is the plugin's own launcher.
+
+    When: the plugin's `bin/` is looked at, the directory Claude Code puts on
+        the Bash tool's PATH for an installed plugin
+    Then: `bin/ghmem` is an executable regular file, so the agents' bare
+        `ghmem` resolves to it with nothing installed by hand
+    """
+    launcher = PLUGIN_ROOT / "bin" / "ghmem"
+
+    assert launcher.is_file(), f"{launcher} is missing"
+    assert os.access(launcher, os.X_OK), f"{launcher} not executable"
+
+
+def test_the_venv_build_has_time_to_finish() -> None:
+    """A first build is not cut off by the hook's default timeout.
+
+    When: the `build-venv.sh` entry in hooks/hooks.json is read
+    Then: its `timeout` is at least 120 seconds, since a build downloads and
+        installs the package's dependencies, and the default would kill it
+        half done
+    """
+    registry = json.loads((PLUGIN_ROOT / "hooks" / "hooks.json").read_text())
+    timeouts = [
+        hook.get("timeout")
+        for entries in registry["hooks"].values()
+        for entry in entries
+        for hook in entry["hooks"]
+        if script_path(hook["command"]).name == "build-venv.sh"
+    ]
+
+    assert len(timeouts) == 1
+    assert isinstance(timeouts[0], int)
+    assert timeouts[0] >= 120
+
+
+def test_requirements_pin_the_runtime_dependencies() -> None:
+    """The pip fallback installs the same closure `uv sync --no-dev` would.
+
+    When: requirements.txt, which the gate's format step derives from uv.lock,
+        is read beside pyproject.toml
+    Then: every requirement in it is pinned with `==`, every runtime
+        dependency of the project is among them, and a dev-only package
+        (pytest) is not
+    """
+    requirements = PLUGIN_ROOT / "requirements.txt"
+    assert requirements.is_file(), f"{requirements} is missing"
+    # A requirement starts in column 0; its hashes, `# via` comments and
+    # blank lines do not.
+    lines = [
+        line
+        for line in requirements.read_text().splitlines()
+        if line and line[0] not in " \t#"
+    ]
+    unpinned = [line for line in lines if not re.match(PINNED, line)]
+    pinned = {normalise(line.split("==")[0].split("[")[0]) for line in lines}
+    pyproject = tomllib.loads((PLUGIN_ROOT / "pyproject.toml").read_text())
+    runtime = {
+        normalise(re.match(r"[A-Za-z0-9._-]+", dependency)[0])  # type: ignore[index]
+        for dependency in pyproject["project"]["dependencies"]
+    }
+
+    assert lines
+    assert not unpinned
+    assert runtime <= pinned, runtime - pinned
+    dev = {
+        normalise(re.match(r"[A-Za-z0-9._-]+", dependency)[0])  # type: ignore[index]
+        for dependency in pyproject["dependency-groups"]["dev"]
+    }
+    assert "pytest" in dev
+    assert "pytest" not in pinned
+
+
 def test_manifest_version_matches_pyproject() -> None:
     """The plugin manifest and the Python package never drift apart.
 
@@ -173,6 +308,7 @@ EXPECTED_HOOKS = [
     ("PreToolUse", "Bash", "ghmem-only.sh"),
     ("PreToolUse", "Read", "scope-packets-only.sh"),
     ("PreToolUse", "Read|Write|Edit", "scope-docs-design.sh"),
+    ("SessionStart", "", "build-venv.sh"),
     ("SessionStart", "", "check-deps.sh"),
 ]
 
@@ -184,6 +320,14 @@ EXPECTED_TOOLS = {
 }
 
 
+PINNED = r"[A-Za-z0-9][A-Za-z0-9._-]*(\[[^\]]+\])?==[^\s=;]+"
+
+
+def normalise(name: str) -> str:
+    """Spell a distribution name as PEP 503 does, to compare two sources."""
+    return re.sub(r"[-_.]+", "-", name.lower())
+
+
 def frontmatter(agent: str) -> dict[str, Any]:
     """Parse the YAML frontmatter block of `agents/<agent>.md`."""
     text = (PLUGIN_ROOT / "agents" / f"{agent}.md").read_text()
@@ -192,15 +336,6 @@ def frontmatter(agent: str) -> dict[str, Any]:
     parsed = yaml.safe_load(match.group(1))
     assert isinstance(parsed, dict)
     return parsed
-
-
-def hook_path() -> str:
-    """Return PATH with this tree's venv first, so its `ghmem-hook` runs.
-
-    The wrapper scripts exec the first `ghmem-hook` on PATH, which on a machine
-    with a global install is an older copy that would pass the suite.
-    """
-    return f"{PLUGIN_ROOT / '.venv' / 'bin'}{os.pathsep}{os.environ['PATH']}"
 
 
 def hook_commands() -> list[tuple[str, str, str]]:

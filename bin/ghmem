@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# The plugin's `ghmem` command, on the Bash tool's PATH while the plugin is
+# enabled, which is how the agents reach it. It runs the CLI from the virtualenv
+# that hooks/scripts/build-venv.sh builds at session start inside the plugin's
+# own tree, so nothing has to be installed beforehand.
+root="$(CDPATH='' cd -P -- "${BASH_SOURCE[0]%/*}/.." && pwd)"
+if [[ -x "$root/.venv/bin/ghmem" ]]; then
+  exec "$root/.venv/bin/ghmem" "$@"
+fi
+echo "ghmem: this plugin's CLI environment ($root/.venv) is not built. It is built at session start; if that failed, the reason is in $root/.venv-build.log." >&2
+exit 127

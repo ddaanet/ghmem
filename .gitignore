@@ -8,3 +8,6 @@ tmp/
 # The dogfood copy of the plugin the development launcher loads.
 /dist/plugin/
 .claude/settings.local.json
+# Built at session start by hooks/scripts/build-venv.sh.
+.venv.lock/
+.venv-build.log

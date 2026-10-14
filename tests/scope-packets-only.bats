@@ -7,8 +7,6 @@ bats_require_minimum_version 1.5.0
 HOOK="$BATS_TEST_DIRNAME/../hooks/scripts/scope-packets-only.sh"
 
 setup() {
-  # The wrappers exec the first ghmem-hook on PATH; this tree's must be it.
-  PATH="$BATS_TEST_DIRNAME/../.venv/bin:$PATH"
   PROJECT_DIR="$BATS_TEST_TMPDIR/project"
   mkdir -p "$PROJECT_DIR/corpus/packets" "$PROJECT_DIR/corpus/packets-old"
   export CLAUDE_PROJECT_DIR="$PROJECT_DIR"
@@ -56,10 +54,22 @@ run_hook() {
   [ -z "$stderr" ]
 }
 
-@test "scope-packets-only: passes through, silently, when ghmem-hook is not on PATH" {
+@test "scope-packets-only: passes through, silently, when python3 is not on PATH" {
   mkdir "$BATS_TEST_TMPDIR/empty"
   body="$(payload "/etc/passwd")"
   run --separate-stderr env -i PATH="$BATS_TEST_TMPDIR/empty" "$BASH" "$HOOK" <<<"$body"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+}
+
+# The wrapper finds the module from its own location. python3 exits 2 on a
+# script it cannot open, which Claude Code reads as a block, so a tree that
+# lost src/ghmem/hook.py must pass the call through instead.
+@test "scope-packets-only: passes through, silently, when the hook module is missing" {
+  mkdir -p "$BATS_TEST_TMPDIR/tree/hooks"
+  cp -R "$BATS_TEST_DIRNAME/../hooks/scripts" "$BATS_TEST_TMPDIR/tree/hooks/scripts"
+  run --separate-stderr bash "$BATS_TEST_TMPDIR/tree/hooks/scripts/scope-packets-only.sh" <<<"$(payload "/etc/passwd")"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ -z "$stderr" ]

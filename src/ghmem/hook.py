@@ -1,26 +1,32 @@
-"""Containment hooks for ghmem's two agents, run as `ghmem-hook <name>`.
+"""Containment hooks for ghmem's two agents, run as `python3 -I hook.py <name>`.
 
 The plugin registers these for every session that enables it, on every Bash,
 Read, Write and Edit call, because Claude Code ignores `hooks:` in a plugin
 agent's own frontmatter. Each acts only for the agents it names, read from
 the payload's `agent_type`, and passes every other call through untouched.
 
-This module imports `json`, `os`, `re` and `sys` to do its work, plus `typing`
-and `collections.abc` for annotations (about 3 ms), and the
-package `__init__` keeps `importlib.metadata` out of the way: the process
-starts once per tool call, so its cost is paid by every session. It stays off
-the `ghmem` click entry point for the same reason.
+The wrappers in `hooks/scripts/` run this file directly with `python3 -I`, from
+the plugin's own tree, so nothing has to be installed and the package
+`__init__` (and its `importlib.metadata`) never loads. The module imports
+`json`, `os`, `re` and `sys` to do its work, plus `typing` and
+`collections.abc` for annotations (about 3 ms): the process starts once per
+tool call, so its cost is paid by every session. It stays off the `ghmem` click
+entry point for the same reason. `from __future__ import annotations` keeps the
+annotations from being evaluated, so an older python3 can still load it; only
+3.13 and 3.14 have been run.
 
 A hook that cannot tell whose call it is lets it through, silently, exit 0
 with nothing on stderr: refusing would brick those tools in every session
 that enables the plugin, and a non-2 exit with stderr shows as a hook error
 on every call. That covers a payload that does not parse and a missing
-`ghmem-hook`, which `check-deps.sh` reports at SessionStart and each
+python3, which `check-deps.sh` reports at SessionStart and each
 agent's opening containment check catches. Once the payload has named one of
 the hook's agents the caller is known, and a hook that then fails blocks:
 that stops those two agents only, and nothing after identification depends on
 a tool that may be absent.
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -206,3 +212,7 @@ HOOKS = {
     "scope-packets-only": Hook(frozenset({TRIAGE}), check_packets),
     "scope-docs-design": Hook(frozenset({SYNTHESIZE}), check_design),
 }
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

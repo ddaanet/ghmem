@@ -30,19 +30,41 @@ still untriaged, and most topics still hold a single item.
 
 ## Running it in a project
 
-ghmem is two things, installed separately: the `ghmem` command, and a
-Claude Code plugin carrying the two agents that drive it.
+ghmem is a Claude Code plugin around a Python CLI, and for plugin use
+nothing is installed by hand.
 
-**The command.** It is a Python 3.14 package, installed as a uv tool:
+**The command.** It is a Python 3.14 package. The plugin builds its
+own virtualenv, `.venv` in the plugin's directory, at session start:
+its `SessionStart` hook runs `uv sync --frozen --no-dev` from
+`uv.lock`, and where uv is missing or fails, falls back to
+`python3 -m venv` and `pip install` of the pinned `requirements.txt`
+(generated from `uv.lock` by the gate), then of the plugin's tree
+without dependencies. The fallback is slower and needs a `python3` of
+3.14 or newer on PATH, which uv would otherwise fetch. It prints
+one line saying it built, or why it could not, with the reason in
+`.venv-build.log` and the agent told not to dispatch the ghmem agents,
+and builds nothing when `ghmem` already runs. A `.venv` it did not
+build, a development tree's own, is reported when broken and never
+removed. The plugin's `bin/ghmem` launcher runs the CLI from that
+environment, and Claude Code puts `bin/` on the Bash tool's PATH once
+the plugin is enabled from a marketplace, which is where the agents
+look: they call `ghmem` by bare name. A plugin update lands in a fresh
+directory and builds a fresh environment from its own `uv.lock`.
+
+A session loaded with `CLAUDE_CODE_PLUGIN_DIRS`, as the dev shim does,
+gets no plugin `bin/` on PATH from Claude Code. The repository's
+dogfood shim adds it, last. A `ghmem` already on PATH ahead of it, such as
+this checkout's direnv-activated `.venv`, wins, and the plugin then builds no
+environment of its own.
+
+To use the CLI outside the plugin, install it as a uv tool:
 
 ```console
 $ uv tool install git+https://github.com/ddaanet/ghmem
 ```
 
-That puts `ghmem` on PATH, which is where the agents look for it: they
-call it by bare name. A uv tool install resolves from `pyproject.toml`
-and ignores `uv.lock`, so the version ranges declared there are what
-it gets.
+That resolves from `pyproject.toml` and ignores `uv.lock`, so the
+version ranges declared there are what it gets.
 
 **The project.** Run `ghmem` from inside the git tree whose history
 the corpus belongs with. It needs one file, `corpus/target.toml`,
@@ -68,16 +90,18 @@ opens by checking that, with a Bash `echo` and a Read of `.gitignore`
 that must both be refused, and reports `UNCONTAINED` and stops if
 either is not.
 
-The hooks need `ghmem-hook` on PATH, which ships with the ghmem
-package. They run on every Bash, Read, Write and Edit call of a session
-that enables the plugin, passing through any that is not one of the two
-agents'. A hook fails open, silently, only while it cannot tell whose
-call it is: a payload that does not parse, or `ghmem-hook` missing. Once
-it has identified one of the two agents and then fails, it blocks that
-call, which stops those agents and no one else. On a machine where
-`ghmem-hook` is missing the plugin says so at session start, and again
-after resume, clear and compact; do not dispatch the agents until it is
-installed.
+The hooks need only a `python3` on PATH. They run from the plugin's
+own files (`src/ghmem/hook.py`), so they depend neither on the `ghmem`
+command nor on that environment being built. They run on every Bash,
+Read, Write and Edit call of a session that enables the plugin,
+passing through any that is not one of the two agents'. A hook fails
+open, silently, only while it cannot tell whose call it is: a payload
+that does not parse, no `python3`, or a plugin tree without its hook
+module. Once it has identified one of the two agents and then fails,
+it blocks that call, which stops those agents and no one else. On a
+machine where `python3` is missing or cannot run the module the plugin
+says so at session start, and again after resume, clear and compact;
+do not dispatch the agents until it can.
 
 ## Storage model
 

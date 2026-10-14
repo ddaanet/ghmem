@@ -65,6 +65,64 @@ Opus for topic-doc synthesis, where prose quality is the product.
 tool set belong to the agent rather than to the session that spawns
 it. The definitions ship in the plugin's `agents/`.
 
+**The CLI's environment is built by the plugin, at session start.** The
+agents call `ghmem` by bare name, so it has to be on the Bash tool's
+PATH with its dependencies, and the plugin supplies both. `bin/ghmem`
+is a launcher: Claude Code puts a marketplace-installed plugin's `bin/`
+on the Bash tool's PATH, and the launcher runs `.venv/bin/ghmem` from
+the plugin's own tree, or says on stderr, naming `.venv` and
+`.venv-build.log`, that the environment is not built and exits 127. The
+first `SessionStart` hook, `build-venv.sh`, builds that `.venv` when
+`ghmem --version` does not already run from it, with
+`uv sync --frozen --no-dev`, so the dependencies are the ones `uv.lock`
+locks, and where uv is missing or does not leave a working environment,
+`python3 -m venv`, `pip install -r requirements.txt` and then
+`pip install --no-deps` of the tree. The fallback pins from `uv.lock`
+through `requirements.txt`, which the gate's format step exports with
+hashes and which ships in the plugin tree. A plain `pip install <tree>`
+would resolve the `pyproject.toml` ranges to whatever is newest, so the
+two paths would build different environments. The fallback has no uv to
+fetch an interpreter, so the hook states its floor, a `python3` of 3.14
+or newer, and fails with that reason in `.venv-build.log` instead of
+leaving pip to refuse the package. The plugin's tree is a
+per-version cache directory, so an update arrives at a fresh path, builds
+a fresh environment from its own lock and migrates nothing. The hook's
+timeout is 300 s because a first build downloads and installs the
+dependencies.
+
+A build says so once, on `systemMessage`. A failure says why to the user
+and tells the agent, on `additionalContext`, not to dispatch either
+ghmem agent, which cannot work without the command; the reason is left
+in `.venv-build.log`. Sessions can start at once in one tree, so a build
+takes a lock directory: it waits up to 240 s on another builder and
+takes over a lock ten minutes old, the build of a session that died. A
+`.venv` the hook did not build, marked by the absence of
+`.venv/.built-by-ghmem-plugin`, is a development tree's own environment
+and is never removed: a broken one is reported and left alone.
+
+No build runs when `command -v ghmem` already finds a command other than the
+plugin's own launcher. Claude Code puts a plugin's `bin/` after the user's own
+PATH entries, so that command wins and a build would never be used. This is
+how a dogfood session uses the project root's direnv-activated `.venv` (the
+shim's `dist/plugin` copy is rebuilt on every sync, which deletes its own
+`.venv`), and it covers a `uv tool install` the same way.
+
+The containment hooks stay independent of this. They need only a
+`python3` and run from the plugin's files, so a build that fails, or
+has not run, changes nothing about what they refuse.
+
+Rejected: `uv tool install` as a prerequisite of the plugin, which is
+what the CLI was before. It makes the plugin depend on an install the
+plugin does not make, the same objection as to a `ghmem-hook` console
+script above: a machine with the plugin and no tool install has agents
+with no `ghmem`, and a stale install runs them against an older CLI than
+the plugin's. The tool install ignores `uv.lock`; it stays an option for
+using the CLI outside the plugin.
+
+Rejected: the virtualenv in `CLAUDE_PLUGIN_DATA`, which survives plugin
+updates. My human partner chose the plugin's cache directory instead,
+so that an update brings fresh dependencies with a fresh path.
+
 **Containment is registered by the plugin and keyed on `agent_type`.**
 Claude Code ignores `hooks:` in a plugin agent's frontmatter (verified
 against CC 2.1.296: `sets hooks, which is ignored for plugin agents`,
@@ -74,34 +132,50 @@ each script reads the payload's `agent_type` — `ghmem:ghmem-triage` or
 `ghmem:ghmem-synthesize` inside those agents, absent on the main
 thread — and passes through any call that is not its agent's. A
 dispatch `name` leaves that value alone, so a named spawn stays
-contained. The logic lives in the `ghmem-hook` console script, which
-ships with the package the agents already need; the three scripts in
-`hooks/scripts/` are one-line wrappers around it, so that `hooks.json`
-keeps the quoted `"${CLAUDE_PLUGIN_ROOT}/..."` command form. Its only
-dependency is `ghmem-hook` on PATH. Paths are resolved in Python, where
-`os.path.realpath` does what GNU `realpath -m` does, so the scopes hold
-on macOS, whose stock `realpath` has no `-m`.
+contained. The logic lives in `src/ghmem/hook.py`; the three scripts in
+`hooks/scripts/` are thin wrappers that run it with `python3 -I`, so
+that `hooks.json` keeps the quoted `"${CLAUDE_PLUGIN_ROOT}/..."` command
+form. A wrapper finds the module from its own location, so the hook runs
+from the plugin's own tree and its only dependency is a `python3` on
+PATH. `-I` keeps `PYTHONPATH` and the module's directory off `sys.path`.
+Paths are resolved in Python, where `os.path.realpath` does what GNU
+`realpath -m` does, so the scopes hold on macOS, whose stock
+`realpath` has no `-m`.
+
+Rejected: a `ghmem-hook` console script on PATH, installed with the
+`ghmem` package by `uv tool install`. The plugin's containment would
+then depend on an install the plugin does not make: a machine with the
+plugin and no tool install, or a stale one, ran the agents uncontained
+or against an older hook. Running the module from the plugin's tree ties
+the hook to the version of the plugin that registered it. The python3
+floor is loose: `from __future__ import annotations` keeps annotations
+from being evaluated, so an older python3 can load the module, but only
+3.13 and 3.14 have been run. The hooks do not depend on the `ghmem`
+CLI at all; how the CLI reaches the agents is decided under "The CLI's
+environment is built by the plugin".
 
 The price is one hook process on every Bash, Read, Write and Edit call
 of every session that enables the plugin. The hook therefore fails open
 only while the caller is unknown, silently (exit 0, nothing on stderr):
 a payload that does not parse, an `agent_type` that is absent, not a
-string or not one of the hook's agents, or `ghmem-hook` itself missing,
-where the wrapper exits 0. Once the hook has read `agent_type` as
+string or not one of the hook's agents, `python3` missing, or the hook
+module missing from the tree, where the wrapper exits 0 (python3 exits 2
+on a script it cannot open, which Claude Code reads as a block, so the
+wrapper tests for the file first). Once the hook has read `agent_type` as
 `ghmem:ghmem-triage` or `ghmem:ghmem-synthesize` and then fails —
 `tool_input`, `command` or `file_path` missing or of the wrong type, no
 project directory, a path that does not resolve, any exception — it
 blocks with exit 2 and a reason on stderr. That stops those two agents
 only and leaves every other call alone, so it does not bring back the
 session bricking that ruled out failing closed everywhere: on a machine
-without `ghmem-hook` that refused those four tools in every session
+without `python3` that refused those four tools in every session
 that enables the plugin, including ones that never dispatch a ghmem
 agent. It is safe because all the logic is in the stdlib-only Python
-console script, so nothing after identification depends on an external
+module, so nothing after identification depends on an external
 tool.
 
 What still fails open is made visible from two sides. A `SessionStart`
-hook, `check-deps.sh`, names a missing `ghmem-hook` to the user
+hook, `check-deps.sh`, names a missing or unrunnable `python3` to the user
 (`systemMessage`) and to the agent (`additionalContext`), telling the
 agent not to dispatch either ghmem agent. It runs at session start and
 again after resume, clear and compact, deliberately: after `/clear` or
@@ -127,15 +201,16 @@ open generally once the ERR trap was removed, too few tests of
 unguarded failure paths (the Python hook fails closed once the agent is
 identified, and the bats suites pin that), `check-deps.sh` overstating
 what is open when only `realpath` was missing, and it probing too few
-dependencies (it now checks `ghmem-hook`, the single dependency, and the
+dependencies (it now checks `python3`, the single dependency, and the
 wrapper uses no bash 4 feature). The seventh, SessionStart having no
 matcher and so firing again on resume, clear and compact, is deliberate
 and not a defect.
 
-A `ghmem-hook` that is on PATH but cannot start — a deleted venv behind
-its shebang, a failing import — exits non-0 and non-2 before `main()`
-can decide, so every call passes, the contained agents' included.
-`check-deps.sh` therefore runs it once (a payload naming no agent must
+A `python3` that is on PATH but cannot run the module — a version too
+old for it, a failing import, a missing file — exits non-0 before
+`main()` can decide, and non-2 except for the missing file, so every
+call passes, the contained agents' included. `check-deps.sh` therefore
+runs the module once (a payload naming no agent must
 exit 0) instead of only looking it up, and the agents' opening check is
 what stops a dispatch that runs anyway.
 

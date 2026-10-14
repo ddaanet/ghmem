@@ -32,34 +32,36 @@ and never read a real corpus.
 ### Python toolchain
 
 This is a uv-managed Python 3.14 package with a `justfile`. `just green`
-runs the whole gate: format (ruff fixes, ruff format, docformatter),
-then ruff lint, docformatter `-c`, mypy strict, pytest, the bats hook
-suites, and the 400-line file cap. `just precommit` is the same gate
-under the name the plugin toolkit expects, and it is the one command
-that must pass before a commit. `ruff`, `mypy` and `pytest` resolve
+runs the whole gate: format (ruff fixes, ruff format, docformatter, the
+`requirements.txt` export), then ruff lint, docformatter `-c`, mypy
+strict, pytest, the bats hook suites, and the 400-line file cap.
+`just precommit` is the same gate under the name the plugin toolkit
+expects, and it is the one command that must pass before a commit. `ruff`, `mypy` and `pytest` resolve
 from the direnv-activated `.venv` on PATH.
 
 The hooks live at `hooks/scripts/`, with their bats suites in `tests/`
-beside the pytest ones. The scripts are one-line wrappers around the
-`ghmem-hook` console script (`src/ghmem/hook.py`), which holds the
-logic. `hooks/hooks.json` registers them for every session that
-enables the plugin, and each acts only when the payload's `agent_type`
-names its agent (`ghmem:ghmem-triage`, `ghmem:ghmem-synthesize`),
-passing every other call through untouched.
+beside the pytest ones. The scripts are thin wrappers that run
+`src/ghmem/hook.py`, which holds the logic, with `python3 -I` from the
+plugin's own tree, found from the script's own location. `hooks/hooks.json`
+registers them for every session that enables the plugin, and each acts
+only when the payload's `agent_type` names its agent
+(`ghmem:ghmem-triage`, `ghmem:ghmem-synthesize`), passing every other
+call through untouched.
 Never put `hooks:` in an agent's frontmatter: Claude Code ignores it
 for a plugin agent, saying so only in the debug log, and the agent runs
 uncontained.
 
 A hook fails open, silently — exit 0, nothing on stderr — only while it
 does not know whose call it is: a payload that does not parse, an
-`agent_type` that is absent, not a string or not its agent's, or
-`ghmem-hook` missing from PATH. Once it has read one of the two agents'
-names and then fails, it blocks with exit 2 and a reason on stderr. That
-stops only those agents, so it does not brick the tools in every
-session that enables the plugin. Its one dependency is `ghmem-hook`, and
-`hooks/scripts/check-deps.sh`, the plugin's `SessionStart` hook, names it
-when missing, at session start and again after resume, clear and
-compact. `tests/test_plugin_layout.py` checks that
+`agent_type` that is absent, not a string or not its agent's, `python3`
+missing from PATH, or the hook module missing from the tree. Once it has
+read one of the two agents' names and then fails, it blocks with exit 2
+and a reason on stderr. That stops only those agents, so it does not
+brick the tools in every session that enables the plugin. Its one
+dependency is `python3`, and `hooks/scripts/check-deps.sh`, the plugin's
+`SessionStart` hook, names it when it is missing or cannot run the
+module, at session start and again after resume, clear and compact.
+`tests/test_plugin_layout.py` checks that
 every registered command is the quoted
 `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>"` form resolving to an
 executable inside the plugin — an unresolved path exits 127 and the
@@ -67,6 +69,32 @@ agent runs uncontained with nothing reported. The same file pins each
 agent's `tools:` and runs the registered hooks against an out-of-scope
 call for every one of them, so a tool no hook constrains for that agent
 fails the suite.
+
+`hooks/scripts/build-venv.sh`, the first `SessionStart` hook (timeout
+300 s), builds the CLI's environment: `uv sync --frozen --no-dev` into
+`.venv` in the plugin root, else `python3 -m venv` and `pip install` of
+`requirements.txt` and then of the tree (`--no-deps`), which needs a
+`python3` of 3.14 or newer and says so in `.venv-build.log` when it is
+older. `bin/ghmem` then runs the result. It is silent when the environment's
+`ghmem --version` already runs, and builds nothing when another `ghmem` is on
+PATH ahead of the plugin's `bin/` (which comes last, so it would go unused):
+a dogfood session in this checkout uses the direnv-activated `.venv` at the
+project root. Its files are
+`.venv/.built-by-ghmem-plugin`, the marker of an environment it built,
+`.venv.lock/`, a lock directory (waited on up to 240 s, taken over once
+ten minutes old), and `.venv-build.log`, the reason a build failed;
+all three are git-ignored. A `.venv` without the marker, this checkout's own
+direnv environment, is never removed. It is independent of the
+containment hooks, which need only `python3`: a failed build never
+changes what they do, and `tests/build-venv.bats` and
+`tests/bin-ghmem.bats` pin the script and the launcher against stub
+tools.
+
+`requirements.txt`, at the repo root, is what that fallback installs.
+The gate's format step generates it from `uv.lock` (`uv export`), so
+never hand-edit it; it is one of the gate hash's inputs, and
+`tests/test_plugin_layout.py` checks it pins every runtime dependency
+and no dev-only one. It ships because the plugin is the repo tree.
 
 A layout test proves the wiring, not the containment. After changing a
 hook, an agent or `hooks.json`, run `just dogfood` and dispatch the
@@ -94,7 +122,8 @@ lives at `tmp/.green-sentinel`; delete it to force a run.
 The inputs are the interpreter version, the `docformatter` and `bats`
 versions (the two tools `uv.lock` does not pin), and the name and
 contents of every file under `justfile`, `pyproject.toml`, `uv.lock`,
-`scripts/`, `src/`, `tests/`, `hooks/`, `agents/` and `.claude-plugin/`
+`requirements.txt`, `scripts/`, `src/`, `tests/`, `hooks/`, `agents/` and
+`.claude-plugin/`
 — including files not yet `git add`-ed, so a brand-new test cannot hide
 behind a stale pass. Editing a check invalidates the cache just as
 editing a source file does. The hash is taken after formatting and
