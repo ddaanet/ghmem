@@ -27,6 +27,13 @@ main() {
     fi
     path="$(path_without "${BASH_SOURCE[0]}" && printf x)"
     export PATH="${path%x}"
+    # LOCAL HACK (ghmem, toolkit 0.9.3), pending the claude-plugin-dev brief
+    # brief-dogfood-shim-plugin-bin-path.md: a plugin loaded through
+    # CLAUDE_CODE_PLUGIN_DIRS gets no bin/ on PATH, a marketplace install does,
+    # after the user's own entries. Do the same, so a dogfood session sees it.
+    if [[ -d "$root/dist/plugin/bin" ]]; then
+        export PATH="$PATH:$root/dist/plugin/bin"
+    fi
     if ! command -v claude >/dev/null; then
         echo "dogfood: no other claude on PATH" >&2
         exit 127
