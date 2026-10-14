@@ -1,3 +1,1 @@
-## Current task
-
-gitlore is installed in ghmem with the `ddaanet` tier mounted; the one thread left from the setup is reconciling `CLAUDE.md` with the tier's shared conventions file it imports.
+ghmem v0.1.0 is released, CI is green, the marketplace entry uses an https url source, and the four ghmem memory facts are landed and published. The two bugfix briefs in inbox/ are next, macOS containment first.
