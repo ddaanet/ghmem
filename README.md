@@ -64,16 +64,17 @@ with no further prompt needed. Both read text anyone can file on
 GitHub, so both are contained by the plugin's hooks: Bash is held to
 `ghmem` invocations, the triage agent's Read to `corpus/packets/`, and
 the synthesis agent's Read, Write and Edit to `docs/design/`. Each agent
-opens by checking that, and reports `UNCONTAINED` and stops if the
-check is not refused.
+opens by checking that, with a Bash `echo` and a Read of `.gitignore`
+that must both be refused, and reports `UNCONTAINED` and stops if
+either is not.
 
-The hooks need `jq` and GNU `realpath` (coreutils). They run on every
-Bash, Read, Write and Edit call of a session that enables the plugin,
-passing through any that is not one of the two agents'. A hook that
-cannot run lets the call through rather than stopping those four tools
-in every session. On a machine missing either tool the plugin says so
-when a session starts; do not dispatch the agents until it is
-installed.
+The hooks need `ghmem-hook` on PATH, which ships with the ghmem
+package. They run on every Bash, Read, Write and Edit call of a session
+that enables the plugin, passing through any that is not one of the two
+agents'. A hook that cannot run lets the call through rather than
+stopping those four tools in every session. On a machine where
+`ghmem-hook` is missing the plugin says so when a session starts; do
+not dispatch the agents until it is installed.
 
 ## Storage model
 

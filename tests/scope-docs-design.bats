@@ -62,7 +62,6 @@ run_hook() {
 # stop Read, Write and Edit in every session that enables the plugin, and a
 # non-2 exit with stderr shows as a hook error on every call. The missing
 # dependency is reported once, by check-deps.sh at SessionStart.
-# `realpath -m` is GNU-only, which makes the second case a real one.
 @test "scope-docs-design: passes through, silently, when the payload is not JSON" {
   run --separate-stderr bash "$HOOK" <<<"not json"
   [ "$status" -eq 0 ]
@@ -70,13 +69,10 @@ run_hook() {
   [ -z "$stderr" ]
 }
 
-@test "scope-docs-design: passes through, silently, when realpath fails" {
-  mkdir "$BATS_TEST_TMPDIR/bin"
-  printf '#!/bin/sh\necho realpath-broke >&2\nexit 1\n' \
-    >"$BATS_TEST_TMPDIR/bin/realpath"
-  chmod +x "$BATS_TEST_TMPDIR/bin/realpath"
+@test "scope-docs-design: passes through, silently, when ghmem-hook is not on PATH" {
+  mkdir "$BATS_TEST_TMPDIR/empty"
   body="$(payload "/etc/passwd")"
-  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run --separate-stderr bash "$HOOK" <<<"$body"
+  run --separate-stderr env -i PATH="$BATS_TEST_TMPDIR/empty" "$BASH" "$HOOK" <<<"$body"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ -z "$stderr" ]
@@ -123,4 +119,21 @@ run_hook() {
   [ "$status" -eq 2 ]
   [ -z "$output" ]
   [ -n "$stderr" ]
+}
+
+# macOS ships a realpath without GNU's `-m`. The scope must hold there, not
+# merely fail safe: the hook resolves paths itself rather than asking one.
+@test "scope-docs-design: holds its scope where realpath lacks -m, as on macOS" {
+  mkdir "$BATS_TEST_TMPDIR/bin"
+  # shellcheck disable=SC2016  # the stub's own $1, expanded when it runs
+  printf '#!/bin/sh\n[ "$1" = -m ] && exit 1\nexec %s "$@"\n' \
+    "$(command -v realpath)" >"$BATS_TEST_TMPDIR/bin/realpath"
+  chmod +x "$BATS_TEST_TMPDIR/bin/realpath"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH"
+  run run_hook "docs/design/softwrapcolumn.md"
+  [ "$status" -eq 0 ]
+  run run_hook "/etc/passwd"
+  [ "$status" -eq 2 ]
+  run run_hook "$PROJECT_DIR/docs/design/../../x.txt"
+  [ "$status" -eq 2 ]
 }

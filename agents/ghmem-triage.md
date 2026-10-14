@@ -22,22 +22,27 @@ The CLI owns the batch budget; never count characters or items yourself.
 
 ## First, confirm you are contained
 
-Before anything else, run exactly:
+Before anything else, make two calls. First run exactly:
 
 ```
 echo ghmem-containment-check
 ```
 
-That command **must** be blocked by the hook. If it is blocked, containment
-is live — carry on to the loop below and issue no further non-`ghmem`
+Then Read the file `.gitignore` in the project root.
+
+Both **must** be blocked by a hook. If both are blocked, containment is
+live — carry on to the loop below and issue no further non-`ghmem`
 command.
 
-If it instead prints `ghmem-containment-check`, the hook is not attached to
-this dispatch. Stop immediately. Do not open a triage session, do not route
-anything, and report only that you are UNCONTAINED and did nothing else. A
-dispatch can run without its hooks and neither side is told — the usual
-cause is a session in which the plugin's hooks did not load — and triaging
-uncontained is how this corpus was corrupted once already.
+If either one succeeds or returns anything other than a hook refusal — the
+echo output, the file's content, a not-found result — the hooks are not
+attached to this dispatch. The Read check is there for a file-tool hook
+that did not load at all, which the Bash check cannot show. Stop
+immediately. Do not open a triage session, do not route anything, and
+report only that you are UNCONTAINED and did nothing else. A dispatch can
+run without its hooks and neither side is told — the usual cause is a
+session in which the plugin's hooks did not load — and triaging uncontained
+is how this corpus was corrupted once already.
 
 ## The loop
 

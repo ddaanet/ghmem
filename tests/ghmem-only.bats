@@ -60,12 +60,10 @@ run_hook() {
   [ -z "$stderr" ]
 }
 
-@test "ghmem-only: passes through, silently, when jq fails" {
-  mkdir "$BATS_TEST_TMPDIR/bin"
-  printf '#!/bin/sh\necho jq-broke >&2\nexit 1\n' >"$BATS_TEST_TMPDIR/bin/jq"
-  chmod +x "$BATS_TEST_TMPDIR/bin/jq"
+@test "ghmem-only: passes through, silently, when ghmem-hook is not on PATH" {
+  mkdir "$BATS_TEST_TMPDIR/empty"
   body="$(payload "rm -rf /")"
-  PATH="$BATS_TEST_TMPDIR/bin:$PATH" run --separate-stderr bash "$HOOK" <<<"$body"
+  run --separate-stderr env -i PATH="$BATS_TEST_TMPDIR/empty" "$BASH" "$HOOK" <<<"$body"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ -z "$stderr" ]

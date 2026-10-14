@@ -40,19 +40,21 @@ that must pass before a commit. `ruff`, `mypy` and `pytest` resolve
 from the direnv-activated `.venv` on PATH.
 
 The hooks live at `hooks/scripts/`, with their bats suites in `tests/`
-beside the pytest ones. `hooks/hooks.json` registers them for every
-session that enables the plugin, and each script acts only when the
-payload's `agent_type` names its agent (`ghmem:ghmem-triage`,
-`ghmem:ghmem-synthesize`), passing every other call through untouched.
+beside the pytest ones. The scripts are one-line wrappers around the
+`ghmem-hook` console script (`src/ghmem/hook.py`), which holds the
+logic. `hooks/hooks.json` registers them for every session that
+enables the plugin, and each acts only when the payload's `agent_type`
+names its agent (`ghmem:ghmem-triage`, `ghmem:ghmem-synthesize`),
+passing every other call through untouched.
 Never put `hooks:` in an agent's frontmatter: Claude Code ignores it
 for a plugin agent, saying so only in the debug log, and the agent runs
 uncontained.
 
-A script that cannot run lets the call through, silently — exit 0,
+A hook that cannot run lets the call through, silently — exit 0,
 nothing on stderr — since refusing would brick those tools in every
-session that enables the plugin. `hooks/scripts/check-deps.sh`, the
-plugin's `SessionStart` hook, names any missing `jq` or GNU `realpath`
-instead. `tests/test_plugin_layout.py` checks that
+session that enables the plugin. Its one dependency is `ghmem-hook` on
+PATH, and `hooks/scripts/check-deps.sh`, the plugin's `SessionStart`
+hook, names it when missing. `tests/test_plugin_layout.py` checks that
 every registered command is the quoted
 `"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>"` form resolving to an
 executable inside the plugin — an unresolved path exits 127 and the

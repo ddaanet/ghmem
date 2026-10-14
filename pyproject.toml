@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 ghmem = "ghmem.cli:main"
+ghmem-hook = "ghmem.hook:main"
 
 [dependency-groups]
 dev = [

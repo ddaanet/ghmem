@@ -22,18 +22,23 @@ what accumulated-context rot degrades first.
 
 ## First, confirm you are contained
 
-Before anything else, run exactly:
+Before anything else, make two calls. First run exactly:
 
 ```
 echo ghmem-containment-check
 ```
 
-That command **must** be blocked by the hook. If it is blocked, containment
-is live — carry on to the flow below.
+Then Read the file `.gitignore` in the project root.
 
-If it instead prints `ghmem-containment-check`, the hooks are not attached to
-this dispatch. Stop immediately: do not read a topic, do not write any
-document, and report only that you are UNCONTAINED and did nothing else. A
+Both **must** be blocked by a hook. If both are blocked, containment is
+live — carry on to the flow below.
+
+If either one succeeds or returns anything other than a hook refusal — the
+echo output, the file's content, a not-found result — the hooks are not
+attached to this dispatch. The Read check is there for a file-tool hook
+that did not load at all, which the Bash check cannot show. Stop
+immediately: do not read a topic, do not write any document, and report
+only that you are UNCONTAINED and did nothing else. A
 dispatch can run without its hooks and neither side is told — the usual
 cause is a session in which the plugin's hooks did not load — and an
 uncontained agent here has both an unrestricted shell and an unrestricted

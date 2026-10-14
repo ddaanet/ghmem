@@ -1,8 +1,8 @@
 # Runs the same gate as a local commit (`just green`) on a clean machine.
 # What that adds over the local pre-commit gate: it proves the gate does not
-# depend on one workstation (docformatter's version, bats, jq, GNU
-# realpath), and it covers commits that arrive without the hook — another
-# machine, a web edit, an outside PR.
+# depend on one workstation (docformatter's version, bats, jq), and it
+# covers commits that arrive without the hook — another machine, a web
+# edit, an outside PR.
 #
 # What it cannot cover: agent containment (needs a live Claude Code session)
 # and the GraphQL queries against the live API (the e2e marker is excluded
@@ -27,7 +27,7 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3.1.0
 
-      # bats and jq are the two system tools the hook suites need.
+      # bats runs the hook suites, and jq builds their payloads.
       - run: sudo apt-get update && sudo apt-get install -y bats jq
 
       # docformatter cannot live in the 3.14 venv, and 1.7.8 rewraps every

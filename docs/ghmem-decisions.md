@@ -74,24 +74,42 @@ each script reads the payload's `agent_type` — `ghmem:ghmem-triage` or
 `ghmem:ghmem-synthesize` inside those agents, absent on the main
 thread — and passes through any call that is not its agent's. A
 dispatch `name` leaves that value alone, so a named spawn stays
-contained. The price is one hook process on every Bash, Read, Write
-and Edit call of every session that enables the plugin, so a script
-that cannot run — `jq` missing, a `realpath` without GNU's `-m`, a
-payload that does not parse — lets the call through, silently. The
-rejected alternative was to turn the hook's own failure into a block:
-on a machine without `jq` it refused those four tools in every session
-that enables the plugin, bricking sessions that never dispatch a ghmem
-agent. Visibility comes instead from a `SessionStart` hook,
-`check-deps.sh`, which names any missing dependency to the user
-(`systemMessage`) and to the agent (`additionalContext`), telling the
-agent not to dispatch either ghmem agent. Each agent's opening
-containment check is what stops a dispatch that runs anyway: with no
-`jq`, its must-block command goes through and it reports `UNCONTAINED`.
-With `jq` present but no GNU `realpath`, that Bash check still blocks
-and only the file-tool scopes are open, so the `SessionStart` report is
-then the only signal. That is a defect, not a tolerated residual:
-macOS is a target platform, its stock `realpath` has no `-m`, and the
-scopes have to hold there rather than merely fail safe.
+contained. The logic lives in the `ghmem-hook` console script, which
+ships with the package the agents already need; the three scripts in
+`hooks/scripts/` are one-line wrappers around it, so that `hooks.json`
+keeps the quoted `"${CLAUDE_PLUGIN_ROOT}/..."` command form. Its only
+dependency is `ghmem-hook` on PATH. Paths are resolved in Python, where
+`os.path.realpath` does what GNU `realpath -m` does, so the scopes hold
+on macOS, whose stock `realpath` has no `-m`.
+
+The price is one hook process on every Bash, Read, Write and Edit call
+of every session that enables the plugin, so a hook that cannot run —
+`ghmem-hook` missing, a payload that does not parse — lets the call
+through, silently. The rejected alternative was to turn the hook's own
+failure into a block: on a machine without `ghmem-hook` it refused
+those four tools in every session that enables the plugin, bricking
+sessions that never dispatch a ghmem agent. Visibility comes instead
+from a `SessionStart` hook, `check-deps.sh`, which names a missing
+`ghmem-hook` to the user (`systemMessage`) and to the agent
+(`additionalContext`), telling the agent not to dispatch either ghmem
+agent. Each agent's opening containment check is what stops a dispatch
+that runs anyway, and it has two parts: a Bash `echo` that must be
+blocked, and a Read of `.gitignore` that must be blocked. The Bash
+check alone cannot show a file-tool hook that did not load; the pair
+does, and either one going through ends in `UNCONTAINED`.
+
+Two other ways to drop the `jq` and `realpath` dependencies were
+rejected. Portable bash path resolution that keeps `jq` still needs a
+tool macOS does not ship. Searching the raw payload for
+`"ghmem:ghmem-` without `jq` blocks the main thread whenever a command
+merely contains that string.
+
+The per-call cost is also why the hook stays off the `ghmem` click
+entry point and imports only `json`, `os`, `re` and `sys`: `import
+ghmem` measured 126 ms against 44 ms stdlib-only, since reading
+`__version__` through `importlib.metadata` costs about 80 ms per
+process. `__version__` in `src/ghmem/__init__.py` is therefore lazy,
+resolved on first access.
 
 **The allowlist is a positive character class over the whole command
 string.** None of ``; & | $ ` < > ( )`` or newline is in the permitted
